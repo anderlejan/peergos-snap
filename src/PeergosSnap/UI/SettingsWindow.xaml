@@ -1,0 +1,168 @@
+<Window x:Class="PeergosSnap.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Peergos Snap – Settings" Width="640" Height="560" MinWidth="560" MinHeight="460"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}"><Setter Property="Margin" Value="0,2,0,8"/><Setter Property="Padding" Value="3"/></Style>
+        <Style TargetType="PasswordBox" BasedOn="{StaticResource {x:Type PasswordBox}}"><Setter Property="Margin" Value="0,2,0,8"/><Setter Property="Padding" Value="3"/></Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}"><Setter Property="Margin" Value="0,4,0,6"/></Style>
+        <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}"><Setter Property="Margin" Value="0,3,16,3"/></Style>
+        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}"><Setter Property="Margin" Value="0,2,0,8"/></Style>
+        <Style x:Key="Hint" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Fg3}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="Opacity" Value="0.95"/></Style>
+        <Style x:Key="Err" TargetType="TextBlock"><Setter Property="Foreground" Value="#C62828"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,0,0,8"/></Style>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="10,3"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
+    </Window.Resources>
+    <DockPanel Margin="10">
+        <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Hint}" Margin="2,8,0,0"
+                   Text="Changes apply and are saved at once. Passwords and links are stored encrypted for your Windows account."/>
+        <TabControl x:Name="Tabs">
+            <TabItem Header="Peergos">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="Where captures go" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ModeFolder" Content="Shared writable folder link (no login)" GroupName="st"/>
+                        <RadioButton x:Name="ModeAccount" Content="My Peergos account" GroupName="st"/>
+                    </StackPanel>
+                    <StackPanel x:Name="FolderPanel" Margin="0,8,0,0">
+                        <TextBlock Text="Writable folder secret link"/>
+                        <TextBox x:Name="FolderLink" ToolTip="https://peergos.net/secret/&lt;owner&gt;/&lt;id&gt;#&lt;key&gt;"/>
+                        <TextBlock x:Name="FolderLinkErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                        <TextBlock Text="Link password (only if the link has one)"/>
+                        <PasswordBox x:Name="FolderPassword"/>
+                        <TextBlock Style="{StaticResource Hint}" Text="In Peergos: right-click a folder → Share → Secret link, tick 'writable'. Each capture is uploaded into that folder and you get a read-only link to just that file (the folder stays private)."/>
+                    </StackPanel>
+                    <StackPanel x:Name="AccountPanel" Margin="0,8,0,0">
+                        <TextBlock Text="Server"/>
+                        <TextBox x:Name="Server"/>
+                        <TextBlock Text="Username"/>
+                        <TextBox x:Name="Username"/>
+                        <TextBlock Text="Password"/>
+                        <PasswordBox x:Name="AccountPassword"/>
+                        <TextBlock Text="Folder in your home (created when missing)"/>
+                        <TextBox x:Name="AccountFolder"/>
+                        <TextBlock Style="{StaticResource Hint}" Text="Each capture gets its own new secret link (read-only). Accounts with two-factor login cannot upload automatically; use a shared writable folder link for those."/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button x:Name="TestBtn" Content="Test connection"/>
+                        <TextBlock x:Name="TestResult" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
+                    </StackPanel>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Capture">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="A left click on the tray icon" FontWeight="SemiBold"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <RadioButton x:Name="KindPicture" Content="takes a picture" GroupName="kind"/>
+                        <RadioButton x:Name="KindVideo" Content="starts / stops a video" GroupName="kind"/>
+                    </StackPanel>
+                    <TextBlock Text="Picture format"/>
+                    <ComboBox x:Name="ImageFormat" Width="160" HorizontalAlignment="Left"><ComboBoxItem Content="png"/><ComboBoxItem Content="jpg"/></ComboBox>
+                    <TextBlock Text="Video format"/>
+                    <ComboBox x:Name="VideoFormat" Width="160" HorizontalAlignment="Left"><ComboBoxItem Content="mp4"/><ComboBoxItem Content="webm"/></ComboBox>
+                    <TextBlock Text="Video frame rate (frames per second)"/>
+                    <ComboBox x:Name="FrameRate" Width="160" HorizontalAlignment="Left"><ComboBoxItem Content="15"/><ComboBoxItem Content="24"/><ComboBoxItem Content="30"/><ComboBoxItem Content="60"/></ComboBox>
+                    <TextBlock x:Name="QualityLabel" Text="Video quality"/>
+                    <Slider x:Name="Quality" Minimum="15" Maximum="40" Width="300" HorizontalAlignment="Left" IsDirectionReversed="True" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,2,0,2"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Left = smaller files, right = sharper (x264 CRF 40 … 15, default 23)."/>
+                    <CheckBox x:Name="RecordCursor" Content="Show the mouse pointer in videos"/>
+                    <CheckBox x:Name="AskPicture" Content="Ask before uploading a picture"/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Overlay">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Style="{StaticResource Hint}" Text="The selection never freezes the screen: games, animations and videos keep moving while you drag. The picture is taken the moment you release the mouse."/>
+                    <TextBlock x:Name="DimLabel" Text="Darken outside the selection"/>
+                    <Slider x:Name="Dim" Minimum="0" Maximum="70" Width="300" HorizontalAlignment="Left" TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,2,0,8"/>
+                    <TextBlock Text="Border colour (e.g. #FF3B30 or Lime)"/>
+                    <TextBox x:Name="BorderColor" Width="160" HorizontalAlignment="Left"/>
+                    <CheckBox x:Name="ShowSize" Content="Show the size while dragging"/>
+                    <CheckBox x:Name="PickWindow" Content="A click without dragging takes the window under the pointer"/>
+                    <TextBlock Text="Delay after releasing the mouse (milliseconds, 0 = instant)"/>
+                    <TextBox x:Name="Delay" Width="160" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="DelayErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Output">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="After a capture" FontWeight="SemiBold"/>
+                    <RadioButton x:Name="OutLink" Content="Upload to Peergos and copy the secret link" GroupName="out"/>
+                    <RadioButton x:Name="OutMedia" Content="Copy the picture / video itself to the clipboard (no upload)" GroupName="out"/>
+                    <CheckBox x:Name="Fallback" Content="If the upload fails, copy the picture / video to the clipboard instead" Margin="0,10,0,6"/>
+                    <CheckBox x:Name="Notifications" Content="Show notifications"/>
+                    <CheckBox x:Name="MirrorOn" Content="Also save every capture to this folder:" Margin="0,10,0,2"/>
+                    <DockPanel>
+                        <Button x:Name="MirrorOpen" DockPanel.Dock="Right" Content="📂" ToolTip="Open the folder" Margin="6,2,0,8"/>
+                        <Button x:Name="MirrorBrowse" DockPanel.Dock="Right" Content="Choose…" Margin="6,2,0,8"/>
+                        <TextBox x:Name="MirrorFolder"/>
+                    </DockPanel>
+                    <TextBlock x:Name="MirrorErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                    <TextBlock Text="Local captures folder (every capture is kept here as a backup)" Margin="0,8,0,2"/>
+                    <DockPanel>
+                        <Button x:Name="CacheOpen" DockPanel.Dock="Right" Content="📂" ToolTip="Open the folder" Margin="6,0,0,0"/>
+                        <TextBlock x:Name="CachePath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <TextBlock Text="Delete local copies older than (days, 0 = keep forever)" Margin="0,10,0,0"/>
+                    <TextBox x:Name="KeepDays" Width="160" HorizontalAlignment="Left"/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Hotkeys">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Style="{StaticResource Hint}" Text="Click a box and press the keys (with Ctrl, Alt, Shift or Win). Backspace or Delete clears it."/>
+                    <TextBlock Text="Take picture"/>
+                    <TextBox x:Name="HkPicture" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
+                    <TextBlock x:Name="HkPictureErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                    <TextBlock Text="Record video / stop recording"/>
+                    <TextBox x:Name="HkVideo" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
+                    <TextBlock x:Name="HkVideoErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                    <TextBlock Text="Pause / resume recording"/>
+                    <TextBox x:Name="HkPause" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
+                    <TextBlock x:Name="HkPauseErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                    <TextBlock Text="Switch output (secret link ↔ clipboard)"/>
+                    <TextBox x:Name="HkOutput" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
+                    <TextBlock x:Name="HkOutputErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Appearance">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="Colour scheme"/>
+                    <ComboBox x:Name="SchemeBox" Width="300" HorizontalAlignment="Left" DisplayMemberPath="Name"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Used by every window of the app: Settings, User notes, the recording bar, dialogs and notifications. 'Follow Windows' uses Peergos light or dark to match Windows."/>
+                    <TextBlock x:Name="FontLabel" Text="Font size" Margin="0,8,0,0"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Slider x:Name="FontSlider" Minimum="80" Maximum="160" Width="300" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,2,10,8"/>
+                        <Button x:Name="FontReset" Content="100 %" ToolTip="Back to the normal size"/>
+                    </StackPanel>
+                    <Border x:Name="Preview" BorderThickness="1" BorderBrush="{DynamicResource Line}" Background="{DynamicResource Bg2}" CornerRadius="6" Padding="12" Margin="0,8,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Preview" FontWeight="SemiBold"/>
+                            <TextBlock Text="Link copied to the clipboard – paste it with Ctrl+V." Foreground="{DynamicResource Fg2}" Margin="0,4,0,8"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Normal button"/>
+                                <Button Content="Accent button" Style="{DynamicResource AccentButtonStyle}"/>
+                                <CheckBox Content="Option" IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="General">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <CheckBox x:Name="Autostart" Content="Start Peergos Snap when I sign in to Windows"/>
+                    <CheckBox x:Name="ShowNotes" Content="Show 'User notes…' in the tray menu"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
+                        <Button x:Name="OpenNotes" Content="Open User notes"/>
+                        <Button x:Name="OpenLog" Content="Open log"/>
+                        <Button x:Name="OpenLicenses" Content="Licenses"/>
+                    </StackPanel>
+                    <TextBlock Text="User notes" FontWeight="SemiBold"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Keep a list of wanted changes while you test: fixes, adjustments, new ideas and questions. Tick notes to queue them, then make a Full prompt (everything a new AI session needs), a Short prompt (only the changes, for the same session) or plain User feedback. Statuses (open → queued → sent → done) change only by hand: use 'Mark these N as Sent' after you really sent a prompt. With notes ticked, a bar under the list changes type, area, priority or status of all of them. The Done filter lists finished work for printing or PDF. Ctrl+Z (outside text fields) brings back the last deletions."/>
+                    <TextBlock Text="Source location for AI prompts (optional)" Margin="0,8,0,0"/>
+                    <TextBox x:Name="PromptLocation"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Only if you work on Peergos Snap's source yourself: a folder or repository address that Full prompts should name. Stays on this PC. Empty = a general description without any names or paths."/>
+                    <TextBlock x:Name="About" Style="{StaticResource Hint}" Margin="0,12,0,0"/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
