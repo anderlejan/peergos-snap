@@ -111,6 +111,17 @@ if (Test-Path "$dotnetRoot\LICENSE.txt") { Copy-Item "$dotnetRoot\LICENSE.txt" "
 if (Test-Path "$dotnetRoot\ThirdPartyNotices.txt") { Copy-Item "$dotnetRoot\ThirdPartyNotices.txt" "$Stage\licenses\ThirdPartyNotices-dotnet.txt" }
 Copy-Item "$Root\docs\USER-GUIDE.md" "$Stage\USER-GUIDE.md"
 
+# ---------- privacy: no build-machine paths in shipped binaries ----------
+Step "Privacy check"
+$needles = @($Root, ($Root -replace '\\', '/'), "\Users\$env:USERNAME\", "/Users/$env:USERNAME/") | Select-Object -Unique
+foreach ($f in Get-ChildItem $Stage -Recurse -File -Include 'PeergosSnap*.dll', 'PeergosSnap*.exe', '*.pdb', 'peergos-snap-bridge.jar', '*.js', '*.html', '*.css', '*.json') {
+  $bytes = [IO.File]::ReadAllBytes($f.FullName)
+  $texts = @([Text.Encoding]::ASCII.GetString($bytes), [Text.Encoding]::Unicode.GetString($bytes))
+  foreach ($n in $needles) { foreach ($t in $texts) { if ($t.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { throw "privacy: '$n' found in $($f.FullName)" } } }
+}
+if (Get-ChildItem $Stage -Filter 'PeergosSnap*.pdb') { throw "privacy: debug symbols must not be shipped" }
+Write-Host "no local paths or user names in the shipped app files"
+
 # ---------- self-test of the packaged app ----------
 Step "Self-test (packaged app)"
 $report = "$Root\out\selftest.txt"
