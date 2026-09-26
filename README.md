@@ -11,15 +11,18 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
   *Copy video*, *Save as…* or *Discard*.
 - **Two outputs, switched in the tray menu.** *Secret link* uploads the capture to Peergos and copies a link.
   *Media to clipboard* copies the picture or video file itself, ready for Ctrl+V.
-- **Two Peergos modes.**
-  - **Shared writable folder link (no login).** Uploads into a folder someone shared with
-    `https://<host>/secret/<owner>/<id>#<key>`. You get a read-only link to **just that file**.
-  - **Account.** Logs in, uploads to a folder in your home and creates a new secret link for each capture.
+- **Your Peergos account.** Sign in once (two-factor codes supported). Only the Peergos session is kept, never
+  the password. Every capture gets its own short, read-only secret link, the same kind the Peergos web app creates:
+  `https://peergos.net/secret/<owner>/<id>#<key>?open=true`.
 - **Safe fallback.** If an upload fails, the capture goes to the clipboard instead. Every capture is also kept in
   a local captures folder, and you can mirror all captures to a folder of your choice.
 - **Always know what happened.** After every capture, a notification card (never captured itself) says whether
   you now have the link, the picture/video, or an error with its reason on the clipboard.
-- **Colour schemes and font size** for every window, including User notes, with Windows 11 Fluent controls.
+- **18 colour schemes** (dark, medium and bright) and a font size for every window, including the tray menu,
+  Help and User notes, with Windows 11 Fluent controls.
+- **Automatic updates** from GitHub releases (checked against their SHA256 list), plus *Check for the new version*
+  in Settings.
+- **Built-in Help** with a quick start (tray menu → Help, or F1 in Settings).
 - **Global hotkeys**, which you can change: Ctrl+Shift+1 takes a picture, Ctrl+Shift+2 starts or stops a video.
   You can add hotkeys for pause and for switching the output.
 - **Self-contained.** FFmpeg, a Java runtime, the Peergos client and the .NET runtime are all bundled, so nothing
@@ -33,11 +36,13 @@ Download `PeergosSnap-Setup-x.y.z.exe` from [Releases](https://github.com/anderl
 check it against `SHA256SUMS-x.y.z.txt`. It installs per user to `%LOCALAPPDATA%\Programs\Peergos Snap`, with
 optional autostart. You can choose "all users" in the installer to use Program Files instead.
 
-Next, right-click the tray icon → **Settings → Peergos**, paste the writable folder link and click **Test connection**.
+Next, right-click the tray icon → **Settings → Peergos**, enter your Peergos username and password and click
+**Sign in**. Later versions install themselves automatically.
 
 Guides:
-- [docs/USER-GUIDE.md](docs/USER-GUIDE.md): usage, settings, hotkeys, files, troubleshooting
-- [docs/PEERGOS-INTEGRATION.md](docs/PEERGOS-INTEGRATION.md): how the upload and link protocol works
+- The complete user help is built into the app (tray menu → **Help**); its source is
+  [src/PeergosSnap/help/index.html](src/PeergosSnap/help/index.html).
+- [docs/PEERGOS-INTEGRATION.md](docs/PEERGOS-INTEGRATION.md): how sign-in, uploads and links work
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## Build

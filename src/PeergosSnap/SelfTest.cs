@@ -24,6 +24,8 @@ public static class SelfTest
             report.Add($"{(ok ? "PASS" : "FAIL")} {name}{(detail.Length > 0 ? " – " + detail : "")}");
         }
 
+        // --upload uses the app's saved Peergos sign-in (never a password); read it before switching to test folders.
+        var saved = args.Contains("--upload") ? Settings.Load(AppPaths.SettingsFile) : null;
         var tmp = Path.Combine(Path.GetTempPath(), "PeergosSnap-selftest-" + Environment.ProcessId);
         AppPaths.Override(Path.Combine(tmp, "data"), Path.Combine(tmp, "local"));
         try
@@ -36,6 +38,8 @@ public static class SelfTest
             Check("notes module bundled", File.Exists(Path.Combine(AppPaths.AppDir, "usernotes", "usernotes-ui.js")) &&
                                           File.Exists(Path.Combine(AppPaths.AppDir, "notes-host", "host.js")));
             Check("licences bundled", File.Exists(Path.Combine(AppPaths.AppDir, "licenses", "THIRD-PARTY-NOTICES.md")));
+            Check("help bundled", File.Exists(Path.Combine(AppPaths.AppDir, "help", "index.html")) &&
+                                  File.Exists(Path.Combine(AppPaths.AppDir, "help", "help.js")));
 
             // Picture
             var screen = Native.MonitorAt(0, 0);
@@ -61,28 +65,42 @@ public static class SelfTest
                     $"{new FileInfo(video).Length} bytes; {FirstLine(probe, "Video:")}");
                 Check("video duration ≈ 3 s", probe.Contains("Duration: 00:00:02") || probe.Contains("Duration: 00:00:03"), FirstLine(probe, "Duration"));
                 rec.Cleanup();
+
+                // Mouse pointer option: the same spot recorded with the pointer shown and hidden must differ there.
+                Native.GetCursorPos(out var before);
+                int cx = rect.X + 100, cy = rect.Y + 50;
+                Native.SetCursorPos(cx, cy);
+                Thread.Sleep(300);
+                var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true }, rect);
+                var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
+                var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
+                Native.SetCursorPos(before.X, before.Y);
+                int w = Geometry.EvenSize(rect).Width;
+                int changed = Diff(withPointer, withoutPointer, w, 100, 50, 14, 20);
+                int noise = Diff(withoutPointer, withoutAgain, w, 100, 50, 14, 20);
+                Check("mouse pointer shown / hidden in videos", changed >= 20 && noise <= 3,
+                    $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it");
             }
 
             // Bridge
             if (Uploader.BridgeAvailable)
             {
-                var link = Environment.GetEnvironmentVariable("PEERGOS_SNAP_TEST_LINK");
-                if (args.Contains("--upload") && !string.IsNullOrEmpty(link))
+                var r = Run(AppPaths.JavaExe, ["-cp", Path.Combine(AppPaths.BridgeDir, "peergos-snap-bridge.jar") + ";" + Path.Combine(AppPaths.BridgeDir, "Peergos.jar"),
+                    "snap.bridge.PeergosBridge", "nonsense"], stdoutOnly: true);
+                Check("bridge starts", r.Contains("\"ok\":false") && r.Contains("unknown command"), r.Trim());
+                if (saved != null)
                 {
-                    s.Storage = StorageMode.SharedFolder;
-                    s.FolderLink = link;
-                    s.FolderLinkPassword = Environment.GetEnvironmentVariable("PEERGOS_SNAP_TEST_LINK_PASSWORD") ?? "";
-                    var up = Path.Combine(AppPaths.CacheDir, $"selftest_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png");
-                    File.Copy(pic, up);
-                    int lastPct = -1;
-                    var r = Uploader.UploadAsync(s, up, p => lastPct = p).Result;
-                    Check("peergos upload", r.Ok && r.Link != null && r.Link.Contains("#"), r.Ok ? r.Link! + " (progress " + lastPct + "%)" : r.Error ?? "");
-                }
-                else
-                {
-                    var r = Run(AppPaths.JavaExe, ["-cp", Path.Combine(AppPaths.BridgeDir, "peergos-snap-bridge.jar") + ";" + Path.Combine(AppPaths.BridgeDir, "Peergos.jar"),
-                        "snap.bridge.PeergosBridge", "nonsense"], stdoutOnly: true);
-                    Check("bridge starts", r.Contains("\"ok\":false") && r.Contains("unknown command"), r.Trim());
+                    if (!saved.PeergosConfigured) Check("peergos upload", false, "not signed in to Peergos in the app");
+                    else
+                    {
+                        var up = Path.Combine(AppPaths.CacheDir, $"selftest_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.png");
+                        File.Copy(pic, up);
+                        int lastPct = -1;
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        var u = Uploader.UploadAsync(saved, up, p => lastPct = p).Result;
+                        Check("peergos upload with short secret link", u.Ok && PeergosLinks.IsShortSecretLink(u.Link),
+                            u.Ok ? $"{u.Link} ({u.PeergosPath}, {sw.Elapsed.TotalSeconds:0.0} s, progress {lastPct}%)" : u.Error ?? "");
+                    }
                 }
             }
         }
@@ -100,6 +118,36 @@ public static class SelfTest
         var i = Array.IndexOf(args, "--report");
         if (i >= 0 && i + 1 < args.Length) File.WriteAllText(args[i + 1], text, new UTF8Encoding(false));
         return failed == 0 ? 0 : 1;
+    }
+
+    /// <summary>Records ~1 s of the region and returns one frame as RGB bytes.</summary>
+    static byte[] FrameOf(Settings s, PxRect rect)
+    {
+        var rec = new Recorder(rect, s);
+        rec.Start();
+        Thread.Sleep(1200);
+        var video = rec.StopAsync().Result;
+        var raw = Path.Combine(Path.GetDirectoryName(video)!, "frame.rgb");
+        Run(AppPaths.FfmpegExe, ["-hide_banner", "-loglevel", "error", "-y", "-i", video, "-vf", "select=eq(n\\,5)", "-frames:v", "1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", raw]);
+        var bytes = File.Exists(raw) ? File.ReadAllBytes(raw) : [];
+        rec.Cleanup();
+        return bytes;
+    }
+
+    /// <summary>Pixels (in a w×h box at x,y) whose colour differs clearly between two RGB frames.</summary>
+    static int Diff(byte[] a, byte[] b, int width, int x, int y, int w, int h)
+    {
+        if (a.Length == 0 || a.Length != b.Length) return -1;
+        int n = 0;
+        for (int yy = y; yy < y + h; yy++)
+            for (int xx = x; xx < x + w; xx++)
+            {
+                int i = (yy * width + xx) * 3;
+                if (i + 2 >= a.Length) continue;
+                if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 60) n++;
+            }
+        return n;
     }
 
     static string FirstLine(string text, string needle) =>

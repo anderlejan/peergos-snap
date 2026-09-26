@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Peergos Snap Help</title>
+<link rel="stylesheet" href="help.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="6" width="28" height="22" rx="6"/><rect x="10" y="3" width="12" height="5" rx="1.5"/><circle cx="16" cy="17" r="7" class="lens"/><circle cx="16" cy="17" r="3.5"/></svg>
+    <div>
+      <h1>Peergos Snap Help</h1>
+      <div class="version" id="version">Version</div>
+    </div>
+  </div>
+  <label class="search">
+    <span class="sr">Search the help</span>
+    <input id="q" type="search" placeholder="Search the help…  (Ctrl+F)" autocomplete="off" spellcheck="false">
+  </label>
+</header>
+
+<div class="layout">
+<nav id="toc" aria-label="Contents"></nav>
+
+<main id="content">
+<p id="noresult" class="noresult" hidden>Nothing found. Try another word, or clear the search.</p>
+
+<section id="quick-start" data-keywords="start begin first setup install sign in">
+<h2>Quick start</h2>
+<p>Peergos Snap lives in the Windows notification area (the icons next to the clock). It takes pictures and short videos of any part of your screen and gives you a <strong>link</strong> to share them, or puts the picture or video itself on the clipboard.</p>
+<ol class="steps">
+  <li><strong>Sign in to Peergos.</strong> Right-click the Peergos Snap icon → <em>Settings…</em> → <em>Peergos</em>. Enter your username and password and click <em>Sign in</em>. You do this once.</li>
+  <li><strong>Take a picture.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> (or left-click the icon). Drag a rectangle over the part of the screen you want and let go of the mouse.</li>
+  <li><strong>Share it.</strong> A card at the bottom right says <em>Link copied to the clipboard</em>. Paste the link with <kbd>Ctrl</kbd>+<kbd>V</kbd> into a chat, an e-mail or a document.</li>
+  <li><strong>Record a video.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, drag over the area to record and let go: recording starts. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again (or click <em>Stop</em>), then choose <em>Upload &amp; copy link</em>.</li>
+  <li><strong>Want the picture itself instead of a link?</strong> Right-click the icon → <em>Output</em> → <em>Media to clipboard</em>. Now every capture is copied as a picture or video file, ready to paste.</li>
+</ol>
+<p class="tip">Press <kbd>F1</kbd> in the Settings window to open the help for the page you are on.</p>
+</section>
+
+<section id="tray" data-keywords="icon notification area menu right click left click hidden pin quit">
+<h2>The Peergos Snap icon</h2>
+<p>The icon is a small green camera in the notification area. If you don't see it, click the <strong>^</strong> arrow next to the clock and drag the camera onto the taskbar so it always stays visible.</p>
+<h3 id="tray-click">Left click</h3>
+<p>A left click takes a picture, or starts a video, depending on what you chose under <em>Tray click takes</em> in the menu. While a video is recording, a left click stops it.</p>
+<h3 id="tray-colors">What the icon shows</h3>
+<table>
+  <tr><th>Icon</th><th>Meaning</th></tr>
+  <tr><td>Green camera</td><td>Ready.</td></tr>
+  <tr><td>Camera with a red dot</td><td>A video is being recorded.</td></tr>
+  <tr><td>Camera with an orange dot</td><td>The recording is paused.</td></tr>
+  <tr><td>Blue camera</td><td>A capture is being uploaded to Peergos.</td></tr>
+</table>
+<p>Hover over the icon to see what a click will do and where captures go.</p>
+<h3 id="tray-menu">The menu (right click)</h3>
+<table>
+  <tr><th>Menu item</th><th>What it does</th></tr>
+  <tr><td>Take picture</td><td>Starts selecting an area for a picture.</td></tr>
+  <tr><td>Record video / Stop recording</td><td>Starts selecting an area to record, or stops the running recording.</td></tr>
+  <tr><td>Pause / Resume recording, Cancel recording</td><td>Shown while recording.</td></tr>
+  <tr><td>Tray click takes: Picture / Video</td><td>What a left click on the icon does.</td></tr>
+  <tr><td>Output: Secret link / Media to clipboard</td><td>Where captures go (see <a href="#output">Where your capture goes</a>).</td></tr>
+  <tr><td>Videos: Show mouse pointer</td><td>Whether the mouse pointer is visible in videos.</td></tr>
+  <tr><td>Copy last link</td><td>Copies the link of the last upload again.</td></tr>
+  <tr><td>Open captures folder</td><td>Opens the folder where every capture is also kept on your PC.</td></tr>
+  <tr><td>Settings…</td><td>All options.</td></tr>
+  <tr><td>User notes…</td><td>Your list of wanted changes (can be hidden in Settings → General).</td></tr>
+  <tr><td>Help</td><td>This help.</td></tr>
+  <tr><td>Quit</td><td>Closes Peergos Snap. Start it again from the Start menu.</td></tr>
+</table>
+</section>
+
+<section id="pictures" data-keywords="picture screenshot capture select area drag window escape cancel delay png jpg monitor game">
+<h2>Taking a picture</h2>
+<ol class="steps">
+  <li>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>, left-click the icon (when it takes pictures), or choose <em>Take picture</em> in the menu.</li>
+  <li>A short hint appears at the top of the screen. <strong>The screen does not freeze:</strong> games, animations and videos keep moving under the mouse, so you can wait for the right moment.</li>
+  <li>Drag a rectangle over what you want. The size is shown next to it.</li>
+  <li>Let go of the mouse. The picture is taken at that very moment.</li>
+</ol>
+<ul>
+  <li><strong>A whole window:</strong> just click once without dragging. The window under the mouse is outlined before you click.</li>
+  <li><strong>Cancel:</strong> press <kbd>Esc</kbd> or click the right mouse button.</li>
+  <li><strong>Several monitors:</strong> you can drag across monitors.</li>
+  <li><strong>Need a moment after letting go?</strong> Set a delay in Settings → Overlay, for example to let an animation reach the right frame.</li>
+  <li><strong>Games:</strong> for the best results run the game in a window or borderless window rather than exclusive full screen.</li>
+</ul>
+<p>What happens next depends on the output: see <a href="#output">Where your capture goes</a>.</p>
+</section>
+
+<section id="videos" data-keywords="video record recording stop pause resume cancel mp4 webm mouse pointer cursor frame bar finish dialog sound audio">
+<h2>Recording a video</h2>
+<ol class="steps">
+  <li>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, choose <em>Record video</em> in the menu, or left-click the icon when it is set to take videos.</li>
+  <li>Drag over the area to record and let go. Recording starts at once (or after the delay you set).</li>
+  <li>A dashed frame marks the area, and a small bar next to it shows the time with <em>Stop</em>, <em>Pause</em> and <em>Cancel</em>. <strong>The frame and the bar never appear in the video</strong>, even when you record the whole screen.</li>
+  <li>To finish, click <em>Stop</em>, press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again, or left-click the icon.</li>
+</ol>
+<h3 id="videos-finish">After a recording</h3>
+<p>A short window asks what to do with the video:</p>
+<table>
+  <tr><th>Button</th><th>Result</th></tr>
+  <tr><td>▶ Play it first</td><td>Watch the video before you decide.</td></tr>
+  <tr><td>Upload &amp; copy link</td><td>Uploads to Peergos and copies the link.</td></tr>
+  <tr><td>Copy video</td><td>Copies the video file, to paste into a chat, an e-mail or a folder. Nothing is uploaded.</td></tr>
+  <tr><td>Save as…</td><td>Saves a copy wherever you like. Nothing is uploaded.</td></tr>
+  <tr><td>Discard</td><td>Deletes the video.</td></tr>
+</table>
+<p>Closing the window (or pressing <kbd>Esc</kbd>) keeps the video only on your PC, in the captures folder.</p>
+<h3 id="videos-pause">Pause and cancel</h3>
+<p><em>Pause</em> stops recording until you click <em>Resume</em>; the parts are joined into one video. You can also pause from the menu or with your own hotkey (Settings → Hotkeys). <em>Cancel</em> throws the recording away.</p>
+<h3 id="videos-pointer">Mouse pointer</h3>
+<p>Choose whether the mouse pointer appears in videos: menu → <em>Videos</em> → <em>Show mouse pointer</em>, or Settings → Capture. Pictures never include the pointer.</p>
+<h3 id="videos-format">Format and quality</h3>
+<p>Videos are MP4 by default (plays everywhere); WebM is available too. Frame rate and quality are in Settings → Capture. Videos are recorded without sound.</p>
+</section>
+
+<section id="output" data-keywords="output secret link clipboard paste media fallback mirror folder local copy captures folder ask before upload">
+<h2>Where your capture goes</h2>
+<p>There are two outputs. Switch between them in the menu (<em>Output</em>), in Settings → Output, or with your own hotkey.</p>
+<h3 id="output-link">Secret link (upload to Peergos)</h3>
+<p>The capture is uploaded to your Peergos account, into the folder set in Settings → Peergos (normally <em>PeergosSnap</em>). A <strong>secret link</strong> to just that file is created and copied. It looks like this:</p>
+<p class="sample">https://peergos.net/secret/z59…/1234567890#exampleKey1?open=true</p>
+<p>Anyone who has the link can open and view that one file in a web browser, without an account. They cannot change it and cannot see your other files.</p>
+<h3 id="output-media">Media to clipboard (no upload)</h3>
+<p>Pictures are copied as a picture: paste them into chat apps, image editors, documents or e-mails. Videos are copied as a file: paste them into a chat, an e-mail or a folder. Nothing is uploaded.</p>
+<h3 id="output-fallback">When an upload fails</h3>
+<p>If you are offline or Peergos cannot be reached, the picture or video is put on the clipboard instead, so you can still paste it (you can switch this off in Settings → Output). The card tells you why the upload failed.</p>
+<h3 id="output-local">Copies on your PC</h3>
+<ul>
+  <li>Every capture is also kept in the <strong>captures folder</strong>: menu → <em>Open captures folder</em>. Old copies are deleted after 30 days; change that in Settings → Output (0 keeps them forever).</li>
+  <li>To keep every capture in a folder of your own as well, turn on <em>Also save every capture to this folder</em> in Settings → Output.</li>
+  <li><em>Ask before uploading a picture</em> (Settings → Capture) lets you decide for each picture.</li>
+</ul>
+</section>
+
+<section id="notifications" data-keywords="notification card message link copied failed toast progress">
+<h2>What happened? The notification card</h2>
+<p>After every capture a card appears at the bottom right for a few seconds. Warnings and errors stay longer, and hovering over the card keeps it open. The card is never part of your pictures or videos.</p>
+<table>
+  <tr><th>Card</th><th>On your clipboard now</th></tr>
+  <tr><td><span class="dot ok"></span><strong>Link copied to the clipboard</strong></td><td>The link. Buttons: <em>Open link</em>, <em>Show file</em>.</td></tr>
+  <tr><td><span class="dot ok"></span><strong>Picture / video copied to the clipboard</strong></td><td>The picture itself, or the video file.</td></tr>
+  <tr><td><span class="dot warn"></span><strong>Upload failed – the picture is on the clipboard instead</strong></td><td>The picture or video; the card says why the upload failed.</td></tr>
+  <tr><td><span class="dot warn"></span><strong>… copied to the clipboard (not uploaded)</strong></td><td>The picture or video, because you are not signed in. Button: <em>Sign in</em>.</td></tr>
+  <tr><td><span class="dot err"></span><strong>… failed</strong></td><td>Nothing new. The card gives the reason; the file stays in the captures folder.</td></tr>
+</table>
+<p>While uploading, the card shows the progress. <em>Show notifications</em> in Settings → Output hides the green cards; orange and red ones always appear.</p>
+</section>
+
+<section id="peergos" data-keywords="peergos account sign in sign out login password two-factor authenticator code server folder session link share">
+<h2>Your Peergos account</h2>
+<p>Links are created by your Peergos account, so Peergos Snap needs you to sign in once.</p>
+<ol class="steps">
+  <li>Right-click the icon → <em>Settings…</em> → <em>Peergos</em>.</li>
+  <li>Leave the server as it is (<em>https://peergos.net</em>) unless your account is on another Peergos server.</li>
+  <li>Enter your username and password. Click the eye button next to the password to see what you typed.</li>
+  <li>Click <em>Sign in</em>. If your account uses two-factor login, enter the code from your authenticator app when asked.</li>
+</ol>
+<ul>
+  <li><strong>Your password is not kept.</strong> It is only used to sign in. Peergos Snap then stays signed in, protected for your Windows account, until you click <em>Sign out</em>.</li>
+  <li>If you change your password in Peergos, you are asked to sign in again.</li>
+  <li><em>Test connection</em> checks that uploading works.</li>
+  <li><em>Folder for captures</em> is where uploads go in your Peergos home. It is created when missing.</li>
+  <li>Accounts that only allow a security key (not an authenticator app) as second factor cannot sign in here; add an authenticator app to your Peergos account.</li>
+</ul>
+<h3 id="peergos-links">Your shared files in Peergos</h3>
+<p>Everything you upload is in the capture folder of your Peergos account, where you can open, rename or delete it in Peergos as usual. To stop sharing a file, delete it in Peergos.</p>
+</section>
+
+<section id="hotkeys" data-keywords="hotkey shortcut keyboard keys ctrl shift change conflict escape">
+<h2>Hotkeys</h2>
+<table>
+  <tr><th>Keys</th><th>Action</th></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td><td>Take a picture</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></td><td>Start recording a video / stop the recording</td></tr>
+  <tr><td>(not set)</td><td>Pause / resume the recording</td></tr>
+  <tr><td>(not set)</td><td>Switch the output (secret link ↔ clipboard)</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>Cancel while selecting an area</td></tr>
+</table>
+<p>Change them in Settings → Hotkeys: click a box and press the keys you want, together with <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, <kbd>Shift</kbd> or <kbd>Win</kbd>. <kbd>Backspace</kbd> or <kbd>Delete</kbd> clears a box. A red note means another program already uses that combination; choose another one.</p>
+</section>
+
+<section id="settings" data-keywords="settings options preferences">
+<h2>Settings</h2>
+<p>Right-click the icon → <em>Settings…</em>. Changes apply and are saved at once; there is no Save button. A red note next to an option means the value can't be used yet (for example a folder that does not exist). Press <kbd>F1</kbd> for help on the page you are on.</p>
+
+<h3 id="settings-peergos">Peergos</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th></tr>
+  <tr><td>Server, Username, Password, Sign in</td><td>Sign in to your Peergos account (see <a href="#peergos">Your Peergos account</a>).</td></tr>
+  <tr><td>Test connection, Sign out</td><td>Shown when you are signed in.</td></tr>
+  <tr><td>Folder for captures</td><td>The folder in your Peergos home for uploads. Default: PeergosSnap.</td></tr>
+</table>
+
+<h3 id="settings-capture">Capture</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
+  <tr><td>A left click on the tray icon</td><td>Takes a picture, or starts / stops a video.</td><td>Picture</td></tr>
+  <tr><td>Picture format</td><td>PNG keeps every detail; JPG makes smaller files for photos and games.</td><td>PNG</td></tr>
+  <tr><td>Video format</td><td>MP4 plays everywhere; WebM is an open alternative.</td><td>MP4</td></tr>
+  <tr><td>Video frame rate</td><td>Pictures per second: 15, 24, 30 or 60.</td><td>30</td></tr>
+  <tr><td>Video quality</td><td>Left gives smaller files, right gives sharper videos.</td><td>Middle</td></tr>
+  <tr><td>Show the mouse pointer in videos</td><td>Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
+  <tr><td>Ask before uploading a picture</td><td>Asks each time; if you say no, the picture is copied instead.</td><td>Off</td></tr>
+</table>
+
+<h3 id="settings-overlay">Overlay</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
+  <tr><td>Darken outside the selection</td><td>0 % keeps the screen fully clear while you select.</td><td>0 %</td></tr>
+  <tr><td>Border colour</td><td>Colour of the selection frame, e.g. <em>#FF3B30</em> or <em>Lime</em>.</td><td>Red</td></tr>
+  <tr><td>Show the size while dragging</td><td>Width × height next to the selection.</td><td>On</td></tr>
+  <tr><td>A click without dragging takes the window under the pointer</td><td>Quick capture of a whole window.</td><td>On</td></tr>
+  <tr><td>Delay after releasing the mouse</td><td>Waits this many milliseconds before capturing. 0 = instantly.</td><td>0</td></tr>
+</table>
+
+<h3 id="settings-output">Output</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
+  <tr><td>After a capture</td><td>Upload and copy the secret link, or copy the picture / video itself.</td><td>Secret link</td></tr>
+  <tr><td>If the upload fails, copy … to the clipboard instead</td><td>So you can always paste something.</td><td>On</td></tr>
+  <tr><td>Show notifications</td><td>Hides the green cards when off; warnings and errors still show.</td><td>On</td></tr>
+  <tr><td>Also save every capture to this folder</td><td>An extra copy of every capture in a folder you choose.</td><td>Off</td></tr>
+  <tr><td>Local captures folder</td><td>Where every capture is kept on your PC; 📂 opens it.</td><td></td></tr>
+  <tr><td>Delete local copies older than</td><td>Days; 0 keeps them forever.</td><td>30</td></tr>
+</table>
+
+<h3 id="settings-hotkeys">Hotkeys</h3>
+<p>See <a href="#hotkeys">Hotkeys</a>.</p>
+
+<h3 id="settings-appearance">Appearance</h3>
+<p>Choose a <strong>colour scheme</strong> and the <strong>font size</strong> for the whole app: Settings, this Help, User notes, the menu, the recording bar, dialogs and notification cards.</p>
+<ul>
+  <li><strong>Dark:</strong> Peergos dark, Graphite, Midnight, Forest night, Plum night, High contrast.</li>
+  <li><strong>Medium brightness:</strong> Slate, Storm blue, Moss, Mocha, Dusk violet, Teal stone.</li>
+  <li><strong>Bright, soft on the eyes:</strong> Peergos light, Paper, Sepia, Mint, Sky, Lavender mist.</li>
+  <li><strong>Follow Windows</strong> uses Peergos light or Peergos dark, matching your Windows setting.</li>
+</ul>
+<p>Font size goes from 80 % to 160 %; <em>100 %</em> resets it.</p>
+
+<h3 id="settings-general">General</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
+  <tr><td>Start Peergos Snap when I sign in to Windows</td><td>The icon is there whenever you need it.</td><td>As chosen at installation</td></tr>
+  <tr><td>Check for new versions automatically</td><td>Looks for a new version when Peergos Snap starts and once a day.</td><td>On</td></tr>
+  <tr><td>Install new versions automatically</td><td>Installs them by itself (never during a recording or upload).</td><td>On</td></tr>
+  <tr><td>Check for the new version</td><td>Looks right now; <em>Install now</em> appears if there is one.</td><td></td></tr>
+  <tr><td>Show 'User notes…' in the tray menu</td><td>Hides or shows the menu item.</td><td>On</td></tr>
+  <tr><td>Source location for AI prompts</td><td>Only for people who change Peergos Snap themselves; see <a href="#user-notes">User notes</a>.</td><td>Empty</td></tr>
+</table>
+</section>
+
+<section id="updates" data-keywords="update new version automatic install check upgrade">
+<h2>Updates</h2>
+<p>Peergos Snap looks for a new version when it starts and once a day. When it finds one, it downloads it, checks that the download is complete and genuine, installs it and starts again, usually within a minute. It never does this during a recording or an upload; it waits until you are done.</p>
+<ul>
+  <li>To decide yourself, turn off <em>Install new versions automatically</em> (Settings → General). A card then tells you about a new version, with an <em>Install now</em> button.</li>
+  <li>To look right now, click <em>Check for the new version</em> in Settings → General.</li>
+  <li>After an update a card tells you the new version number. Your settings, sign-in and notes are kept.</li>
+</ul>
+</section>
+
+<section id="user-notes" data-keywords="user notes feedback prompt ideas bugs testing done list print pdf">
+<h2>User notes</h2>
+<p>User notes is a list of changes you would like in Peergos Snap: things to fix, adjust or add, and questions. Open it from the menu (<em>User notes…</em>).</p>
+<ul>
+  <li><strong>Add a note</strong> with <em>+ Add note</em>. Give it a short title, details, a type (fix, adjustment, new feature, question), an area and a priority.</li>
+  <li><strong>Tick notes</strong> to queue them. Then make a text from them:
+    <ul>
+      <li><em>Full prompt</em>: everything someone new needs to make the changes, for example for an AI coding assistant.</li>
+      <li><em>Short prompt</em>: only the changes, for a follow-up in the same conversation.</li>
+      <li><em>User feedback</em>: plain text grouped into things to fix, adjust, add and questions.</li>
+    </ul>
+    Copy the text, or save it as a file.</li>
+  <li><strong>Statuses</strong> (open → queued → sent → done) change only when you change them. After you really sent a prompt, click <em>Mark these N as Sent</em>. When a change has arrived, set the note to <em>Done</em>.</li>
+  <li><strong>Several notes at once:</strong> while notes are ticked, a bar under the list changes their type, area, priority or status, or deletes them.</li>
+  <li><strong>Done list:</strong> the <em>Done</em> filter lists finished work; print it or save it as PDF.</li>
+  <li><strong>Undo:</strong> <kbd>Ctrl</kbd>+<kbd>Z</kbd> (outside text fields) brings back the last five deletions.</li>
+</ul>
+<p>If you change Peergos Snap's source yourself, enter where it is under <em>Source location for AI prompts</em> (Settings → General) so full prompts can name it. Otherwise leave it empty.</p>
+</section>
+
+<section id="troubleshooting" data-keywords="problem help not working trouble faq black hotkey sign in session offline link clipboard icon">
+<h2>Problems and questions</h2>
+<dl class="faq">
+  <dt>Nothing happens when I press a hotkey.</dt>
+  <dd>Another program probably uses the same keys. Settings → Hotkeys shows a red note next to such a hotkey; choose another combination. The menu always works.</dd>
+  <dt>The card says I am not signed in, or that my session has ended.</dt>
+  <dd>Sign in again in Settings → Peergos. This happens after you signed out, or after you changed your Peergos password. Until then captures are copied to the clipboard.</dd>
+  <dt>The upload failed.</dt>
+  <dd>Check your internet connection. Your capture was put on the clipboard and is in the captures folder (menu → <em>Open captures folder</em>), so nothing is lost.</dd>
+  <dt>The link was not copied.</dt>
+  <dd>Sometimes another program keeps the clipboard busy for a moment. Use menu → <em>Copy last link</em>, or <em>Open link</em> on the card.</dd>
+  <dt>A video of a game is black.</dt>
+  <dd>Some games in exclusive full screen can't be recorded. Switch the game to windowed or borderless mode.</dd>
+  <dt>The mouse pointer is (not) in my video.</dt>
+  <dd>Menu → <em>Videos</em> → <em>Show mouse pointer</em> turns it on or off for the next recording.</dd>
+  <dt>I can't find the icon.</dt>
+  <dd>Click the <strong>^</strong> next to the clock; drag the camera onto the taskbar to keep it visible. If Peergos Snap isn't running, start it from the Start menu.</dd>
+  <dt>How do I stop Peergos Snap from starting with Windows?</dt>
+  <dd>Settings → General → untick <em>Start Peergos Snap when I sign in to Windows</em>.</dd>
+  <dt>Who can see what I upload?</dt>
+  <dd>Only people who have the link can open that one file. Your other files stay private. To stop sharing a file, delete it in Peergos.</dd>
+</dl>
+</section>
+</main>
+</div>
+<script src="help.js"></script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 /*
- * Peergos Snap bridge - uploads a capture into Peergos and prints a share link.
+ * Peergos Snap bridge - signs in to Peergos, uploads a capture and prints its secret link.
  * Copyright (C) 2026 anderlejan
  *
  * This program is free software: you can redistribute it and/or modify it under the terms of the
@@ -13,11 +13,17 @@ import peergos.server.Builder;
 import peergos.server.simulation.FileAsyncReader;
 import peergos.shared.Crypto;
 import peergos.shared.NetworkAccess;
+import peergos.shared.OnlineState;
+import peergos.shared.crypto.asymmetric.PublicSigningKey;
+import peergos.shared.crypto.symmetric.SymmetricKey;
+import peergos.shared.login.LoginCache;
+import peergos.shared.login.OfflineAccountStore;
 import peergos.shared.login.mfa.MultiFactorAuthMethod;
 import peergos.shared.login.mfa.MultiFactorAuthResponse;
 import peergos.shared.user.LinkProperties;
+import peergos.shared.user.LoginData;
 import peergos.shared.user.UserContext;
-import peergos.shared.user.fs.AsyncReader;
+import peergos.shared.user.UserStaticData;
 import peergos.shared.user.fs.FileWrapper;
 import peergos.shared.util.Either;
 import peergos.shared.util.Futures;
@@ -25,31 +31,37 @@ import peergos.shared.util.Futures;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Command line bridge used by Peergos Snap (the Windows app). Secrets are read from stdin, never from
- * the command line, so they do not show up in process listings.
+ * Command line bridge used by Peergos Snap (the Windows app). Secrets travel on stdin only, never on the
+ * command line, so they do not show up in process listings.
  *
  * <pre>
- * folder  --server URL --link SECRET_LINK --file PATH [--name NAME]
- *         stdin line 1: the link's user password (empty line if none)
- * account --server URL --user NAME --file PATH [--folder SUBFOLDER] [--name NAME]
- *         stdin line 1: account password, line 2: TOTP code (empty if none)
- * check   --server URL --link SECRET_LINK           (stdin as for folder)
- * account-check --server URL --user NAME            (stdin as for account)
+ * signin --server URL --user NAME
+ *        stdin: the password. If the account asks for a second factor, "@mfa totp" is printed on stderr
+ *        and the code is read as the next stdin line.
+ *        Result: {"ok":true,"session":"...","home":"/NAME"}. The session (login root key + encrypted
+ *        entry data, like the web app's "stay logged in") replaces the password: it is all later
+ *        commands need, and the password is not kept anywhere.
+ * check  --server URL --user NAME                               stdin: session
+ * upload --server URL --user NAME --file PATH [--folder F] [--name N]    stdin: session
+ *        Uploads into /NAME/F (created when missing) and creates a read-only secret link to the file,
+ *        in the same short form as the web app: https://HOST/secret/OWNER/ID#KEY?open=true
  * Progress: "@progress N" lines (percent) on stderr while uploading.
  * </pre>
  *
- * Output: one JSON line on stdout, {"ok":true,"link":"...","path":"..."} or {"ok":false,"error":"..."}.
+ * Output: one JSON line on stdout, {"ok":true,...} or {"ok":false,"error":"..."}.
  */
 public class PeergosBridge {
 
@@ -76,71 +88,139 @@ public class PeergosBridge {
         System.exit(code);
     }
 
+    /** Keeps the login data Peergos hands to its account cache during sign-in (the web app stores the same). */
+    static final class SessionCapture implements LoginCache {
+        volatile LoginData data;
+
+        public CompletableFuture<Boolean> setLoginData(LoginData login) { data = login; return Futures.of(true); }
+        public CompletableFuture<Boolean> removeLoginData(String username) { data = null; return Futures.of(true); }
+        public CompletableFuture<UserStaticData> getEntryData(String username, PublicSigningKey authorisedReader) {
+            return data == null ? Futures.errored(new IllegalStateException("No cached login")) : Futures.of(data.entryPoints);
+        }
+    }
+
     static String run(String[] args) throws Exception {
         if (args.length == 0)
-            throw new IllegalArgumentException("usage: folder|account|check ...");
+            throw new IllegalArgumentException("usage: signin|check|upload ...");
         String cmd = args[0];
+        if (!java.util.Set.of("signin", "check", "upload").contains(cmd))
+            throw new IllegalArgumentException("unknown command " + cmd);
         Map<String, String> a = parse(args);
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         String server = trimSlash(a.getOrDefault("server", "https://peergos.net"));
+        String user = require(a, "user").trim();
         Crypto crypto = Builder.initCrypto();
-        NetworkAccess network = Builder.buildJavaNetworkAccess(new URL(server + "/"), !isLocal(server),
+        NetworkAccess base = Builder.buildJavaNetworkAccess(new URL(server + "/"), !isLocal(server),
                 Optional.of("PeergosSnap"), Optional.empty()).join();
 
         switch (cmd) {
-            case "folder":
-            case "check": {
-                String link = require(a, "link");
-                String userPassword = line(stdin);
-                String relative = secretLinkPath(link, server);
-                UserContext ctx = UserContext.fromSecretLinkV2(relative, () -> Futures.of(userPassword), network, crypto).join();
-                String entry = ctx.getEntryPath().join();
-                FileWrapper dir = ctx.getByPath(entry).join()
-                        .orElseThrow(() -> new IllegalStateException("The shared folder could not be opened"));
-                if (!dir.isDirectory())
-                    throw new IllegalStateException("The link points to a file, not a folder");
-                if (!dir.isWritable())
-                    throw new IllegalStateException("The shared folder link is read-only (it must be a writable link)");
-                if (cmd.equals("check"))
-                    return "{\"ok\":true,\"path\":" + json(entry) + "}";
-                Path file = Path.of(require(a, "file"));
-                String name = a.getOrDefault("name", file.getFileName().toString());
-                name = uniqueName(dir, name, network, crypto);
-                FileWrapper uploaded = upload(dir, name, file, network, crypto);
-                // A read-only capability for just this file; the folder stays private.
-                String fileLink = server + "/" + uploaded.toLink() + "?open=true";
-                return "{\"ok\":true,\"link\":" + json(fileLink) + ",\"path\":" + json(entry + "/" + name) + "}";
-            }
-            case "account":
-            case "account-check": {
-                String user = require(a, "user");
+            case "signin": {
                 String password = line(stdin);
-                String totp = line(stdin);
-                UserContext ctx = UserContext.signIn(user, password, req -> {
-                    if (totp.isEmpty())
-                        return Futures.errored(new IllegalStateException("This account needs a two-factor (TOTP) code"));
-                    MultiFactorAuthMethod m = req.methods.stream()
-                            .filter(x -> x.type == MultiFactorAuthMethod.Type.TOTP)
-                            .findFirst()
-                            .orElseThrow(() -> new IllegalStateException("Only TOTP two-factor login is supported"));
-                    return Futures.of(new MultiFactorAuthResponse(m.credentialId, Either.a(totp)));
-                }, network, crypto).join();
-                String folder = a.getOrDefault("folder", "PeergosSnap").replace('\\', '/');
-                folder = folder.replaceAll("^/+|/+$", "");
-                if (cmd.equals("account-check"))
-                    return "{\"ok\":true,\"path\":" + json("/" + user) + "}";
-                FileWrapper dir = ensureFolder(ctx, "/" + user, folder, network, crypto);
+                if (password.isEmpty())
+                    throw new IllegalArgumentException("Enter the password");
+                SessionCapture capture = new SessionCapture();
+                NetworkAccess network = base.withAccountCache(acc -> new OfflineAccountStore(acc, capture, new OnlineState(() -> Futures.of(true))));
+                UserContext ctx = signIn(user, password, stdin, network, crypto);
+                if (capture.data == null) // e.g. the account was upgraded during sign-in: sign in once more
+                    ctx = signIn(user, password, stdin, network, crypto);
+                if (capture.data == null)
+                    throw new IllegalStateException("Peergos did not allow this account to stay signed in");
+                SymmetricKey root = rootKey(ctx);
+                String session = Base64.getEncoder().encodeToString(root.serialize()) + "."
+                        + Base64.getEncoder().encodeToString(capture.data.entryPoints.serialize());
+                return "{\"ok\":true,\"session\":" + json(session) + ",\"home\":" + json("/" + user) + "}";
+            }
+            case "check": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                ctx.getByPath("/" + user).join().orElseThrow(() -> new IllegalStateException("Home folder not found"));
+                return "{\"ok\":true,\"home\":" + json("/" + user) + ",\"host\":" + json(linkBase(ctx, server)) + "}";
+            }
+            case "upload": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                String folder = a.getOrDefault("folder", "PeergosSnap").replace('\\', '/').replaceAll("^/+|/+$", "");
+                FileWrapper dir = ensureFolder(ctx, "/" + user, folder, base, crypto);
                 Path file = Path.of(require(a, "file"));
-                String name = uniqueName(dir, a.getOrDefault("name", file.getFileName().toString()), network, crypto);
-                upload(dir, name, file, network, crypto);
+                String name = uniqueName(dir, a.getOrDefault("name", file.getFileName().toString()), base, crypto);
+                upload(dir, name, file, base, crypto);
                 String path = "/" + user + (folder.isEmpty() ? "" : "/" + folder) + "/" + name;
+                // Read-only link to just this file, opened directly in the viewer (like the web app's "open" option).
                 LinkProperties props = ctx.createSecretLink(path, false, Optional.empty(), Optional.empty(), "", true).join();
-                String link = server + "/" + ctx.getLinkString(props);
+                String link = linkBase(ctx, server) + "/" + ctx.getLinkString(props) + "?open=true";
                 return "{\"ok\":true,\"link\":" + json(link) + ",\"path\":" + json(path) + "}";
             }
             default:
                 throw new IllegalArgumentException("unknown command " + cmd);
         }
+    }
+
+    static UserContext signIn(String user, String password, BufferedReader stdin, NetworkAccess network, Crypto crypto) {
+        return UserContext.signIn(user, password, req -> {
+            // Ask the app for a code from the user's authenticator app.
+            Optional<MultiFactorAuthMethod> totp = req.methods.stream().filter(m -> m.type.name().equals("TOTP")).findFirst();
+            if (totp.isEmpty())
+                return Futures.errored(new IllegalStateException(
+                        "This account only allows a security key as second factor, which Peergos Snap cannot use. Add an authenticator app in Peergos."));
+            PROGRESS.println("@mfa totp");
+            PROGRESS.flush();
+            String code;
+            try {
+                code = line(stdin).trim();
+            } catch (Exception e) {
+                return Futures.errored(e);
+            }
+            if (code.isEmpty())
+                return Futures.errored(new IllegalStateException("Sign-in cancelled: no two-factor code"));
+            return Futures.of(new MultiFactorAuthResponse(totp.get().credentialId, Either.a(code)));
+        }, true, false, network, crypto, s -> {}).join();
+    }
+
+    static UserContext restore(String user, String session, NetworkAccess network, Crypto crypto) {
+        String[] parts = session.trim().split("\\.");
+        if (parts.length != 2)
+            throw new IllegalStateException("Not signed in");
+        SymmetricKey root;
+        UserStaticData entry;
+        try {
+            root = SymmetricKey.fromByteArray(Base64.getDecoder().decode(parts[0]));
+            entry = UserStaticData.fromByteArray(Base64.getDecoder().decode(parts[1]));
+        } catch (Exception e) {
+            throw new IllegalStateException("Not signed in");
+        }
+        try {
+            return UserContext.restoreContext(user, root, entry, network, crypto, s -> {}).join();
+        } catch (Exception e) {
+            Throwable r = e;
+            while (r.getCause() != null && r.getCause() != r)
+                r = r.getCause();
+            String m = String.valueOf(r.getMessage());
+            if (m.contains("Legacy accounts"))
+                throw new IllegalStateException(m);
+            if (m.contains("decrypt") || m.contains("Decrypt") || m.contains("MAC") || m.contains("Invalid") || m.contains("key"))
+                throw new IllegalStateException("Session expired: sign in again (" + m + ")");
+            throw e;
+        }
+    }
+
+    /** The login root key is what the web app keeps to stay signed in; UserContext does not expose it. */
+    static SymmetricKey rootKey(UserContext ctx) throws Exception {
+        Field f = UserContext.class.getDeclaredField("rootKey");
+        f.setAccessible(true);
+        return (SymmetricKey) f.get(ctx);
+    }
+
+    /** https://HOST as the web app builds it (the owner's link host), falling back to the server address. */
+    static String linkBase(UserContext ctx, String server) {
+        String host = "";
+        try {
+            host = ctx.getLinkHost().join();
+        } catch (Exception ignored) {
+        }
+        if (host == null || host.isBlank() || host.equals("localhost"))
+            return server;
+        host = host.trim();
+        if (host.startsWith("http://") || host.startsWith("https://"))
+            return trimSlash(host);
+        return (host.startsWith("localhost:") ? "http://" : "https://") + host;
     }
 
     static FileWrapper upload(FileWrapper dir, String name, Path file, NetworkAccess network, Crypto crypto) throws Exception {
@@ -189,15 +269,6 @@ public class PeergosBridge {
         for (int i = 2; dir.getChild(candidate, crypto.hasher, network).join().isPresent(); i++)
             candidate = base + " (" + i + ")" + ext;
         return candidate;
-    }
-
-    /** "https://host/secret/owner/label#pw" -> "/secret/owner/label#pw" */
-    static String secretLinkPath(String link, String server) {
-        link = link.trim();
-        int i = link.indexOf("/secret/");
-        if (i < 0)
-            throw new IllegalArgumentException("Not a Peergos secret link (expected .../secret/<owner>/<id>#<key>)");
-        return link.substring(i);
     }
 
     static boolean isLocal(String server) {

@@ -14,39 +14,46 @@
         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="10,3"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
     </Window.Resources>
     <DockPanel Margin="10">
-        <TextBlock DockPanel.Dock="Bottom" Style="{StaticResource Hint}" Margin="2,8,0,0"
-                   Text="Changes apply and are saved at once. Passwords and links are stored encrypted for your Windows account."/>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button x:Name="HelpBtn" DockPanel.Dock="Left" Content="Help" ToolTip="Help for this page (F1)" Margin="0,0,10,0"/>
+            <TextBlock Style="{StaticResource Hint}" Margin="0" VerticalAlignment="Center"
+                       Text="Changes apply and are saved at once. The Peergos sign-in is stored encrypted for your Windows account."/>
+        </DockPanel>
         <TabControl x:Name="Tabs">
             <TabItem Header="Peergos">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
-                    <TextBlock Text="Where captures go" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton x:Name="ModeFolder" Content="Shared writable folder link (no login)" GroupName="st"/>
-                        <RadioButton x:Name="ModeAccount" Content="My Peergos account" GroupName="st"/>
+                    <TextBlock Text="Peergos account" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Sign in once. Every capture is then uploaded to your Peergos account and gets its own secret link, which is copied for you. Your password is only used to sign in and is not kept: Peergos Snap stays signed in (encrypted for your Windows account) until you sign out."/>
+                    <StackPanel x:Name="SignedInPanel" Visibility="Collapsed" Margin="0,4,0,4">
+                        <TextBlock x:Name="SignedInText" FontWeight="SemiBold" Foreground="{DynamicResource Acc}" TextWrapping="Wrap"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button x:Name="TestBtn" Content="Test connection"/>
+                            <Button x:Name="SignOutBtn" Content="Sign out"/>
+                        </StackPanel>
+                        <TextBlock x:Name="TestResult" TextWrapping="Wrap" Margin="0,8,0,0"/>
                     </StackPanel>
-                    <StackPanel x:Name="FolderPanel" Margin="0,8,0,0">
-                        <TextBlock Text="Writable folder secret link"/>
-                        <TextBox x:Name="FolderLink" ToolTip="https://peergos.net/secret/&lt;owner&gt;/&lt;id&gt;#&lt;key&gt;"/>
-                        <TextBlock x:Name="FolderLinkErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
-                        <TextBlock Text="Link password (only if the link has one)"/>
-                        <PasswordBox x:Name="FolderPassword"/>
-                        <TextBlock Style="{StaticResource Hint}" Text="In Peergos: right-click a folder → Share → Secret link, tick 'writable'. Each capture is uploaded into that folder and you get a read-only link to just that file (the folder stays private)."/>
-                    </StackPanel>
-                    <StackPanel x:Name="AccountPanel" Margin="0,8,0,0">
+                    <StackPanel x:Name="SignInPanel">
                         <TextBlock Text="Server"/>
                         <TextBox x:Name="Server"/>
                         <TextBlock Text="Username"/>
                         <TextBox x:Name="Username"/>
                         <TextBlock Text="Password"/>
-                        <PasswordBox x:Name="AccountPassword"/>
-                        <TextBlock Text="Folder in your home (created when missing)"/>
-                        <TextBox x:Name="AccountFolder"/>
-                        <TextBlock Style="{StaticResource Hint}" Text="Each capture gets its own new secret link (read-only). Accounts with two-factor login cannot upload automatically; use a shared writable folder link for those."/>
+                        <Grid Margin="0,2,0,8">
+                            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <PasswordBox x:Name="Password" Margin="0"/>
+                            <TextBox x:Name="PasswordPlain" Margin="0" Visibility="Collapsed"/>
+                            <ToggleButton x:Name="ShowPassword" Grid.Column="1" Margin="6,0,0,0" Padding="10,4" ToolTip="Show the password"
+                                          AutomationProperties.Name="Show password">
+                                <TextBlock x:Name="ShowPasswordGlyph" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" Text="&#xE7B3;"/>
+                            </ToggleButton>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="SignInBtn" Content="Sign in" Style="{DynamicResource AccentButtonStyle}" IsDefault="False"/>
+                            <TextBlock x:Name="SignInResult" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="430"/>
+                        </StackPanel>
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <Button x:Name="TestBtn" Content="Test connection"/>
-                        <TextBlock x:Name="TestResult" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420"/>
-                    </StackPanel>
+                    <TextBlock Text="Folder for captures (in your Peergos home, created when missing)" Margin="0,14,0,0"/>
+                    <TextBox x:Name="AccountFolder"/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Capture">
@@ -126,8 +133,18 @@
             <TabItem Header="Appearance">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Text="Colour scheme"/>
-                    <ComboBox x:Name="SchemeBox" Width="300" HorizontalAlignment="Left" DisplayMemberPath="Name"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Used by every window of the app: Settings, User notes, the recording bar, dialogs and notifications. 'Follow Windows' uses Peergos light or dark to match Windows."/>
+                    <ComboBox x:Name="SchemeBox" Width="320" HorizontalAlignment="Left" DisplayMemberPath="Name" MaxDropDownHeight="520">
+                        <ComboBox.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.HeaderTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource Fg3}" Margin="10,8,0,2"/>
+                                    </DataTemplate>
+                                </GroupStyle.HeaderTemplate>
+                            </GroupStyle>
+                        </ComboBox.GroupStyle>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource Hint}" Text="Dark, medium and bright schemes. They are used by every window of the app: Settings, Help, User notes, the tray menu, the recording bar, dialogs and notifications. 'Follow Windows' uses Peergos light or dark to match Windows."/>
                     <TextBlock x:Name="FontLabel" Text="Font size" Margin="0,8,0,0"/>
                     <StackPanel Orientation="Horizontal">
                         <Slider x:Name="FontSlider" Minimum="80" Maximum="160" Width="300" TickFrequency="10" IsSnapToTickEnabled="True" Margin="0,2,10,8"/>
@@ -149,6 +166,14 @@
             <TabItem Header="General">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <CheckBox x:Name="Autostart" Content="Start Peergos Snap when I sign in to Windows"/>
+                    <TextBlock Text="Updates" FontWeight="SemiBold" Margin="0,10,0,2"/>
+                    <CheckBox x:Name="AutoCheck" Content="Check for new versions automatically (at start and once a day)"/>
+                    <CheckBox x:Name="AutoInstall" Content="Install new versions automatically (never during a recording or upload)"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <Button x:Name="CheckUpdateBtn" Content="Check for the new version"/>
+                        <Button x:Name="InstallUpdateBtn" Content="Install now" Style="{DynamicResource AccentButtonStyle}" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <TextBlock x:Name="UpdateResult" TextWrapping="Wrap" Margin="0,6,0,12"/>
                     <CheckBox x:Name="ShowNotes" Content="Show 'User notes…' in the tray menu"/>
                     <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
                         <Button x:Name="OpenNotes" Content="Open User notes"/>

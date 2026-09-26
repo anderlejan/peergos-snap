@@ -48,16 +48,11 @@ public sealed class NotesWindow : Window
         if (ready) { await web.ExecuteScriptAsync("window.__openNotes && window.__openNotes()"); return; }
         try
         {
-            var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebViewDir);
-            await web.EnsureCoreWebView2Async(env);
+            await WebHost.Init(web);
             var core = web.CoreWebView2;
-            core.Settings.AreDevToolsEnabled = Debugger.IsAttached;
-            core.Settings.IsStatusBarEnabled = false;
-            core.SetVirtualHostNameToFolderMapping("notes.peergos-snap.local", AppPaths.AppDir, CoreWebView2HostResourceAccessKind.DenyCors);
             core.WebMessageReceived += OnMessage;
-            core.NewWindowRequested += (_, e) => e.Handled = true;
             core.NavigationCompleted += (_, _) => PushTheme();
-            core.Navigate("https://notes.peergos-snap.local/notes-host/index.html");
+            core.Navigate(WebHost.Origin + "/notes-host/index.html");
             ready = true;
         }
         catch (Exception e)
@@ -68,15 +63,7 @@ public sealed class NotesWindow : Window
         }
     }
 
-    /// <summary>Sends the app's colour scheme and font size to the page (CSS variables).</summary>
-    void PushTheme()
-    {
-        if (web.CoreWebView2 == null) return;
-        var vars = new JsonObject();
-        foreach (var (k, v) in Theme.CssVariables()) vars[k] = v;
-        web.CoreWebView2.PostWebMessageAsJson(new JsonObject { ["type"] = "theme", ["vars"] = vars }.ToJsonString());
-        web.DefaultBackgroundColor = System.Drawing.ColorTranslator.FromHtml(Theme.Current.Bg);
-    }
+    void PushTheme() => WebHost.PushTheme(web);
 
     async void OnMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
@@ -132,7 +119,7 @@ public sealed class NotesWindow : Window
             ["appName"] = "Peergos Snap",
             ["version"] = ver,
             ["appDescription"] = "Windows 11 tray app that captures pictures and region videos (live, non-freezing overlay) and shares them through Peergos secret links or the clipboard.",
-            ["docs"] = new JsonArray("README.md", "docs/USER-GUIDE.md", "docs/PEERGOS-INTEGRATION.md", "CHANGELOG.md"),
+            ["docs"] = new JsonArray("README.md", "src/PeergosSnap/help/index.html", "docs/PEERGOS-INTEGRATION.md", "CHANGELOG.md"),
             ["location"] = loc,
             ["rules"] = new JsonArray(
                 "Keep every file GPL-3.0-compatible; never add code or binaries under licences that forbid public or GPL distribution. Record every new third-party component in THIRD-PARTY-NOTICES.md.",

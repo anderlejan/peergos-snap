@@ -25,6 +25,10 @@ public sealed class TrayController : IDisposable
     string? lastLink;
     SettingsWindow? settingsWindow;
     NotesWindow? notesWindow;
+    HelpWindow? helpWindow;
+    readonly DispatcherTimer updateTimer = new() { Interval = TimeSpan.FromHours(1) };
+    bool installingUpdate;
+    UpdateInfo? pendingUpdate;
     public Dictionary<string, string?> HotkeyErrors { get; } = [];
 
     public TrayController()
@@ -41,14 +45,124 @@ public sealed class TrayController : IDisposable
         tray.ContextMenuStrip.Opening += (_, _) => BuildMenu();
         tray.MouseClick += (_, e) => { if (e.Button == WinForms.MouseButtons.Left) _ = PrimaryClick(); };
         watch.Tick += async (_, _) => await WatchRecorder();
+        var firstRun = !File.Exists(AppPaths.SettingsFile);
         ApplySettings();
         UpdateTip();
         CleanCache();
 
-        if (!File.Exists(AppPaths.SettingsFile))
+        if (firstRun)
         {
+            Settings.LastRunVersion = Updater.Current.ToString();
             Settings.Save(AppPaths.SettingsFile);
-            Notify(ToastKind.Ok, "Peergos Snap is running", "Click the tray icon to capture. Right-click it → Settings to connect Peergos.");
+            Notify(ToastKind.Ok, "Peergos Snap is running", "Click the tray icon to capture. Right-click it → Settings → Peergos to sign in.",
+                extra: ("Quick start", () => ShowHelp("quick-start")));
+        }
+        else StartupNotices();
+        _ = MigrateLegacyPassword();
+
+        // Updates: once shortly after the start, then the hourly timer checks whether a day has passed.
+        updateTimer.Tick += async (_, _) => await AutoUpdate(false);
+        updateTimer.Start();
+        var first = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
+        first.Tick += async (_, _) => { first.Stop(); await AutoUpdate(true); };
+        first.Start();
+    }
+
+    /// <summary>One-time notices after an update.</summary>
+    void StartupNotices()
+    {
+        var now = Updater.Current.ToString();
+        if (Settings.LastRunVersion != now)
+        {
+            bool updated = Settings.LastRunVersion.Length > 0 || Settings.HadFolderLink || Settings.Username.Length > 0;
+            UpdateSettings(s => s.LastRunVersion = now);
+            if (updated)
+                Notify(ToastKind.Ok, $"Peergos Snap was updated to {now}", "See Help for everything it can do.", extra: ("Help", () => ShowHelp("")));
+        }
+        if (Settings.HadFolderLink && !Settings.PeergosConfigured && !Settings.FolderRemovalNoticeShown && Settings.AccountPasswordProtected.Length == 0)
+        {
+            UpdateSettings(s => s.FolderRemovalNoticeShown = true);
+            Notify(ToastKind.Warn, "Sharing through a folder link was removed",
+                "Sign in with your Peergos account (Settings → Peergos) to get secret links again. Until then captures are copied to the clipboard.",
+                extra: ("Sign in", ShowSettings));
+        }
+    }
+
+    /// <summary>Version 1.x kept the account password; sign in with it once, keep only the session, forget the password.</summary>
+    async Task MigrateLegacyPassword()
+    {
+        if (Settings.PeergosConfigured || Settings.AccountPasswordProtected.Length == 0) return;
+        var pw = Settings.LegacyAccountPassword;
+        if (pw.Length == 0 || Settings.Username.Trim().Length == 0) { UpdateSettings(s => s.AccountPasswordProtected = ""); return; }
+        var r = await Uploader.SignInAsync(Settings.Server, Settings.Username, pw, () => Task.FromResult<string?>(null));
+        if (r.Ok && !string.IsNullOrEmpty(r.Session))
+        {
+            UpdateSettings(s => { s.Session = r.Session!; s.AccountPasswordProtected = ""; });
+            Notify(ToastKind.Ok, $"Signed in to Peergos as {Settings.Username}",
+                "Your password is no longer stored: Peergos Snap now keeps only the sign-in, until you sign out.");
+        }
+        else if (r.Error != null && !r.Error.StartsWith("Cannot reach"))
+        {
+            UpdateSettings(s => s.AccountPasswordProtected = "");
+            Notify(ToastKind.Warn, "Please sign in to Peergos", r.Error + "\nSettings → Peergos.", extra: ("Sign in", ShowSettings));
+        }
+    }
+
+    // ---------- updates ----------
+
+    bool Busy => recorder != null || uploads > 0 || selecting || stopping;
+
+    async Task AutoUpdate(bool atStart)
+    {
+        if (installingUpdate) return;
+        if (pendingUpdate != null && !Busy) { var u = pendingUpdate; pendingUpdate = null; await InstallUpdateAsync(u); return; }
+        if (!Settings.CheckForUpdates) return;
+        if (!atStart && Settings.LastUpdateCheck is { } last && DateTime.Now - last < TimeSpan.FromHours(23)) return;
+        UpdateInfo? found;
+        try { found = await Updater.CheckAsync(); }
+        catch (Exception e) { Log.Error("update check", e); return; }
+        UpdateSettings(s => s.LastUpdateCheck = DateTime.Now);
+        if (found == null) return;
+        if (!Settings.InstallUpdatesAutomatically)
+        {
+            Notify(ToastKind.Ok, $"Peergos Snap {found.Version} is available", $"You have {Updater.Current}.",
+                extra: ("Install now", () => _ = InstallUpdateAsync(found)));
+            return;
+        }
+        if (Busy) { pendingUpdate = found; return; }
+        await InstallUpdateAsync(found);
+    }
+
+    /// <summary>Downloads, verifies and starts the installer, then quits (the installer starts the new version).
+    /// Returns an error text, or null when the installer was started.</summary>
+    public async Task<string?> InstallUpdateAsync(UpdateInfo u, Action<int>? progress = null)
+    {
+        if (Busy) return "Finish the recording or upload first.";
+        if (installingUpdate) return "The update is already being installed.";
+        installingUpdate = true;
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+        try
+        {
+            Notify(ToastKind.Busy, $"Downloading Peergos Snap {u.Version}…", "It installs and starts by itself.");
+            var file = await Updater.DownloadAsync(u, pct =>
+            {
+                progress?.Invoke(pct);
+                dispatcher.BeginInvoke(() => Notify(ToastKind.Busy, $"Downloading Peergos Snap {u.Version}…", "It installs and starts by itself.",
+                    percent: pct >= 0 ? pct : null));
+            });
+            Notify(ToastKind.Busy, $"Installing Peergos Snap {u.Version}…", "Peergos Snap restarts in a moment.");
+            Updater.StartInstaller(file);
+            await Task.Delay(800);
+            System.Windows.Application.Current.Shutdown();
+            return null;
+        }
+        catch (Exception e)
+        {
+            Log.Error("update", e);
+            installingUpdate = false;
+            var msg = e is System.Net.Http.HttpRequestException ? "No connection to GitHub" : e.Message;
+            Notify(ToastKind.Error, "The update failed", msg + "\nNothing was changed.");
+            return msg;
         }
     }
 
@@ -84,9 +198,20 @@ public sealed class TrayController : IDisposable
         }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
     }
 
+    string appliedHotkeys = "\0";
+    string appliedTheme = "\0";
+
     void ApplySettings()
     {
-        Theme.Apply(Settings.ColorScheme, Settings.FontPercent);
+        var theme = Settings.ColorScheme + "|" + Settings.FontPercent;
+        if (theme != appliedTheme)
+        {
+            appliedTheme = theme;
+            Theme.Apply(Settings.ColorScheme, Settings.FontPercent);
+        }
+        var keys = string.Join("|", Settings.HotkeyPicture, Settings.HotkeyVideo, Settings.HotkeyPause, Settings.HotkeyToggleOutput);
+        if (keys == appliedHotkeys) return;
+        appliedHotkeys = keys;
         hotkeys.Clear();
         HotkeyErrors.Clear();
         HotkeyErrors["Picture"] = hotkeys.Register(Settings.HotkeyPicture, () => _ = CapturePicture());
@@ -103,6 +228,7 @@ public sealed class TrayController : IDisposable
     {
         var m = tray.ContextMenuStrip!;
         m.Items.Clear();
+        ThemedMenu.Apply(m);
         WinForms.ToolStripMenuItem Item(string text, Action a, string? keys = null, bool check = false, bool enabled = true)
         {
             var i = new WinForms.ToolStripMenuItem(text) { Checked = check, Enabled = enabled, ShortcutKeyDisplayString = keys };
@@ -115,17 +241,20 @@ public sealed class TrayController : IDisposable
         if (rec) m.Items.Add(Item(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
         if (rec) m.Items.Add(Item("Cancel recording", () => _ = CancelRecording()));
         m.Items.Add(new WinForms.ToolStripSeparator());
-        m.Items.Add(new WinForms.ToolStripLabel("Tray click takes") { ForeColor = SystemColors.GrayText });
+        m.Items.Add(new WinForms.ToolStripLabel("Tray click takes"));
         m.Items.Add(Item("    Picture", () => UpdateSettings(s => s.DefaultKind = CaptureKind.Picture), check: Settings.DefaultKind == CaptureKind.Picture));
         m.Items.Add(Item("    Video (click again to stop)", () => UpdateSettings(s => s.DefaultKind = CaptureKind.Video), check: Settings.DefaultKind == CaptureKind.Video));
-        m.Items.Add(new WinForms.ToolStripLabel("Output") { ForeColor = SystemColors.GrayText });
+        m.Items.Add(new WinForms.ToolStripLabel("Output"));
         m.Items.Add(Item("    Secret link (upload to Peergos)", () => UpdateSettings(s => s.Output = OutputMode.SecretLink), Settings.HotkeyToggleOutput, Settings.Output == OutputMode.SecretLink));
         m.Items.Add(Item("    Media to clipboard (no upload)", () => UpdateSettings(s => s.Output = OutputMode.DirectMedia), check: Settings.Output == OutputMode.DirectMedia));
+        m.Items.Add(new WinForms.ToolStripLabel("Videos"));
+        m.Items.Add(Item("    Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
         m.Items.Add(new WinForms.ToolStripSeparator());
         if (lastLink != null) m.Items.Add(Item("Copy last link", () => ClipboardService.SetText(lastLink)));
         m.Items.Add(Item("Open captures folder", () => Open(AppPaths.CacheDir)));
         m.Items.Add(Item("Settings…", ShowSettings));
         if (Settings.ShowUserNotes) m.Items.Add(Item("User notes…", ShowNotes));
+        m.Items.Add(Item("Help", () => ShowHelp("")));
         m.Items.Add(new WinForms.ToolStripSeparator());
         m.Items.Add(Item("Quit", () => System.Windows.Application.Current.Shutdown()));
     }
@@ -146,6 +275,21 @@ public sealed class TrayController : IDisposable
 
     public bool NotesBusy => notesWindow?.RecentlyUsed ?? false;
 
+    /// <summary>Opens the tray menu at the mouse (also for keyboard users: "PeergosSnap.exe --menu").</summary>
+    void ShowMenu()
+    {
+        var m = tray.ContextMenuStrip!;
+        BuildMenu();
+        var p = WinForms.Cursor.Position;
+        m.Show(p);
+    }
+
+    public void ShowHelp(string section)
+    {
+        helpWindow ??= new HelpWindow();
+        helpWindow.ShowHelp(section);
+    }
+
     void ToggleOutput()
     {
         UpdateSettings(s => s.Output = s.Output == OutputMode.SecretLink ? OutputMode.DirectMedia : OutputMode.SecretLink);
@@ -162,6 +306,8 @@ public sealed class TrayController : IDisposable
             case "--video": _ = ToggleRecording(); break;
             case "--settings": ShowSettings(); break;
             case "--notes": ShowNotes(); break;
+            case "--help": ShowHelp(""); break;
+            case "--menu": ShowMenu(); break;
             case "--quit": System.Windows.Application.Current.Shutdown(); break;
         }
     }
@@ -379,7 +525,8 @@ public sealed class TrayController : IDisposable
         {
             if (TryClipboard(file, what))
                 Notify(ToastKind.Warn, $"{what} copied to the clipboard (not uploaded)",
-                    "Peergos is not set up yet: right-click the tray icon → Settings → Peergos.", null, file);
+                    "You are not signed in to Peergos: right-click the tray icon → Settings → Peergos.", null, file,
+                    extra: ("Sign in", ShowSettings));
             return;
         }
         uploads++;
@@ -419,10 +566,16 @@ public sealed class TrayController : IDisposable
             return;
         }
         var why = r.Error ?? "Unknown error";
+        (string, Action)? signIn = null;
+        if (Uploader.NeedsSignIn(why))
+        {
+            UpdateSettings(s => s.Session = "");
+            signIn = ("Sign in", ShowSettings);
+        }
         if (Settings.FallbackToClipboard && TryClipboard(file, what))
-            Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file);
+            Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
         else if (!Settings.FallbackToClipboard)
-            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file);
+            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
     }
 
     /// <summary>Puts the media on the clipboard; on failure shows the error card and returns false.</summary>
@@ -443,11 +596,12 @@ public sealed class TrayController : IDisposable
 
     /// <summary>Shows the app's notification card. Busy and success cards follow the Notifications setting;
     /// warnings and errors are always shown.</summary>
-    void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null)
+    void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
+        (string, Action)? extra = null)
     {
         if (kind != ToastKind.Busy) Log.Info($"notify: {title} – {text}");
-        if (!Settings.Notifications && kind is ToastKind.Ok or ToastKind.Busy) return;
-        try { ToastWindow.Show(kind, title, text, link, file, percent); }
+        if (!Settings.Notifications && kind is ToastKind.Ok or ToastKind.Busy && extra == null) return;
+        try { ToastWindow.Show(kind, title, text, link, file, percent, extra); }
         catch (Exception e) { Log.Error("toast", e); }
     }
 
@@ -519,6 +673,7 @@ public sealed class TrayController : IDisposable
         {
             try { recorder.CancelAsync().Wait(5000); } catch { }
         }
+        updateTimer.Stop();
         hotkeys.Dispose();
         tray.Visible = false;
         tray.Dispose();

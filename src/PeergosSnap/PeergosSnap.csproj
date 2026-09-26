@@ -11,7 +11,7 @@
     <AssemblyName>PeergosSnap</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\PeergosSnap.ico</ApplicationIcon>
-    <Version>1.1.1</Version>
+    <Version>2.0.0</Version>
     <Product>Peergos Snap</Product>
     <Company>anderlejan</Company>
     <Copyright>Copyright (C) 2026 anderlejan. GPL-3.0-or-later.</Copyright>
@@ -42,7 +42,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\PeergosSnap.ico" />
-    <Content Include="usernotes\usernotes-core.js;usernotes\usernotes-ui.js;usernotes\usernotes.css;notes-host\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="usernotes\usernotes-core.js;usernotes\usernotes-ui.js;usernotes\usernotes.css;notes-host\**\*;help\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="usernotes\README.md;usernotes\usernotes-store.js;usernotes\usernotes.test.js" />
   </ItemGroup>
 
