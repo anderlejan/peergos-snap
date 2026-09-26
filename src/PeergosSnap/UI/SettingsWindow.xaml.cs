@@ -22,9 +22,15 @@ public partial class SettingsWindow : Window
         Load();
         Wire();
         loading = false;
-        UpdateModePanels();
+        UpdateAccountPanels();
         ShowHotkeyErrors();
+        PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { e.Handled = true; OpenHelp(); } };
     }
+
+    static readonly string[] TabHelp =
+        ["settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-hotkeys", "settings-appearance", "settings-general"];
+
+    void OpenHelp() => app.ShowHelp(Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < TabHelp.Length ? TabHelp[Tabs.SelectedIndex] : "settings");
 
     Settings S => app.Settings;
 
@@ -45,13 +51,8 @@ public partial class SettingsWindow : Window
 
     void Load()
     {
-        ModeFolder.IsChecked = S.Storage == StorageMode.SharedFolder;
-        ModeAccount.IsChecked = S.Storage == StorageMode.Account;
-        FolderLink.Text = S.FolderLink;
-        FolderPassword.Password = S.FolderLinkPassword;
         Server.Text = S.Server;
         Username.Text = S.Username;
-        AccountPassword.Password = S.AccountPassword;
         AccountFolder.Text = S.AccountFolder;
 
         KindPicture.IsChecked = S.DefaultKind == CaptureKind.Picture;
@@ -85,13 +86,19 @@ public partial class SettingsWindow : Window
         HkPause.Text = S.HotkeyPause;
         HkOutput.Text = S.HotkeyToggleOutput;
 
-        SchemeBox.ItemsSource = Theme.Schemes;
-        SchemeBox.SelectedItem = Theme.Schemes.FirstOrDefault(x => x.Id == S.ColorScheme) ?? Theme.Schemes[0];
+        var schemes = new System.Windows.Data.ListCollectionView(Theme.Schemes);
+        schemes.GroupDescriptions.Add(new System.Windows.Data.PropertyGroupDescription(nameof(Scheme.Group)));
+        SchemeBox.ItemsSource = schemes;
+        SchemeBox.SelectedItem = Theme.Schemes.FirstOrDefault(x => x.Id == S.ColorScheme) ?? Theme.Resolve(S.ColorScheme);
         FontSlider.Value = S.FontPercent;
         FontLabel.Text = $"Font size ({S.FontPercent} %)";
         PromptLocation.Text = S.PromptSourceLocation;
 
         Autostart.IsChecked = Services.Autostart.IsEnabled;
+        AutoCheck.IsChecked = S.CheckForUpdates;
+        AutoInstall.IsChecked = S.InstallUpdatesAutomatically;
+        AutoInstall.IsEnabled = S.CheckForUpdates;
+        UpdateResult.Text = $"You have version {Updater.Current}.";
         ShowNotes.IsChecked = S.ShowUserNotes;
         var ver = typeof(App).Assembly.GetName().Version;
         About.Text = $"Peergos Snap {ver?.ToString(3)} · GPL-3.0-or-later · https://github.com/anderlejan/peergos-snap\n" +
@@ -100,21 +107,44 @@ public partial class SettingsWindow : Window
 
     void Wire()
     {
-        ModeFolder.Checked += (_, _) => { Change(s => s.Storage = StorageMode.SharedFolder); UpdateModePanels(); };
-        ModeAccount.Checked += (_, _) => { Change(s => s.Storage = StorageMode.Account); UpdateModePanels(); };
-        FolderLink.TextChanged += (_, _) =>
-        {
-            var ok = LinkCheck.LooksLikeSecretLink(FolderLink.Text, out var problem) || FolderLink.Text.Trim().Length == 0;
-            FolderLinkErr.Text = problem ?? "";
-            FolderLinkErr.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
-            if (ok) Change(s => s.FolderLink = FolderLink.Text.Trim());
-        };
-        FolderPassword.PasswordChanged += (_, _) => Change(s => s.FolderLinkPassword = FolderPassword.Password);
         Server.LostFocus += (_, _) => Change(s => s.Server = Server.Text);
-        Username.TextChanged += (_, _) => Change(s => s.Username = Username.Text.Trim());
-        AccountPassword.PasswordChanged += (_, _) => Change(s => s.AccountPassword = AccountPassword.Password);
+        Username.TextChanged += (_, _) => { if (!S.PeergosConfigured) Change(s => s.Username = Username.Text.Trim()); };
         AccountFolder.LostFocus += (_, _) => Change(s => s.AccountFolder = AccountFolder.Text);
         TestBtn.Click += async (_, _) => await Test();
+        SignInBtn.Click += async (_, _) => await SignIn();
+        SignOutBtn.Click += (_, _) =>
+        {
+            Change(s => s.Session = "");
+            TestResult.Text = "";
+            SignInResult.Text = "Signed out. Captures are copied to the clipboard until you sign in again.";
+            UpdateAccountPanels();
+        };
+        // Show / hide the password while typing it.
+        ShowPassword.Checked += (_, _) =>
+        {
+            PasswordPlain.Text = Password.Password;
+            PasswordPlain.Visibility = Visibility.Visible;
+            Password.Visibility = Visibility.Collapsed;
+            ShowPasswordGlyph.Text = "\uED1A";
+            ShowPassword.ToolTip = "Hide the password";
+            System.Windows.Automation.AutomationProperties.SetName(ShowPassword, "Hide password");
+            PasswordPlain.Focus();
+            PasswordPlain.CaretIndex = PasswordPlain.Text.Length;
+        };
+        ShowPassword.Unchecked += (_, _) =>
+        {
+            Password.Password = PasswordPlain.Text;
+            PasswordPlain.Clear();
+            Password.Visibility = Visibility.Visible;
+            PasswordPlain.Visibility = Visibility.Collapsed;
+            ShowPasswordGlyph.Text = "\uE7B3";
+            ShowPassword.ToolTip = "Show the password";
+            System.Windows.Automation.AutomationProperties.SetName(ShowPassword, "Show password");
+            Password.Focus();
+        };
+        Password.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await SignIn(); };
+        PasswordPlain.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await SignIn(); };
+        HelpBtn.Click += (_, _) => OpenHelp();
 
         KindPicture.Checked += (_, _) => Change(s => s.DefaultKind = CaptureKind.Picture);
         KindVideo.Checked += (_, _) => Change(s => s.DefaultKind = CaptureKind.Video);
@@ -166,6 +196,21 @@ public partial class SettingsWindow : Window
         FontSlider.ValueChanged += (_, _) => { FontLabel.Text = $"Font size ({(int)FontSlider.Value} %)"; Change(s => s.FontPercent = (int)FontSlider.Value); };
         FontReset.Click += (_, _) => FontSlider.Value = 100;
         PromptLocation.LostFocus += (_, _) => Change(s => s.PromptSourceLocation = PromptLocation.Text.Trim());
+
+        AutoCheck.Click += (_, _) => { Change(s => s.CheckForUpdates = AutoCheck.IsChecked == true); AutoInstall.IsEnabled = AutoCheck.IsChecked == true; };
+        AutoInstall.Click += (_, _) => Change(s => s.InstallUpdatesAutomatically = AutoInstall.IsChecked == true);
+        CheckUpdateBtn.Click += async (_, _) => await CheckUpdate();
+        InstallUpdateBtn.Click += async (_, _) =>
+        {
+            if (found == null) return;
+            var target = found;
+            InstallUpdateBtn.IsEnabled = CheckUpdateBtn.IsEnabled = false;
+            UpdateResult.Text = $"Downloading version {target.Version}…";
+            var err = await app.InstallUpdateAsync(target, pct => Dispatcher.BeginInvoke(() =>
+                UpdateResult.Text = pct >= 0 ? $"Downloading version {target.Version}… {pct} %" : $"Downloading version {target.Version}…"));
+            if (err != null) { UpdateResult.Text = "✗ " + err; InstallUpdateBtn.IsEnabled = CheckUpdateBtn.IsEnabled = true; }
+            else UpdateResult.Text = "Installing – Peergos Snap restarts in a moment.";
+        };
 
         Autostart.Click += (_, _) =>
         {
@@ -225,23 +270,90 @@ public partial class SettingsWindow : Window
         Show(HkOutputErr, "Output");
     }
 
-    void UpdateModePanels()
+    UpdateInfo? found;
+
+    async Task CheckUpdate()
     {
-        FolderPanel.Visibility = ModeFolder.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-        AccountPanel.Visibility = ModeAccount.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        CheckUpdateBtn.IsEnabled = false;
+        InstallUpdateBtn.Visibility = Visibility.Collapsed;
+        UpdateResult.Text = "Checking…";
+        try
+        {
+            found = await Updater.CheckAsync();
+            if (found == null) UpdateResult.Text = $"✓ You have the newest version ({Updater.Current}).";
+            else
+            {
+                UpdateResult.Text = $"Version {found.Version} is available (you have {Updater.Current}).";
+                InstallUpdateBtn.Visibility = Visibility.Visible;
+                InstallUpdateBtn.IsEnabled = true;
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Error("update check", e);
+            UpdateResult.Text = "✗ Could not check: " + (e is System.Net.Http.HttpRequestException ? "no connection to GitHub" : e.Message);
+        }
+        finally { CheckUpdateBtn.IsEnabled = true; }
+    }
+
+    void UpdateAccountPanels()
+    {
+        bool signedIn = S.PeergosConfigured;
+        SignedInPanel.Visibility = signedIn ? Visibility.Visible : Visibility.Collapsed;
+        SignInPanel.Visibility = signedIn ? Visibility.Collapsed : Visibility.Visible;
+        var host = Uri.TryCreate(S.Server, UriKind.Absolute, out var u) ? u.Host : S.Server;
+        SignedInText.Text = signedIn ? $"✓ Signed in as {S.Username} on {host}" : "";
+    }
+
+    string CurrentPassword() => ShowPassword.IsChecked == true ? PasswordPlain.Text : Password.Password;
+
+    async Task SignIn()
+    {
+        var server = (Server.Text ?? "").Trim().TrimEnd('/');
+        if (server.Length == 0) server = Settings.DefaultServer;
+        if (!server.Contains("://")) server = "https://" + server;
+        var user = Username.Text.Trim();
+        var pw = CurrentPassword();
+        SignInResult.Foreground = (System.Windows.Media.Brush)FindResource("Fg2");
+        if (user.Length == 0) { SignInResult.Text = "Enter your Peergos username."; Username.Focus(); return; }
+        if (pw.Length == 0) { SignInResult.Text = "Enter your password."; return; }
+        if (!SignInBtn.IsEnabled) return;
+        SignInBtn.IsEnabled = false;
+        SignInResult.Text = "Signing in…";
+        try
+        {
+            var r = await Uploader.SignInAsync(server, user, pw, () => Dispatcher.InvokeAsync(() => CodeDialog.Ask(this)).Task);
+            if (r.Ok && !string.IsNullOrEmpty(r.Session))
+            {
+                Change(s => { s.Server = server; s.Username = user; s.Session = r.Session!; s.AccountPasswordProtected = ""; });
+                Password.Clear();
+                PasswordPlain.Clear();
+                ShowPassword.IsChecked = false;
+                SignInResult.Text = "";
+                UpdateAccountPanels();
+                TestResult.Foreground = (System.Windows.Media.Brush)FindResource("Acc");
+                TestResult.Text = $"Captures go to /{user}/{S.AccountFolder.Trim('/')} and each gets its own secret link.";
+            }
+            else
+            {
+                SignInResult.Foreground = System.Windows.Media.Brushes.Firebrick;
+                SignInResult.Text = "✗ " + (r.Error ?? "Sign-in failed");
+            }
+        }
+        finally { SignInBtn.IsEnabled = true; }
     }
 
     async Task Test()
     {
         TestBtn.IsEnabled = false;
-        TestResult.Foreground = System.Windows.Media.Brushes.Gray;
+        TestResult.Foreground = (System.Windows.Media.Brush)FindResource("Fg2");
         TestResult.Text = "Connecting…";
         try
         {
-            if (!S.PeergosConfigured) { TestResult.Text = "Fill in the fields above first."; return; }
             var r = await Uploader.CheckAsync(S.Clone());
-            TestResult.Foreground = r.Ok ? System.Windows.Media.Brushes.Green : System.Windows.Media.Brushes.Firebrick;
-            TestResult.Text = r.Ok ? $"✓ Works – uploads go to {r.PeergosPath}" : "✗ " + r.Error;
+            TestResult.Foreground = r.Ok ? (System.Windows.Media.Brush)FindResource("Acc") : System.Windows.Media.Brushes.Firebrick;
+            TestResult.Text = r.Ok ? $"✓ Works – captures go to /{S.Username}/{S.AccountFolder.Trim('/')}" : "✗ " + r.Error;
+            if (!r.Ok && Uploader.NeedsSignIn(r.Error)) { Change(s => s.Session = ""); UpdateAccountPanels(); SignInResult.Text = r.Error; }
         }
         finally { TestBtn.IsEnabled = true; }
     }

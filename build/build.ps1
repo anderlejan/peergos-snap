@@ -109,7 +109,6 @@ if (Test-Path "$($wv.FullName)\LICENSE.txt") { Copy-Item "$($wv.FullName)\LICENS
 $dotnetRoot = Split-Path (Get-Command dotnet).Source
 if (Test-Path "$dotnetRoot\LICENSE.txt") { Copy-Item "$dotnetRoot\LICENSE.txt" "$Stage\licenses\LICENSE-dotnet-MIT.txt" }
 if (Test-Path "$dotnetRoot\ThirdPartyNotices.txt") { Copy-Item "$dotnetRoot\ThirdPartyNotices.txt" "$Stage\licenses\ThirdPartyNotices-dotnet.txt" }
-Copy-Item "$Root\docs\USER-GUIDE.md" "$Stage\USER-GUIDE.md"
 
 # ---------- privacy: no build-machine paths in shipped binaries ----------
 Step "Privacy check"

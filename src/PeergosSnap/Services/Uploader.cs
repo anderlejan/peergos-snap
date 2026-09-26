@@ -5,8 +5,9 @@ using PeergosSnap.Core;
 namespace PeergosSnap.Services;
 
 /// <summary>
-/// Uploads a file to Peergos through the bundled Java bridge (bridge\peergos-snap-bridge.jar + the official
-/// Peergos.jar on the bundled runtime). Secrets go to the bridge on stdin, never on the command line.
+/// Talks to Peergos through the bundled Java bridge (bridge\peergos-snap-bridge.jar + the official Peergos.jar on
+/// the bundled runtime). Secrets (password, two-factor code, session) go to the bridge on stdin, never on the
+/// command line. After signing in only the Peergos session is kept; uploads restore it.
 /// </summary>
 public sealed class Uploader
 {
@@ -16,29 +17,42 @@ public sealed class Uploader
         File.Exists(AppPaths.JavaExe) && File.Exists(Path.Combine(AppPaths.BridgeDir, "Peergos.jar"))
         && File.Exists(Path.Combine(AppPaths.BridgeDir, "peergos-snap-bridge.jar"));
 
+    /// <summary>Signs in; <paramref name="askCode"/> is called if the account wants a two-factor code (null = cancel).
+    /// On success <see cref="BridgeResult.Session"/> holds what later uploads need.</summary>
+    public static async Task<BridgeResult> SignInAsync(string server, string user, string password, Func<Task<string?>> askCode)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            return await RunAsync(["signin", "--server", server, "--user", user.Trim()], password, null, askCode, TimeSpan.FromMinutes(3), default);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
     public static async Task<BridgeResult> UploadAsync(Settings s, string file, Action<int>? progress, CancellationToken ct = default)
     {
         await OneAtATime.WaitAsync(ct);
         try
         {
-            if (s.Storage == StorageMode.SharedFolder)
-                return await RunAsync(["folder", "--server", ServerFor(s), "--link", s.FolderLink.Trim(), "--file", file, "--name", Path.GetFileName(file)],
-                    s.FolderLinkPassword + "\n", progress, TimeSpan.FromMinutes(30), ct);
-            return await RunAsync(["account", "--server", ServerFor(s), "--user", s.Username.Trim(), "--folder", s.AccountFolder, "--file", file, "--name", Path.GetFileName(file)],
-                s.AccountPassword + "\n" + "\n", progress, TimeSpan.FromMinutes(30), ct);
+            return await RunAsync(["upload", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder,
+                    "--file", file, "--name", Path.GetFileName(file)],
+                s.Session, progress, null, TimeSpan.FromMinutes(30), ct);
         }
         finally { OneAtATime.Release(); }
     }
 
-    public static Task<BridgeResult> CheckAsync(Settings s, string totp = "") => s.Storage == StorageMode.SharedFolder
-        ? RunAsync(["check", "--server", ServerFor(s), "--link", s.FolderLink.Trim()], s.FolderLinkPassword + "\n", null, TimeSpan.FromMinutes(2), default)
-        : RunAsync(["account-check", "--server", ServerFor(s), "--user", s.Username.Trim()], s.AccountPassword + "\n" + totp + "\n", null, TimeSpan.FromMinutes(2), default);
+    public static async Task<BridgeResult> CheckAsync(Settings s)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            return await RunAsync(["check", "--server", s.Server, "--user", s.Username.Trim()], s.Session, null, null, TimeSpan.FromMinutes(2), default);
+        }
+        finally { OneAtATime.Release(); }
+    }
 
-    /// <summary>For a folder link the server is the link's own host; for an account it is the configured server.</summary>
-    static string ServerFor(Settings s) =>
-        s.Storage == StorageMode.SharedFolder ? LinkCheck.ServerOf(s.FolderLink) ?? s.Server : s.Server;
-
-    static async Task<BridgeResult> RunAsync(string[] args, string stdin, Action<int>? progress, TimeSpan timeout, CancellationToken ct)
+    static async Task<BridgeResult> RunAsync(string[] args, string secret, Action<int>? progress, Func<Task<string?>>? askCode,
+        TimeSpan timeout, CancellationToken ct)
     {
         if (!BridgeAvailable)
             return new BridgeResult(false, null, null, "The Peergos uploader is missing from the installation");
@@ -57,30 +71,47 @@ public sealed class Uploader
         foreach (var a in new[] { "-Xmx1g", "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true", "-cp", cp, "snap.bridge.PeergosBridge" }.Concat(args))
             psi.ArgumentList.Add(a);
 
-        Log.Info("bridge: " + args[0] + " " + (args.Length > 2 ? args[2] : ""));
+        Log.Info("bridge: " + args[0]);
         using var p = new Process { StartInfo = psi };
         var stdout = new StringBuilder();
         var tail = new Queue<string>();
+        var codeWanted = new TaskCompletionSource();
         p.OutputDataReceived += (_, e) => { if (e.Data != null) lock (stdout) stdout.AppendLine(e.Data); };
         p.ErrorDataReceived += (_, e) =>
         {
             if (e.Data == null) return;
             if (e.Data.StartsWith("@progress ") && int.TryParse(e.Data[10..], out var pct)) { progress?.Invoke(pct); return; }
+            if (e.Data.StartsWith("@mfa")) { codeWanted.TrySetResult(); return; }
             lock (tail) { tail.Enqueue(e.Data); while (tail.Count > 40) tail.Dequeue(); }
         };
         p.Start();
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        await p.StandardInput.WriteAsync(stdin);
-        p.StandardInput.Close();
+        await p.StandardInput.WriteLineAsync(secret);
+        await p.StandardInput.FlushAsync();
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
-        try { await p.WaitForExitAsync(cts.Token); }
+        try
+        {
+            var exited = p.WaitForExitAsync(cts.Token);
+            if (askCode != null)
+            {
+                // Sign-in may ask for a second factor once; answer it (empty = cancel), then wait for the end.
+                if (await Task.WhenAny(exited, codeWanted.Task) == codeWanted.Task)
+                {
+                    var code = await askCode();
+                    await p.StandardInput.WriteLineAsync(code ?? "");
+                    await p.StandardInput.FlushAsync();
+                }
+            }
+            p.StandardInput.Close();
+            await exited;
+        }
         catch (OperationCanceledException)
         {
             try { p.Kill(true); } catch { }
-            return new BridgeResult(false, null, null, ct.IsCancellationRequested ? "Cancelled" : "The upload took too long and was stopped");
+            return new BridgeResult(false, null, null, ct.IsCancellationRequested ? "Cancelled" : "Peergos took too long and the attempt was stopped");
         }
         p.WaitForExit();
         string o;
@@ -93,21 +124,30 @@ public sealed class Uploader
             Log.Error("bridge failed: " + r.Error + "\n" + errTail);
             r = r with { Error = Friendly(r.Error) };
         }
-        else Log.Info("bridge ok: " + r.PeergosPath);
+        else Log.Info("bridge ok: " + args[0] + " " + r.PeergosPath);
         return r;
     }
+
+    /// <summary>True when the stored session no longer works and the user has to sign in again.</summary>
+    public static bool NeedsSignIn(string? error) =>
+        error != null && (error.StartsWith("Not signed in") || error.StartsWith("Your Peergos session has ended"));
 
     /// <summary>Turns Java/network errors into short plain words.</summary>
     public static string Friendly(string? error)
     {
-        var e = error ?? "Unknown error";
-        if (e.Contains("UnknownHost", StringComparison.OrdinalIgnoreCase) || e.Contains("ConnectException") || e.Contains("Connection refused"))
+        var e = (error ?? "Unknown error").Replace('+', ' ');
+        if (e.Contains("UnknownHost", StringComparison.OrdinalIgnoreCase) || e.Contains("ConnectException") || e.Contains("Connection refused")
+            || e.Contains("timed out", StringComparison.OrdinalIgnoreCase))
             return "Cannot reach the Peergos server (offline?)";
-        if (e.Contains("No secret link", StringComparison.OrdinalIgnoreCase)) return "The folder link no longer exists";
-        if (e.Contains("expired", StringComparison.OrdinalIgnoreCase)) return "The folder link has expired";
-        if (e.Contains("Maximum link retrievals")) return "The folder link was used too many times";
-        if (e.Contains("Incorrect password", StringComparison.OrdinalIgnoreCase) || e.Contains("decrypt", StringComparison.OrdinalIgnoreCase))
-            return "Wrong password for the link or account";
+        if (e.Contains("Unknown username")) return "Unknown Peergos username";
+        if (e.Contains("has been deleted")) return "This Peergos account has been deleted";
+        if (e.Contains("Incorrect password", StringComparison.OrdinalIgnoreCase)) return "Wrong password";
+        if (e.Contains("Invalid TOTP", StringComparison.OrdinalIgnoreCase) || e.Contains("rejected second factor", StringComparison.OrdinalIgnoreCase))
+            return "Wrong two-factor code";
+        if (e.Contains("no two-factor code")) return "Sign-in cancelled";
+        if (e.Contains("Session expired") || e.Contains("Legacy accounts"))
+            return "Your Peergos session has ended – sign in again (Settings → Peergos)";
+        if (e.StartsWith("Not signed in")) return "Not signed in to Peergos – sign in in Settings → Peergos";
         if (e.Contains("quota", StringComparison.OrdinalIgnoreCase) || e.Contains("space", StringComparison.OrdinalIgnoreCase))
             return "Not enough space in the Peergos account: " + e;
         return e.Length > 200 ? e[..200] + "…" : e;

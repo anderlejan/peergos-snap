@@ -139,12 +139,21 @@ public class HotkeyTests
 public class BridgeAndLinkTests
 {
     [Fact]
-    public void Parses_success_after_log_noise()
+    public void Parses_link_after_log_noise()
     {
-        var r = BridgeResult.Parse("some log\n{\"ok\":true,\"link\":\"https://peergos.net/#a/b/c/d?open=true\",\"path\":\"/x/y.png\"}\n");
+        var r = BridgeResult.Parse("some log\n{\"ok\":true,\"link\":\"https://peergos.net/secret/z59abc/1420289907#egfWi1WsdjnV?open=true\",\"path\":\"/neo/PeergosSnap/a.png\"}\n");
         Assert.True(r.Ok);
-        Assert.Equal("https://peergos.net/#a/b/c/d?open=true", r.Link);
-        Assert.Equal("/x/y.png", r.PeergosPath);
+        Assert.Equal("https://peergos.net/secret/z59abc/1420289907#egfWi1WsdjnV?open=true", r.Link);
+        Assert.Equal("/neo/PeergosSnap/a.png", r.PeergosPath);
+    }
+
+    [Fact]
+    public void Parses_signin_session()
+    {
+        var r = BridgeResult.Parse("{\"ok\":true,\"session\":\"AAA.BBB\",\"home\":\"/neo\"}");
+        Assert.True(r.Ok);
+        Assert.Equal("AAA.BBB", r.Session);
+        Assert.Equal("/neo", r.PeergosPath);
     }
 
     [Fact]
@@ -156,47 +165,187 @@ public class BridgeAndLinkTests
     }
 
     [Theory]
-    [InlineData("https://peergos.net/secret/z59vuwzfFDorjWRiEtcEu6BQWWsLYCAJpmkAcVkuV8P5b4ykYwm1NE6/8057131#moCvfdkPxWLb", true)]
-    [InlineData("http://localhost:8000/secret/z59abc/12#key", true)]
+    [InlineData("https://peergos.net/secret/z59vuwzfFDomvAhtJvdhFV6NKt2Uu3WnMABssT5SZvqP61AzEtZpWxk/1420289907#egfWi1WsdjnV?open=true", true)]
+    [InlineData("https://peergos.net/secret/z59abc/12#key", true)]
+    [InlineData("http://localhost:8000/secret/z59abc/12#key?open=true", true)]
+    // the long capability links of 1.x are not accepted any more
+    [InlineData("https://peergos.net/#6MDZhRRPT4ugkJuUfcdjhvvr6ofx3T6mX3gUR7V52nTuLpuyugiYHLTrjyZc9j/6MDZhRRPT4ug/2QPajpNrK8Pph1ox/5Pf7SvStkNUjKc?open=true", false)]
     [InlineData("https://peergos.net/secret/z59abc/12", false)]
-    [InlineData("https://peergos.net/#abc/def/ghi/jkl", false)]
+    [InlineData("https://peergos.net/secret/z59abc/notanumber#key", false)]
     [InlineData("peergos.net/secret/z/1#k", false)]
     [InlineData("", false)]
-    public void Secret_link_shape(string link, bool ok) => Assert.Equal(ok, LinkCheck.LooksLikeSecretLink(link, out _));
-
-    [Fact]
-    public void Server_of_link()
-    {
-        Assert.Equal("https://peergos.net", LinkCheck.ServerOf("https://peergos.net/secret/z/1#k"));
-        Assert.Equal("http://localhost:8000", LinkCheck.ServerOf("http://localhost:8000/secret/z/1#k"));
-    }
+    public void Short_secret_link_shape(string link, bool ok) => Assert.Equal(ok, PeergosLinks.IsShortSecretLink(link));
 
     [Theory]
     [InlineData("java.net.UnknownHostException: peergos.net", "Cannot reach the Peergos server (offline?)")]
-    [InlineData("No secret link found", "The folder link no longer exists")]
+    [InlineData("Incorrect+password", "Wrong password")]
+    [InlineData("Invalid+TOTP+code", "Wrong two-factor code")]
+    [InlineData("Unknown username. Did you enter it correctly?", "Unknown Peergos username")]
+    [InlineData("Session expired: sign in again (bad key)", "Your Peergos session has ended – sign in again (Settings → Peergos)")]
+    [InlineData("Not signed in", "Not signed in to Peergos – sign in in Settings → Peergos")]
     public void Friendly_errors(string raw, string expected) => Assert.Equal(expected, PeergosSnap.Services.Uploader.Friendly(raw));
+
+    [Fact]
+    public void Session_problems_ask_to_sign_in_again()
+    {
+        Assert.True(PeergosSnap.Services.Uploader.NeedsSignIn(PeergosSnap.Services.Uploader.Friendly("Not signed in")));
+        Assert.True(PeergosSnap.Services.Uploader.NeedsSignIn(PeergosSnap.Services.Uploader.Friendly("Session expired: x")));
+        Assert.False(PeergosSnap.Services.Uploader.NeedsSignIn(PeergosSnap.Services.Uploader.Friendly("java.net.ConnectException")));
+    }
+}
+
+public class UpdaterTests
+{
+    const string Release = """
+        {"tag_name":"v2.1.0","html_url":"https://example/releases/v2.1.0","draft":false,"prerelease":false,
+         "assets":[{"name":"PeergosSnap-Setup-2.1.0.exe","browser_download_url":"https://example/setup.exe"},
+                   {"name":"SHA256SUMS-2.1.0.txt","browser_download_url":"https://example/sums.txt"},
+                   {"name":"PeergosSnap-Source-2.1.0.zip","browser_download_url":"https://example/src.zip"}]}
+        """;
+
+    [Theory]
+    [InlineData("v2.1.0", "2.1.0")]
+    [InlineData("2.0.3", "2.0.3")]
+    [InlineData("v3.0", "3.0.0")]
+    [InlineData("v2.1.0-beta1", "2.1.0")]
+    public void Parses_versions(string tag, string expected) => Assert.Equal(Version.Parse(expected), PeergosSnap.Services.Updater.ParseVersion(tag));
+
+    [Fact]
+    public void Rejects_non_versions() => Assert.Null(PeergosSnap.Services.Updater.ParseVersion("latest"));
+
+    [Fact]
+    public void Finds_newer_release_with_installer_and_checksums()
+    {
+        var u = PeergosSnap.Services.Updater.ParseRelease(Release, new Version(2, 0, 0));
+        Assert.NotNull(u);
+        Assert.Equal(new Version(2, 1, 0), u!.Version);
+        Assert.Equal("PeergosSnap-Setup-2.1.0.exe", u.SetupName);
+        Assert.Equal("https://example/setup.exe", u.SetupUrl);
+        Assert.Equal("https://example/sums.txt", u.SumsUrl);
+    }
+
+    [Fact]
+    public void Ignores_same_or_older_drafts_and_incomplete_releases()
+    {
+        Assert.Null(PeergosSnap.Services.Updater.ParseRelease(Release, new Version(2, 1, 0)));
+        Assert.Null(PeergosSnap.Services.Updater.ParseRelease(Release, new Version(3, 0, 0)));
+        Assert.Null(PeergosSnap.Services.Updater.ParseRelease(Release.Replace("\"prerelease\":false", "\"prerelease\":true"), new Version(2, 0, 0)));
+        Assert.Null(PeergosSnap.Services.Updater.ParseRelease(Release.Replace("SHA256SUMS-2.1.0.txt", "other.txt"), new Version(2, 0, 0)));
+    }
+
+    [Fact]
+    public void Reads_checksum_lists()
+    {
+        var sums = "eaad25b8a841ba20b6f615d0958e825f6f60c995912043931ad51cd4e9ef36c0  PeergosSnap-Setup-2.1.0.exe\n" +
+                   "4fd5d6a0c310807d62c5a5b6b02eec219a7d52fa80bdd1261d2b87d7dc6070a9  PeergosSnap-Source-2.1.0.zip\n";
+        Assert.Equal("eaad25b8a841ba20b6f615d0958e825f6f60c995912043931ad51cd4e9ef36c0", PeergosSnap.Services.Updater.ExpectedHash(sums, "PeergosSnap-Setup-2.1.0.exe"));
+        Assert.Null(PeergosSnap.Services.Updater.ExpectedHash(sums, "PeergosSnap-Setup-9.9.9.exe"));
+    }
+}
+
+public class ThemeTests
+{
+    public static IEnumerable<object[]> Schemes() => Theme.Schemes.Where(s => s.Id != "system").Select(s => new object[] { s.Id });
+
+    static Scheme Get(string id) => Theme.Schemes.First(s => s.Id == id);
+
+    [Theory]
+    [MemberData(nameof(Schemes))]
+    public void Text_is_readable(string id)
+    {
+        var s = Get(id);
+        double body = s.Group == "Medium" ? 6 : 7;
+        Assert.True(Theme.Contrast(s.Fg, s.Bg) >= body, $"{id}: text {Theme.Contrast(s.Fg, s.Bg):0.0}");
+        Assert.True(Theme.Contrast(s.Fg, s.Bg2) >= 5.5, $"{id}: text on cards");
+        Assert.True(Theme.Contrast(s.Fg, s.Bg3) >= 5.5, $"{id}: text on inputs");
+        Assert.True(Theme.Contrast(s.Fg2, s.Bg) >= 4.5, $"{id}: secondary text");
+        Assert.True(Theme.Contrast(s.Fg3, s.Bg) >= 4.5, $"{id}: hints");
+    }
+
+    [Theory]
+    [MemberData(nameof(Schemes))]
+    public void Accents_are_readable(string id)
+    {
+        var s = Get(id);
+        Assert.True(Theme.Contrast(s.Acc, s.Bg) >= 4.5, $"{id}: accent text");
+        Assert.True(Theme.Contrast(s.Acc, s.Bg2) >= 4.5, $"{id}: accent text on cards");
+        Assert.True(Theme.Contrast(s.OnAcc, s.Acc2) >= 4.5, $"{id}: button text");
+        Assert.True(Theme.Contrast(s.Acc2, s.Bg) >= 1.6, $"{id}: buttons stand out");
+    }
+
+    [Fact]
+    public void A_third_each_dark_medium_bright()
+    {
+        var groups = Theme.Schemes.Where(s => s.Id != "system").GroupBy(s => s.Group).ToDictionary(g => g.Key, g => g.Count());
+        Assert.Equal(6, groups["Dark"]);
+        Assert.Equal(6, groups["Medium"]);
+        Assert.Equal(6, groups["Bright"]);
+        Assert.Equal(Theme.Schemes.Length, Theme.Schemes.Select(s => s.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public void Old_scheme_names_still_work()
+    {
+        Assert.True(Theme.Known("dark"));
+        Assert.Equal("graphite", Theme.Resolve("dark").Id);
+        Assert.Equal("paper", Theme.Resolve("light").Id);
+        Assert.False(Theme.Known("nonsense"));
+        Assert.Equal("peergos-dark", Theme.Resolve("nonsense").Id);
+    }
 }
 
 public class SettingsTests
 {
     [Fact]
-    public void Roundtrip_keeps_values_and_protects_secrets()
+    public void Roundtrip_keeps_values_and_protects_the_session()
     {
         var dir = Path.Combine(Path.GetTempPath(), "pst-" + Guid.NewGuid());
         var file = Path.Combine(dir, "settings.json");
         try
         {
-            var s = new Settings { FolderLink = "https://peergos.net/secret/z/1#secretkey", FolderLinkPassword = "pw", Output = OutputMode.DirectMedia, FrameRate = 24 };
+            var s = new Settings { Username = "neo", Session = "rootkey.secretentry", Output = OutputMode.DirectMedia, FrameRate = 24 };
             s.Save(file);
             var raw = File.ReadAllText(file);
-            Assert.DoesNotContain("secretkey", raw);
-            Assert.DoesNotContain("\"pw\"", raw);
+            Assert.DoesNotContain("secretentry", raw);
             Assert.Contains("DirectMedia", raw);
             var back = Settings.Load(file);
-            Assert.Equal("https://peergos.net/secret/z/1#secretkey", back.FolderLink);
-            Assert.Equal("pw", back.FolderLinkPassword);
+            Assert.Equal("rootkey.secretentry", back.Session);
             Assert.Equal(24, back.FrameRate);
             Assert.True(back.PeergosConfigured);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void Signed_in_needs_user_and_session()
+    {
+        Assert.False(new Settings().PeergosConfigured);
+        Assert.False(new Settings { Username = "neo" }.PeergosConfigured);
+        Assert.False(new Settings { Session = "a.b" }.PeergosConfigured);
+        Assert.True(new Settings { Username = "neo", Session = "a.b" }.PeergosConfigured);
+    }
+
+    [Fact]
+    public void Settings_of_version_1_load_without_losing_data()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pst-" + Guid.NewGuid());
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "settings.json");
+        try
+        {
+            File.WriteAllText(file, """
+                {"Storage":"SharedFolder","Server":"https://peergos.net","FolderLinkProtected":"abc","Username":"","ColorScheme":"dark",
+                 "Output":"SecretLink","RecordCursor":false}
+                """);
+            var s = Settings.Load(file);
+            Assert.Equal("abc", s.FolderLinkProtected);
+            Assert.True(s.HadFolderLink);
+            Assert.False(s.PeergosConfigured);
+            Assert.Equal("dark", s.ColorScheme);
+            Assert.False(s.RecordCursor);
+            Assert.True(s.CheckForUpdates);
+            s.Save(file);
+            Assert.Contains("\"FolderLinkProtected\": \"abc\"", File.ReadAllText(file));
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -210,12 +359,15 @@ public class SettingsTests
         Assert.Equal(0, s.CaptureDelayMs);
         Assert.Equal(OutputMode.SecretLink, s.Output);
         Assert.Equal(0, s.OverlayDimPercent);
-        s.FrameRate = 500; s.ImageFormat = "bmp"; s.Server = "https://x.org//"; s.CaptureDelayMs = -5;
+        Assert.True(s.RecordCursor);
+        Assert.True(s.InstallUpdatesAutomatically);
+        s.FrameRate = 500; s.ImageFormat = "bmp"; s.Server = "https://x.org//"; s.CaptureDelayMs = -5; s.ColorScheme = "nope";
         s.Clamp();
         Assert.Equal(60, s.FrameRate);
         Assert.Equal("png", s.ImageFormat);
         Assert.Equal("https://x.org", s.Server);
         Assert.Equal(0, s.CaptureDelayMs);
+        Assert.Equal("system", s.ColorScheme);
     }
 
     [Fact]
@@ -232,6 +384,30 @@ public class SettingsTests
             Assert.Single(Directory.GetFiles(dir, "settings.json.corrupt-*"));
         }
         finally { Directory.Delete(dir, true); }
+    }
+}
+
+public class HelpTests
+{
+    static string Dir => Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "src", "PeergosSnap", "help"));
+
+    [Fact]
+    public void Help_has_quick_start_and_every_settings_page()
+    {
+        var html = File.ReadAllText(Path.Combine(Dir, "index.html"));
+        foreach (var id in new[] { "quick-start", "pictures", "videos", "output", "notifications", "peergos", "hotkeys", "updates", "user-notes",
+                     "troubleshooting", "settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-hotkeys",
+                     "settings-appearance", "settings-general" })
+            Assert.Contains($"id=\"{id}\"", html);
+    }
+
+    [Fact]
+    public void Help_is_about_usage_only()
+    {
+        var text = File.ReadAllText(Path.Combine(Dir, "index.html"));
+        foreach (var word in new[] { "GPL", "licen", "ffmpeg", "java", "github", "copyright", "anderle", "bridge", "WebView", "AppData" })
+            Assert.DoesNotContain(word, text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(".NET", text, StringComparison.Ordinal); // "peergos.net" is fine
     }
 }
 

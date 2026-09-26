@@ -102,7 +102,8 @@ public sealed class ToastWindow : Window
     }
 
     /// <summary>Shows (or updates) the single notification card.</summary>
-    public static ToastWindow Show(ToastKind kind, string heading, string body, string? link = null, string? file = null, int? percent = null)
+    public static ToastWindow Show(ToastKind kind, string heading, string body, string? link = null, string? file = null, int? percent = null,
+        (string Label, Action Run)? extra = null)
     {
         var t = current ??= new ToastWindow();
         var sc = Theme.Current;
@@ -127,6 +128,7 @@ public sealed class ToastWindow : Window
             b.Click += (_, _) => { a(); t.Close(); };
             t.actions.Children.Add(b);
         }
+        if (extra is { } x) Action(x.Label, x.Run);
         if (link != null) Action("Open link", () => Open(link));
         if (file != null && File.Exists(file)) Action("Show file", () => Process.Start("explorer.exe", "/select,\"" + file + "\""));
         t.actions.Visibility = t.actions.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

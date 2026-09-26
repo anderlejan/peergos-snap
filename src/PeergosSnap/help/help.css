@@ -1,0 +1,71 @@
+/* Peergos Snap Help – uses the app's colour scheme (sent as CSS variables) and font size. */
+:root { --bg: #16201D; --bg2: #1D2A26; --bg3: #243430; --fg: #E8F1EE; --fg2: #B9CAC4; --fg3: #97ABA4; --line: #34483F;
+  --acc: #4FD1A5; --acc2: #1E7A5D; --on-acc: #FFFFFF; --base-size: 14px; color-scheme: dark; }
+* { box-sizing: border-box; }
+html { font-size: var(--base-size); }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.55; font-size: 1rem; }
+a { color: var(--acc); text-underline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 16px; padding: 12px 20px;
+  background: var(--bg2); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+.logo { width: 34px; height: 34px; flex: none; fill: var(--acc2); }
+.logo .lens { fill: var(--on-acc); }
+h1 { margin: 0; font-size: 1.3rem; font-weight: 600; line-height: 1.2; }
+.version { color: var(--fg3); font-size: .86rem; }
+.search input { width: min(300px, 38vw); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); font: inherit; outline: none; }
+.search input:focus { border-color: var(--acc); box-shadow: 0 0 0 2px color-mix(in srgb, var(--acc) 35%, transparent); }
+
+.layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 0; }
+nav { position: sticky; top: 59px; align-self: start; height: calc(100vh - 59px); overflow: auto; padding: 14px 8px 30px 14px;
+  border-right: 1px solid var(--line); font-size: .93rem; }
+nav a { display: block; padding: 4px 10px; border-radius: 6px; color: var(--fg2); text-decoration: none; }
+nav a.sub { padding-left: 24px; font-size: .9em; color: var(--fg3); }
+nav a:hover { background: var(--bg3); color: var(--fg); }
+nav a.active { background: var(--bg3); color: var(--fg); box-shadow: inset 3px 0 0 var(--acc); }
+nav a.hidden { display: none; }
+
+main { padding: 8px 34px 60px; max-width: 900px; }
+section { padding-top: 10px; }
+section.hidden { display: none; }
+h2 { font-size: 1.45rem; font-weight: 600; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); scroll-margin-top: 70px; }
+h3 { font-size: 1.1rem; font-weight: 600; margin: 22px 0 6px; scroll-margin-top: 70px; }
+p, ul, ol, dl, table { margin: 0 0 12px; }
+li { margin: 4px 0; }
+em { font-style: normal; font-weight: 600; color: var(--fg); }
+strong { font-weight: 600; }
+kbd { display: inline-block; min-width: 1.6em; padding: 0 .4em; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 5px; background: var(--bg2); font: .88em "Segoe UI", system-ui, sans-serif; text-align: center; line-height: 1.6; }
+table { border-collapse: collapse; width: 100%; font-size: .96rem; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--fg2); font-weight: 600; background: var(--bg2); }
+ol.steps { counter-reset: step; list-style: none; padding-left: 0; }
+ol.steps > li { counter-increment: step; position: relative; padding: 8px 12px 8px 46px; margin: 8px 0; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 8px; }
+ol.steps > li::before { content: counter(step); position: absolute; left: 12px; top: 8px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--acc2); color: var(--on-acc); font-weight: 700; font-size: .85rem; display: grid; place-items: center; }
+.tip { padding: 10px 14px; border-left: 3px solid var(--acc); background: var(--bg2); border-radius: 0 8px 8px 0; color: var(--fg2); }
+.sample { font-family: "Cascadia Mono", Consolas, monospace; font-size: .9rem; padding: 8px 12px; background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 6px; color: var(--fg2); overflow-wrap: anywhere; }
+.dot { display: inline-block; width: .65em; height: .65em; border-radius: 50%; margin-right: .5em; vertical-align: middle; }
+.dot.ok { background: var(--acc); } .dot.warn { background: #E09A1F; } .dot.err { background: #D93B3B; }
+dl.faq dt { font-weight: 600; margin-top: 14px; }
+dl.faq dd { margin: 4px 0 0 0; color: var(--fg2); }
+mark { background: color-mix(in srgb, var(--acc) 35%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+.flash { animation: flash 1.6s ease-out; border-radius: 6px; }
+@keyframes flash { 0% { background: color-mix(in srgb, var(--acc) 30%, transparent); } 100% { background: transparent; } }
+.noresult { margin-top: 30px; color: var(--fg3); }
+
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; }
+  nav { display: none; }
+  main { padding: 8px 18px 50px; }
+}
+@media print {
+  .top, nav { display: none; }
+  .layout { display: block; }
+  section.hidden { display: block; }
+}

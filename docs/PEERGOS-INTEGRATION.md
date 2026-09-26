@@ -1,78 +1,60 @@
-# Peergos integration: how uploads and links work
+# Peergos integration: sign-in, uploads and links
 
 Peergos encrypts everything on the client. The server stores only encrypted blocks and signed pointers, so an
-upload must build the encrypted file tree itself. Peergos Snap does not re-implement that cryptography. It runs the
-**official Peergos client library** (`Peergos.jar`, AGPL-3.0, release v1.35.1) through a small bridge
-(`bridge/src/snap/bridge/PeergosBridge.java`) on a bundled Java runtime. That way it uses exactly the same code as
-the Peergos web app.
+upload has to build the encrypted file tree itself. Peergos Snap does not re-implement that cryptography. It runs
+the **official Peergos client library** (`Peergos.jar`, AGPL-3.0, release v1.35.1) through a small bridge
+(`bridge/src/snap/bridge/PeergosBridge.java`) on a bundled Java runtime, so it uses exactly the same code as the
+Peergos web app.
 
-## Mode B: shared writable folder link (no login)
+Since 2.0 every upload goes through the user's **Peergos account**. Links are created by the account, in the same
+short form as the web app's Share dialog:
 
-Link format: `https://<host>/secret/<owner>/<label>#<linkPassword>`
+```
+https://<link host>/secret/<owner>/<label>#<link password>?open=true
+```
 
-- `<owner>`: the owner's public-key hash (base58, starts with `z`).
-- `<label>`: a number that identifies the stored link on the owner's server.
-- `<linkPassword>`: the part after `#`. The browser never sends it to the server.
+## Signing in once, then staying signed in
 
-Steps (all verified on peergos.net on 2026-09-26):
+1. **Sign in** (`signin`): `UserContext.signIn(username, password, mfa, cacheMfaLoginData = true, …)`. If the
+   account asks for a second factor, the bridge prints `@mfa totp` and reads the code from the app. The app asks the
+   user for the code from their authenticator app. Accounts that only allow a security key (WebAuthn) are refused
+   with a clear message.
+2. The bridge wraps the network's account store in Peergos's own `OfflineAccountStore` with a capture `LoginCache`.
+   That is how the web app's "stay logged in" keeps the login data. After sign-in it returns a **session**:
+   base64(login root key) + "." + base64(encrypted entry data).
+3. The app stores only that session (Windows DPAPI, current user). **The password is not stored.** 1.x kept the
+   password; on the first start of 2.0 it is used once to create a session and is then deleted.
+4. Each later command restores the account with `UserContext.restoreContext(username, rootKey, entryData, …)`,
+   the same call the web app uses to stay logged in, without a password or second factor. If that fails (for
+   example after a password change), the app asks the user to sign in again.
 
-1. **Resolve the link.** `UserContext.fromSecretLinkV2("/secret/<owner>/<label>#<pw>", userPassword, network, crypto)`
-   fetches the **encrypted capability** stored under `<owner>/<label>` (`network.getSecretLink`). It then decrypts
-   the capability with a key derived by scrypt from `label` + `linkPassword` (+ the optional user password; links
-   with a password ask for it). The result is a `WritableAbsoluteCapability` for the shared folder: owner, writer
-   key, map key, BAT, read key and write key.
-2. **Open the folder.** `getEntryPath()` → `getByPath(entry)`. The folder must be `isWritable()`. Otherwise the app
-   says the link is read-only.
-3. **Upload encrypted.** `FileWrapper.uploadOrReplaceFile(name, reader, size, …)` splits the file into chunks.
-   Each chunk is encrypted with a fresh random key under the folder's cryptree, stored in the owner's storage, and
-   signed with the folder's writer key (from the capability). The new file is then linked into the folder's
-   directory node. If the name is already taken, the app uses `name (2).ext` and so on.
-4. **Make the share link for that one file.** A new *stored* secret link (`/secret/…`) can only be registered by
-   the owner's account, because it is stored in the owner's signed link table. A writer who only has a folder
-   capability cannot create one. Instead, the bridge derives the file's **read-only capability** and encodes it
-   the way Peergos encodes capability links:
+## Upload and link
 
-   ```
-   https://<host>/#<owner>/<writer>/<mapKey+BAT>/<readBaseKey>?open=true
-   ```
-
-   (`FileWrapper.toLink()` = `AbsoluteCapability.readOnly().toLink()`, all parts base58.) The Peergos web app opens
-   this directly: `App.vue` → `getSecretLinkProps()` → *legacy secret link* → `UserContext.fromSecretLink(link)`.
-   With `?open=true` it shows the file in the viewer.
-   - The link grants **read access to that file only**. The folder and its other files stay private, and nothing
-     writable is ever handed out.
-   - It works immediately, with no server-side registration. It stays valid for as long as the file exists.
-     Deleting the file in Peergos revokes it.
-
-Checked: a picture uploaded with the bridge opened in a fresh browser with no login and no cookies, and showed
-`bridge-test.png` in the Peergos image viewer.
-
-## Mode A: account
-
-1. `UserContext.signIn(username, password, mfa, network, crypto)`. Two-factor accounts are refused, because
-   automatic uploads cannot answer a code prompt.
-2. `/<user>/<folder>` is created if missing (`mkdir`), then `uploadOrReplaceFile`.
-3. `createSecretLink(path, writable=false, expiry=none, maxRetrievals=none, userPassword="", open=true)` stores a
-   new encrypted capability on the owner's server. `getLinkString` gives `secret/<owner>/<label>#<pw>`, and the link
-   is `https://<server>/` followed by that string. This is the same kind of link the web app's Share dialog creates.
+`upload`: restore the session → `/<user>/<folder>` (created when missing) → `uploadOrReplaceFile` (streamed from
+disk, with a progress line per percent) → a unique name (`name (2).ext` …) →
+`createSecretLink(path, writable = false, expiry = none, maxRetrievals = none, userPassword = "", open = true)` →
+`getLinkString(props)`. The link is `https://` + `getLinkHost()` + `/` + the link string + `?open=true`. This is
+exactly what the web app's Share dialog builds (`SecretLink.vue → buildHref`). The link opens the file in the
+viewer, read-only, and gives no access to anything else. Deleting the file in Peergos ends the share.
 
 ## Bridge protocol
 
 ```
 java -cp peergos-snap-bridge.jar;Peergos.jar snap.bridge.PeergosBridge <command> [--options]
-  folder        --server URL --link LINK --file PATH [--name NAME]      stdin: link user password
-  check         --server URL --link LINK                                stdin: link user password
-  account       --server URL --user NAME --file PATH [--folder F]       stdin: password, TOTP (empty)
-  account-check --server URL --user NAME                                stdin: password, TOTP (empty)
-stdout: one JSON line  {"ok":true,"link":"…","path":"…"}  |  {"ok":false,"error":"…"}
-stderr: "@progress N" (percent) while uploading, plus Peergos logs
+  signin --server URL --user NAME                           stdin: password [, then the two-factor code on request]
+  check  --server URL --user NAME                           stdin: session
+  upload --server URL --user NAME --file PATH [--folder F] [--name N]    stdin: session
+stdout: one JSON line  {"ok":true,"session":"…"} | {"ok":true,"link":"…","path":"…"} | {"ok":false,"error":"…"}
+stderr: "@progress N" (percent), "@mfa totp" (code needed), plus Peergos logs
 ```
 
-Secrets go in on stdin only, so they never appear in process lists. Settings store them encrypted with Windows
-DPAPI (current user). The server is taken from the folder link itself (e.g. `https://peergos.net`), so links to a
-self-hosted Peergos or to a local daemon (`http://localhost:8000/secret/…`) work too.
+Secrets go in on stdin only, so they never appear in process lists.
 
-## Files bigger than memory
+## 1.x folder links (removed)
 
-The bridge streams from disk (`FileAsyncReader`) and runs with `-Xmx1g`, so long recordings don't need to fit in
-memory.
+Version 1.x could upload into a *writable folder* secret link without logging in. It then derived a read-only
+capability for the uploaded file, which gave a very long link (`https://peergos.net/#<key>/<key>/<key>/<key>`).
+Together with the Peergos developers this was identified as something that should not be possible for a folder
+writer, and such links are being disabled on the Peergos side. Peergos Snap 2.0 removed the folder mode and that
+link type completely. A folder link stored by 1.x is kept untouched in the settings file (unused) for a possible
+future folder feature.

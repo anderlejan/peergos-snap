@@ -7,21 +7,24 @@ namespace PeergosSnap.Core;
 
 public enum CaptureKind { Picture, Video }
 public enum OutputMode { SecretLink, DirectMedia }
-public enum StorageMode { SharedFolder, Account }
 
 /// <summary>All user settings. Saved as JSON; secrets are protected with Windows DPAPI (current user).</summary>
 public sealed class Settings
 {
     public const string DefaultServer = "https://peergos.net";
 
-    // Peergos
-    public StorageMode Storage { get; set; } = StorageMode.SharedFolder;
+    // Peergos account. After signing in only the Peergos session is kept (DPAPI), never the password.
     public string Server { get; set; } = DefaultServer;
+    public string Username { get; set; } = "";
+    public string SessionProtected { get; set; } = "";
+    public string AccountFolder { get; set; } = "PeergosSnap";
+    /// <summary>Only read once to sign in automatically after an update from 1.x (which stored the password); then cleared.</summary>
+    public string AccountPasswordProtected { get; set; } = "";
+    /// <summary>The folder link of 1.x (sharing through a folder was removed in 2.0). Kept untouched for a possible
+    /// future folder feature; not used.</summary>
     public string FolderLinkProtected { get; set; } = "";
     public string FolderLinkPasswordProtected { get; set; } = "";
-    public string Username { get; set; } = "";
-    public string AccountPasswordProtected { get; set; } = "";
-    public string AccountFolder { get; set; } = "PeergosSnap";
+    public bool FolderRemovalNoticeShown { get; set; }
 
     // Capture
     public CaptureKind DefaultKind { get; set; } = CaptureKind.Picture;
@@ -57,19 +60,25 @@ public sealed class Settings
     public string ColorScheme { get; set; } = "system";
     public int FontPercent { get; set; } = 100;
 
+    // Updates
+    public bool CheckForUpdates { get; set; } = true;
+    public bool InstallUpdatesAutomatically { get; set; } = true;
+    public DateTime? LastUpdateCheck { get; set; }
+    /// <summary>The version that ran last time, to say "updated to …" once after an update.</summary>
+    public string LastRunVersion { get; set; } = "";
+
     // General
     public bool ShowUserNotes { get; set; } = true;
     /// <summary>Only for the User notes prompts, only on this PC; empty = a generic description (nothing personal).</summary>
     public string PromptSourceLocation { get; set; } = "";
 
-    [JsonIgnore] public string FolderLink { get => Unprotect(FolderLinkProtected); set => FolderLinkProtected = Protect(value); }
-    [JsonIgnore] public string FolderLinkPassword { get => Unprotect(FolderLinkPasswordProtected); set => FolderLinkPasswordProtected = Protect(value); }
-    [JsonIgnore] public string AccountPassword { get => Unprotect(AccountPasswordProtected); set => AccountPasswordProtected = Protect(value); }
+    [JsonIgnore] public string Session { get => Unprotect(SessionProtected); set => SessionProtected = Protect(value); }
+    [JsonIgnore] public string LegacyAccountPassword { get => Unprotect(AccountPasswordProtected); set => AccountPasswordProtected = Protect(value); }
+    [JsonIgnore] public bool HadFolderLink => FolderLinkProtected.Length > 0;
 
+    /// <summary>Signed in to a Peergos account (uploads and links need that).</summary>
     [JsonIgnore]
-    public bool PeergosConfigured => Storage == StorageMode.SharedFolder
-        ? FolderLink.Contains("/secret/")
-        : Username.Length > 0 && AccountPassword.Length > 0;
+    public bool PeergosConfigured => Username.Trim().Length > 0 && SessionProtected.Length > 0 && Session.Length > 0;
 
     static readonly byte[] Entropy = Encoding.UTF8.GetBytes("PeergosSnap.v1");
 
@@ -133,7 +142,7 @@ public sealed class Settings
         CaptureDelayMs = Math.Clamp(CaptureDelayMs, 0, 30000);
         CacheKeepDays = Math.Clamp(CacheKeepDays, 0, 3650);
         FontPercent = Math.Clamp(FontPercent, 80, 160);
-        if (Theme.Schemes.All(x => x.Id != ColorScheme)) ColorScheme = "system";
+        if (!Theme.Known(ColorScheme)) ColorScheme = "system";
         PromptSourceLocation ??= "";
         ImageFormat = ImageFormat is "png" or "jpg" ? ImageFormat : "png";
         VideoFormat = VideoFormat is "mp4" or "webm" ? VideoFormat : "mp4";

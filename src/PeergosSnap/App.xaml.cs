@@ -13,6 +13,14 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var cmd = e.Args.FirstOrDefault(a => a.StartsWith("--")) ?? "";
+        // Testing only: PEERGOS_SNAP_DATA gives this copy its own data folders and its own single-instance lock,
+        // so it can run next to the installed app without touching the user's settings, notes or captures.
+        var sandbox = Environment.GetEnvironmentVariable("PEERGOS_SNAP_DATA");
+        if (!string.IsNullOrWhiteSpace(sandbox))
+        {
+            AppPaths.Override(Path.Combine(sandbox, "data"), Path.Combine(sandbox, "local"));
+            SingleInstance.Suffix = "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sandbox.ToLowerInvariant())))[..12];
+        }
 
         if (cmd == "--selftest")
         {

@@ -61,8 +61,9 @@ public sealed class HotkeyManager : IDisposable
 /// <summary>One running copy. Later starts pass their command ("--quit", "--picture", …) to the running copy.</summary>
 public sealed class SingleInstance : IDisposable
 {
-    const string MutexName = "PeergosSnap.SingleInstance.v1";
-    static string PipeName => "PeergosSnap.Cmd." + Environment.UserName;
+    public static string Suffix { get; set; } = "";
+    static string MutexName => "PeergosSnap.SingleInstance.v1" + Suffix;
+    static string PipeName => "PeergosSnap.Cmd." + Environment.UserName + Suffix;
     readonly Mutex mutex;
     readonly CancellationTokenSource cts = new();
     public bool IsFirst { get; }

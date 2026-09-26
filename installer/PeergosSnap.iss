@@ -53,13 +53,16 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
-; Old runtime/bridge files must not mix with new ones.
+; Old runtime/bridge files must not mix with new ones; old builds shipped debug symbols and a user guide file.
 Type: filesandordirs; Name: "{app}\runtime"
 Type: filesandordirs; Name: "{app}\bridge"
+Type: files; Name: "{app}\PeergosSnap.pdb"
+Type: files; Name: "{app}\USER-GUIDE.md"
 
 [Icons]
 Name: "{autoprograms}\Peergos Snap"; Filename: "{app}\PeergosSnap.exe"
 Name: "{autoprograms}\Peergos Snap – Settings"; Filename: "{app}\PeergosSnap.exe"; Parameters: "--settings"
+Name: "{autoprograms}\Peergos Snap – Help"; Filename: "{app}\PeergosSnap.exe"; Parameters: "--help"
 Name: "{autodesktop}\Peergos Snap"; Filename: "{app}\PeergosSnap.exe"; Tasks: desktopicon
 
 [Registry]

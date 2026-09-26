@@ -170,7 +170,7 @@ public readonly record struct Hotkey(bool Ctrl, bool Alt, bool Shift, bool Win, 
     }
 }
 
-public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, string? Error)
+public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, string? Error, string? Session = null)
 {
     public static BridgeResult Parse(string stdout)
     {
@@ -181,30 +181,27 @@ public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, st
             using var doc = JsonDocument.Parse(line);
             var r = doc.RootElement;
             string? S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-            return new(r.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True, S("link"), S("path"), S("error"));
+            return new(r.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True, S("link"), S("path") ?? S("home"), S("error"), S("session"));
         }
         catch (JsonException) { return new(false, null, null, "The uploader answer could not be read"); }
     }
 }
 
-public static class LinkCheck
+public static class PeergosLinks
 {
-    /// <summary>A writable-folder secret link looks like https://host/secret/&lt;owner&gt;/&lt;id&gt;#&lt;key&gt;.</summary>
-    public static bool LooksLikeSecretLink(string? link, out string? problem)
+    /// <summary>
+    /// A share link in the short form the Peergos web app creates: https://HOST/secret/OWNER/ID#KEY, optionally
+    /// followed by ?open=true. The long capability form (https://HOST/#key/key/key/key) is not accepted.
+    /// </summary>
+    public static bool IsShortSecretLink(string? link)
     {
-        problem = null;
-        if (string.IsNullOrWhiteSpace(link)) { problem = "Paste the folder's secret link"; return false; }
-        link = link.Trim();
-        if (!Uri.TryCreate(link, UriKind.Absolute, out var u) || (u.Scheme != "https" && u.Scheme != "http"))
-        { problem = "Not a web link"; return false; }
+        if (string.IsNullOrWhiteSpace(link) || !Uri.TryCreate(link.Trim(), UriKind.Absolute, out var u)) return false;
+        if (u.Scheme != "https" && u.Scheme != "http") return false;
         var parts = u.AbsolutePath.Trim('/').Split('/');
-        if (parts.Length != 3 || parts[0] != "secret" || !long.TryParse(parts[2], out _))
-        { problem = "Expected …/secret/<owner>/<number>#<key>"; return false; }
-        if (u.Fragment.Length < 2) { problem = "The part after # (the key) is missing"; return false; }
-        return true;
+        if (parts.Length != 3 || parts[0] != "secret" || !parts[1].StartsWith('z') || !long.TryParse(parts[2], out _)) return false;
+        var key = u.Fragment.TrimStart('#');
+        var q = key.IndexOf('?');
+        if (q >= 0) key = key[..q];
+        return key.Length > 0 && key.All(char.IsLetterOrDigit);
     }
-
-    /// <summary>The server the link lives on, e.g. https://peergos.net.</summary>
-    public static string? ServerOf(string link) =>
-        Uri.TryCreate(link.Trim(), UriKind.Absolute, out var u) ? u.GetLeftPart(UriPartial.Authority) : null;
 }

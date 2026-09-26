@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.0 – 2026-09-27
+
+**Sharing through a folder link was removed.** Links now always come from your Peergos account, in the short
+form of the Peergos web app (`https://peergos.net/secret/<owner>/<id>#<key>?open=true`). The long links that 1.x
+created for folder uploads (`https://peergos.net/#…/…/…/…`) are being disabled by Peergos.
+
+- **Sign in once, password not stored.** Settings → Peergos signs in (with a two-factor code if the account uses
+  one) and keeps only the Peergos session, encrypted for your Windows account, until you sign out. An account
+  password stored by 1.x is used once to sign in automatically and is then deleted. If the session ends (for
+  example after a password change), a card asks you to sign in again. A folder link stored by 1.x is kept but
+  unused.
+- **Show password:** an eye button next to the password field shows or hides what you typed.
+- **Mouse pointer in videos:** besides Settings → Capture, the tray menu now has *Videos → Show mouse pointer*.
+  The self-test checks that the option really shows or hides the pointer.
+- **Automatic updates:** Peergos Snap checks the latest GitHub release at start and once a day. It downloads the
+  installer, verifies it against the release's SHA256 list, installs it silently and starts again, never during a
+  recording or upload. Settings → General: *Check for new versions automatically*, *Install new versions
+  automatically* and **Check for the new version**.
+- **The tray menu follows the colour scheme** (colours, font size, accent ticks, rounded corners).
+- **18 colour schemes:** 6 dark, 6 of medium brightness and 6 bright ones that are soft on the eyes (no pure
+  white), plus *Follow Windows*. All are checked for readable contrast; the Appearance list groups them.
+- **Built-in Help** with a quick start and every feature, setting and common problem explained (tray menu →
+  Help, F1 or the Help button in Settings, Start menu → Peergos Snap – Help). It shows the version number and
+  nothing else about the app's making. `docs/USER-GUIDE.md` was replaced by it.
+- Hotkeys are only registered again when they change.
+
+
 ## 1.1.1 – 2026-09-26
 
 First public release (contains everything from 1.1.0).
