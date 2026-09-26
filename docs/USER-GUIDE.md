@@ -1,4 +1,4 @@
-# Peergos Snap – user guide (1.1.0)
+# Peergos Snap – user guide (1.1.1)
 
 ## First start
 

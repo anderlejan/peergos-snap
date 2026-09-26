@@ -11,7 +11,7 @@
     <AssemblyName>PeergosSnap</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\PeergosSnap.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Product>Peergos Snap</Product>
     <Company>Jan Anderle</Company>
     <Copyright>Copyright (C) 2026 Jan Anderle. GPL-3.0-or-later.</Copyright>
@@ -20,6 +20,14 @@
     <PublishSingleFile>false</PublishSingleFile>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Release binaries must not contain the build machine's folders: neutral source paths, no debug symbols shipped. -->
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/src/PeergosSnap</PathMap>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>

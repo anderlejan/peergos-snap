@@ -1,8 +1,14 @@
 # Changelog
 
-## 1.1.0 – 2026-09-26
+## 1.1.1 – 2026-09-26
 
-First public release.
+First public release (contains everything from 1.1.0).
+
+- Release builds no longer contain the build machine's folder paths: source paths are neutral and no debug
+  symbols are shipped. The build fails if a local path ever appears in a shipped app binary.
+
+## 1.1.0 – 2026-09-26 (internal build, not published)
+
 
 - **Notifications you always see.** The app shows its own notification card (bottom right, never included in
   captures) instead of Windows balloon tips, which "Do not disturb" or notification settings could swallow
