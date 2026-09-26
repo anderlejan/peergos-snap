@@ -1,0 +1,58 @@
+/* User notes module — styles. Uses the host's CSS variables when present (--bg, --bg2, --fg, --acc …), with dark fallbacks. */
+.un-overlay { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; outline: none; }
+.un-box { width: min(1040px, 95vw); height: min(780px, 92vh); min-width: 560px; min-height: 360px; max-width: 100vw; max-height: 100vh; display: flex; flex-direction: column; overflow: hidden; resize: both;
+  font-family: var(--reader-font, inherit); font-size: var(--reader-size, 100%);
+  background: var(--bg2, #1c1f25); color: var(--fg, #e6e8ec); border: 1px solid var(--line, #343a46); border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+.un-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line, #343a46); flex-wrap: wrap; cursor: move; user-select: none; }
+.un-head button, .un-head select, .un-head input { cursor: pointer; }
+.un-head h2 { margin: 0; font-size: 1.23rem; font-weight: 600; flex: 1; }
+.un-help { padding: 8px 16px; color: var(--fg3, #737a88); font-size: .92rem; border-bottom: 1px solid var(--line, #343a46); }
+.un-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 46%) 1fr; gap: 14px; padding: 14px 16px; }
+.un-body.one { display: flex; }
+.un-foot { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line, #343a46); flex-wrap: wrap; }
+.un-foot-info { flex: 1; color: var(--fg3, #737a88); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 120px; }
+.un-btn { background: var(--bg3, #242831); color: var(--fg, #e6e8ec); border: 1px solid var(--line, #343a46); border-radius: 6px; padding: 5px 10px; cursor: pointer; white-space: nowrap; font: inherit; }
+.un-btn:hover { border-color: var(--acc, #4f9dff); }
+.un-btn:disabled { opacity: .45; cursor: default; }
+.un-btn.pri { background: var(--acc2, #2b6fd6); border-color: var(--acc2, #2b6fd6); color: var(--on-acc, #fff); }
+.un-btn.bad { background: var(--bad-bg, #6b2622); border-color: var(--bad-line, #8a332d); color: var(--bad-fg, #fff); }
+.un-seg { display: inline-flex; border: 1px solid var(--line, #343a46); border-radius: 8px; overflow: hidden; }
+.un-seg button { background: transparent; border: 0; border-right: 1px solid var(--line, #343a46); padding: 4px 10px; color: var(--fg2, #a9afbb); cursor: pointer; font: inherit; font-size: .92rem; }
+.un-seg button:last-child { border-right: 0; }
+.un-seg button.on { background: var(--acc2, #2b6fd6); color: var(--on-acc, #fff); }
+.un-mode, .un-editor input[type=text], .un-editor select, .un-editor textarea, .un-output { background: var(--bg, #15171b); color: var(--fg, #e6e8ec); border: 1px solid var(--line, #343a46); border-radius: 6px; padding: 5px 8px; font: inherit; outline: none; }
+.un-editor input:focus, .un-editor select:focus, .un-editor textarea:focus, .un-output:focus { border-color: var(--acc, #4f9dff); }
+.un-list { overflow-y: auto; border: 1px solid var(--line, #343a46); border-radius: 8px; background: var(--bg, #15171b); }
+.un-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-bottom: 1px solid var(--row-line, #262a33); cursor: pointer; user-select: none; }
+.un-row:hover { background: var(--bg3, #242831); }
+.un-row.cur { background: var(--sel-bg, #1d2a3d); outline: 1px solid var(--acc2, #2b6fd6); }
+.un-row.drag-over { box-shadow: inset 0 3px 0 var(--acc, #4f9dff); }
+.un-row.st-done .un-t { opacity: .6; }
+.un-row input { accent-color: var(--acc, #4f9dff); }
+.un-grip { cursor: grab; color: var(--fg3, #737a88); }
+.un-num { color: var(--fg3, #737a88); width: 1.8rem; text-align: right; }
+.un-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.un-t small { color: var(--fg3, #737a88); margin-left: 6px; }
+.un-type { color: var(--fg2, #a9afbb); }
+.un-prio.high { color: var(--bad, #e5534b); } .un-prio.low { color: var(--fg3, #737a88); }
+.un-badge { font-size: .77rem; border-radius: 4px; padding: 1px 6px; white-space: nowrap; background: var(--bg4, #2d323d); color: var(--fg2, #a9afbb); }
+.un-badge.open { background: var(--st-open-bg, #1f3b5c); color: var(--st-open-fg, #cfe3ff); }
+.un-badge.queued { background: var(--st-queued-bg, #3b2f63); color: var(--st-queued-fg, #e1d6ff); }
+.un-badge.sent { background: var(--st-sent-bg, #4a3a14); color: var(--st-sent-fg, #f3d9a4); }
+.un-badge.done { background: var(--st-done-bg, #1f4a34); color: var(--st-done-fg, #c7f0d9); }
+.un-editor { overflow-y: auto; }
+.un-fld { margin-bottom: 10px; }
+.un-fld > label { display: flex; justify-content: space-between; font-size: .85rem; color: var(--fg3, #737a88); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.un-fld input[type=text], .un-fld select, .un-fld textarea { width: 100%; }
+.un-details { min-height: 170px; resize: vertical; line-height: 1.45; }
+.un-grid4 { display: grid; grid-template-columns: 1.3fr 1fr .8fr .8fr; gap: 10px; }
+.un-meta { color: var(--fg3, #737a88); font-size: .85rem; margin-bottom: 10px; }
+.un-actions, .un-inline { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.un-link { color: var(--acc, #4f9dff); cursor: pointer; text-transform: none; letter-spacing: 0; }
+.un-empty { color: var(--fg3, #737a88); padding: 30px 10px; text-align: center; }
+.un-output { flex: 1; width: 100%; resize: none; font-family: var(--reader-font, Consolas, "Cascadia Mono", monospace); font-size: 1em; line-height: 1.5; }
+.un-details { font-family: var(--reader-font, inherit); font-size: 1em; }
+.un-lbl { color: var(--fg3, #737a88); font-size: .92rem; }
+.un-bulk { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; border-top: 1px solid var(--line, #343a46); background: var(--sel-bg, #1d2a3d); }
+.un-bulk.hidden { display: none; }
+.un-bulk .un-area-new { background: var(--bg, #15171b); color: var(--fg, #e6e8ec); border: 1px solid var(--acc, #4f9dff); border-radius: 6px; padding: 5px 8px; font: inherit; }
