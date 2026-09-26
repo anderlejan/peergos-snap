@@ -70,7 +70,7 @@ public static class SelfTest
                 Native.GetCursorPos(out var before);
                 int cx = rect.X + 100, cy = rect.Y + 50;
                 Native.SetCursorPos(cx, cy);
-                Thread.Sleep(300);
+                Thread.Sleep(1200); // let hover effects under the pointer settle
                 var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true }, rect);
                 var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
                 var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
@@ -78,7 +78,8 @@ public static class SelfTest
                 int w = Geometry.EvenSize(rect).Width;
                 int changed = Diff(withPointer, withoutPointer, w, 100, 50, 14, 20);
                 int noise = Diff(withoutPointer, withoutAgain, w, 100, 50, 14, 20);
-                Check("mouse pointer shown / hidden in videos", changed >= 20 && noise <= 3,
+                // Compressed video differs a little between two recordings of the same screen; the pointer must stand far above that.
+                Check("mouse pointer shown / hidden in videos", changed >= 40 && changed >= 3 * Math.Max(noise, 1),
                     $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it");
             }
 
