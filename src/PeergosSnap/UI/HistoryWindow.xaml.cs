@@ -268,6 +268,8 @@ public partial class HistoryWindow : Window
 
     void Result(string text) => ActionResult.Text = text;
 
+    static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+
     void AskDelete(bool local, bool remote)
     {
         var sel = Selected();
@@ -276,9 +278,11 @@ public partial class HistoryWindow : Window
         if (localItems.Count + remoteItems.Count == 0) return;
         var parts = new List<string>();
         if (localItems.Count > 0) parts.Add($"{localItems.Count} file{(localItems.Count == 1 ? "" : "s")} on this PC go{(localItems.Count == 1 ? "es" : "")} to the Recycle Bin");
-        if (remoteItems.Count > 0) parts.Add($"{remoteItems.Count} file{(remoteItems.Count == 1 ? "" : "s")} will be deleted from your Peergos folder – their links stop working, and this cannot be undone");
+        if (remoteItems.Count > 0) parts.Add($"{Count(remoteItems.Count, "file", "files")} will be deleted from your Peergos folder – "
+                                             + (remoteItems.Count == 1 ? "its link stops" : "their links stop") + " working, and this cannot be undone");
         var mirrorNote = localItems.Any(i => i.Record.MirrorFile != null) ? " Copies in your mirror folder are kept." : "";
-        Confirm(string.Join("; ", parts) + "." + mirrorNote + " The history keeps the entries.", "Yes, delete", async () =>
+        var entries = localItems.Concat(remoteItems).Distinct().Count() == 1 ? "the entry" : "the entries";
+        Confirm(string.Join("; ", parts) + "." + mirrorNote + $" The history keeps {entries}.", "Yes, delete", async () =>
         {
             var messages = new List<string>();
             if (localItems.Count > 0)
@@ -333,7 +337,7 @@ public partial class HistoryWindow : Window
         Confirm($"Remove {gone.Count} entr{(gone.Count == 1 ? "y" : "ies")} whose files are neither on this PC nor in Peergos?", "Yes, remove", () =>
         {
             Store.Remove(gone.Select(g => g.Id));
-            Result($"{gone.Count} entries removed");
+            Result($"{Count(gone.Count, "entry", "entries")} removed");
             return Task.CompletedTask;
         });
     }
@@ -342,7 +346,7 @@ public partial class HistoryWindow : Window
     {
         if (Store.Records.Count == 0) return;
         SelectFirstIfNone();
-        Confirm($"Clear the whole history ({Store.Records.Count} entries)? No file is deleted – only the list is emptied.", "Yes, clear", () =>
+        Confirm($"Clear the whole history ({Count(Store.Records.Count, "entry", "entries")})? No file is deleted – only the list is emptied.", "Yes, clear", () =>
         {
             Store.Clear();
             Result("The history is empty");
