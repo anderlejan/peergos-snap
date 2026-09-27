@@ -26,6 +26,12 @@ public sealed class TrayController : IDisposable
     SettingsWindow? settingsWindow;
     NotesWindow? notesWindow;
     HelpWindow? helpWindow;
+    HistoryWindow? historyWindow;
+    readonly HistoryStore history;
+    CancellationTokenSource? countdownCts;
+    (string? App, string? Title) recordingSource;
+    DateTime recordingStarted;
+    readonly Dictionary<int, Icon> numberIcons = [];
     readonly DispatcherTimer updateTimer = new() { Interval = TimeSpan.FromHours(1) };
     bool installingUpdate;
     UpdateInfo? pendingUpdate;
@@ -34,6 +40,7 @@ public sealed class TrayController : IDisposable
     public TrayController()
     {
         Settings = Settings.Load(AppPaths.SettingsFile);
+        history = HistoryStore.Load(AppPaths.HistoryFile);
         iconIdle = MakeIcon(Color.FromArgb(43, 138, 110), null);
         iconRec = MakeIcon(Color.FromArgb(43, 138, 110), Color.Red);
         iconPaused = MakeIcon(Color.FromArgb(43, 138, 110), Color.Orange);
@@ -47,8 +54,11 @@ public sealed class TrayController : IDisposable
         watch.Tick += async (_, _) => await WatchRecorder();
         var firstRun = !File.Exists(AppPaths.SettingsFile);
         ApplySettings();
+        if (!firstRun) MigrateKeepDays();
         UpdateTip();
         CleanCache();
+        TidyCaptures();
+        DiscoverLocalCaptures();
 
         if (firstRun)
         {
@@ -66,6 +76,65 @@ public sealed class TrayController : IDisposable
         var first = new DispatcherTimer { Interval = TimeSpan.FromSeconds(45) };
         first.Tick += async (_, _) => { first.Stop(); await AutoUpdate(true); };
         first.Start();
+    }
+
+    public HistoryStore History => history;
+
+    /// <summary>Before 2.1 local copies were deleted after 30 days by default; now the default is to keep them.</summary>
+    void MigrateKeepDays()
+    {
+        if (Settings.IsOldKeepDaysDefault(Settings.LastRunVersion, Settings.CacheKeepDays))
+        {
+            UpdateSettings(s => s.CacheKeepDays = 0);
+            Log.Info("local copies: the old 30-day default changed to keep forever");
+        }
+    }
+
+    /// <summary>Once: captures lying directly in the captures folder (2.0) move into their month (or chosen) subfolders.</summary>
+    void TidyCaptures()
+    {
+        if (Settings.CapturesTidied) return;
+        try
+        {
+            var root = AppPaths.CacheDir;
+            var plan = Directory.Exists(root)
+                ? CaptureFiles.PlanTidy(Directory.GetFiles(root), root, Settings.Subfolders)
+                : [];
+            int moved = 0;
+            foreach (var (from, to) in plan)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Move(from, to);
+                    foreach (var r in history.Records.Where(r => string.Equals(r.File, from, StringComparison.OrdinalIgnoreCase)))
+                        r.File = to;
+                    moved++;
+                }
+                catch (Exception e) { Log.Error("tidy " + from, e); }
+            }
+            if (moved > 0) history.Save();
+            Log.Info($"captures folder sorted into subfolders: {moved} files moved");
+            UpdateSettings(s => s.CapturesTidied = true);
+        }
+        catch (Exception e) { Log.Error("tidy", e); }
+    }
+
+    /// <summary>Captures on this PC that the history does not know yet (older versions, copied files) join it.</summary>
+    public void DiscoverLocalCaptures()
+    {
+        try
+        {
+            var added = HistoryLogic.Discover(history.Records, CaptureFiles.Scan(AppPaths.CacheDir), null, File.GetLastWriteTime, history.Dismissed);
+            foreach (var r in added)
+                if (r.File != null) r.Bytes = new FileInfo(r.File).Length;
+            if (added.Count > 0)
+            {
+                history.AddRange(added);
+                Log.Info($"history: {added.Count} earlier captures added");
+            }
+        }
+        catch (Exception e) { Log.Error("history discover", e); }
     }
 
     /// <summary>One-time notices after an update.</summary>
@@ -236,10 +305,29 @@ public sealed class TrayController : IDisposable
             return i;
         }
         bool rec = recorder != null;
-        m.Items.Add(Item("Take picture", () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
+        var delaySuffix = Settings.DelaySeconds > 0 ? $" (after {Settings.DelaySeconds} s)" : "";
+        if (countdownCts != null) m.Items.Add(Item("Cancel the countdown", () => countdownCts?.Cancel()));
+        m.Items.Add(Item("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
         m.Items.Add(Item(rec ? "Stop recording" : "Record video", () => _ = ToggleRecording(), Settings.HotkeyVideo));
         if (rec) m.Items.Add(Item(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
         if (rec) m.Items.Add(Item("Cancel recording", () => _ = CancelRecording()));
+        // Delay before capturing: quick choices here, any length in Settings.
+        var delay = new WinForms.ToolStripMenuItem(Settings.DelaySeconds > 0 ? $"Delay: {Settings.DelaySeconds} s" : "Delay: none");
+        void D(int sec, string text)
+        {
+            var i = new WinForms.ToolStripMenuItem(text) { Checked = Settings.DelaySeconds == sec };
+            i.Click += (_, _) => UpdateSettings(x => x.DelaySeconds = sec);
+            delay.DropDownItems.Add(i);
+        }
+        D(0, "No delay");
+        for (int sec = 1; sec <= 5; sec++) D(sec, sec == 1 ? "1 second" : $"{sec} seconds");
+        if (Settings.DelaySeconds > 5) D(Settings.DelaySeconds, $"{Settings.DelaySeconds} seconds (from Settings)");
+        delay.DropDownItems.Add(new WinForms.ToolStripSeparator());
+        var other = new WinForms.ToolStripMenuItem("Other length…");
+        other.Click += (_, _) => ShowSettings(1);
+        delay.DropDownItems.Add(other);
+        ThemedMenu.Apply(delay.DropDown as WinForms.ToolStripDropDownMenu ?? new WinForms.ToolStripDropDownMenu());
+        m.Items.Add(delay);
         m.Items.Add(new WinForms.ToolStripSeparator());
         m.Items.Add(new WinForms.ToolStripLabel("Tray click takes"));
         m.Items.Add(Item("    Picture", () => UpdateSettings(s => s.DefaultKind = CaptureKind.Picture), check: Settings.DefaultKind == CaptureKind.Picture));
@@ -251,6 +339,7 @@ public sealed class TrayController : IDisposable
         m.Items.Add(Item("    Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
         m.Items.Add(new WinForms.ToolStripSeparator());
         if (lastLink != null) m.Items.Add(Item("Copy last link", () => ClipboardService.SetText(lastLink)));
+        m.Items.Add(Item("History…", ShowHistory));
         m.Items.Add(Item("Open captures folder", () => Open(AppPaths.CacheDir)));
         m.Items.Add(Item("Settings…", ShowSettings));
         if (Settings.ShowUserNotes) m.Items.Add(Item("User notes…", ShowNotes));
@@ -259,12 +348,33 @@ public sealed class TrayController : IDisposable
         m.Items.Add(Item("Quit", () => System.Windows.Application.Current.Shutdown()));
     }
 
-    public void ShowSettings()
+    public void ShowSettings() => ShowSettings(-1);
+
+    /// <summary>Opens Settings, optionally at a page (index in the left column).</summary>
+    public void ShowSettings(int page)
     {
-        if (settingsWindow is { IsLoaded: true }) { settingsWindow.Activate(); return; }
-        settingsWindow = new SettingsWindow(this);
+        if (settingsWindow is { IsLoaded: true })
+        {
+            if (page >= 0) settingsWindow.Tabs.SelectedIndex = page;
+            settingsWindow.Activate();
+            return;
+        }
+        settingsWindow = new SettingsWindow(this, Math.Max(0, page));
         settingsWindow.Show();
         settingsWindow.Activate();
+    }
+
+    public void ShowHistory()
+    {
+        if (historyWindow is { IsLoaded: true })
+        {
+            if (historyWindow.WindowState == System.Windows.WindowState.Minimized) historyWindow.WindowState = System.Windows.WindowState.Normal;
+            historyWindow.Activate();
+            return;
+        }
+        historyWindow = new HistoryWindow(this);
+        historyWindow.Show();
+        historyWindow.Activate();
     }
 
     public void ShowNotes()
@@ -308,24 +418,26 @@ public sealed class TrayController : IDisposable
             case "--notes": ShowNotes(); break;
             case "--help": ShowHelp(""); break;
             case "--menu": ShowMenu(); break;
+            case "--history": ShowHistory(); break;
             case "--quit": System.Windows.Application.Current.Shutdown(); break;
         }
     }
 
     async Task PrimaryClick()
     {
+        if (countdownCts != null) { countdownCts.Cancel(); return; }
         if (recorder != null) await StopRecording();
         else if (Settings.DefaultKind == CaptureKind.Video) await StartRecording();
         else await CapturePicture();
     }
 
-    async Task<PxRect?> Select(CaptureKind kind)
+    async Task<PxRect?> Select(CaptureKind kind, System.Drawing.Bitmap? frozen = null, IReadOnlyList<Native.WinInfo>? windows = null)
     {
         if (selecting) return null;
         selecting = true;
         try
         {
-            var o = new SelectionOverlay(Settings, kind);
+            var o = new SelectionOverlay(Settings, kind, frozen, windows);
             o.Show();
             return await o.Result;
         }
@@ -334,31 +446,115 @@ public sealed class TrayController : IDisposable
 
     public async Task CapturePicture()
     {
-        if (recorder != null) return;
-        var r = await Select(CaptureKind.Picture);
-        if (r is not { } rect) return;
+        if (countdownCts != null) { countdownCts.Cancel(); return; } // pressing again cancels the countdown
+        if (recorder != null || selecting) return;
+        System.Drawing.Bitmap? frozen = null;
+        IReadOnlyList<Native.WinInfo>? windows = null;
+        var screen = Native.VirtualScreen();
         try
         {
-            if (Settings.CaptureDelayMs > 0) await Task.Delay(Settings.CaptureDelayMs);
-            // Let the compositor draw a frame without the overlay before copying the screen.
-            Native.DwmFlush();
-            Native.DwmFlush();
-            var file = Path.Combine(AppPaths.CacheDir, FileNames.Unique(AppPaths.CacheDir, FileNames.ForCapture(DateTime.Now, Settings.ImageFormat)));
-            using (var bmp = ScreenCapture.Grab(rect)) ScreenCapture.Save(bmp, file, Settings.ImageFormat);
-            Log.Info($"picture {rect} -> {file}");
+            if (Settings.DelaySeconds > 0)
+            {
+                // Countdown, then freeze the whole screen: menus opened meanwhile stay in the picture.
+                if (!await Countdown(Settings.DelaySeconds, "Picture in",
+                        "Open the menu or window you want now. Then the screen freezes and you select the area.")) return;
+                windows = Native.VisibleWindows();
+                Native.DwmFlush();
+                screen = Native.VirtualScreen();
+                frozen = ScreenCapture.Grab(screen);
+            }
+            var r = await Select(CaptureKind.Picture, frozen, windows);
+            if (r is not { } rect) return;
+            var source = Settings.RememberApp
+                ? Native.Describe(Native.WindowInfoAt(rect.X + rect.Width / 2, rect.Y + rect.Height / 2, windows))
+                : (null, null);
+            if (frozen == null)
+            {
+                if (Settings.CaptureDelayMs > 0) await Task.Delay(Settings.CaptureDelayMs);
+                // Let the compositor draw a frame without the overlay before copying the screen.
+                Native.DwmFlush();
+                Native.DwmFlush();
+            }
+            var now = DateTime.Now;
+            var folder = CaptureFiles.Folder(AppPaths.CacheDir, now, Settings.Subfolders);
+            Directory.CreateDirectory(folder);
+            var file = Path.Combine(folder, FileNames.Unique(folder, FileNames.ForCapture(now, Settings.ImageFormat)));
+            using (var bmp = frozen != null ? ScreenCapture.Crop(frozen, screen, rect) : ScreenCapture.Grab(rect))
+                ScreenCapture.Save(bmp, file, Settings.ImageFormat);
+            Log.Info($"picture {rect}{(frozen != null ? " (frozen)" : "")} -> {file}");
+            var record = history.Add(new HistoryRecord
+            {
+                Created = now, Kind = "picture", File = file, Width = rect.Width, Height = rect.Height,
+                Bytes = new FileInfo(file).Length, App = source.App, WindowTitle = source.Title,
+            });
             if (Settings.Output == OutputMode.SecretLink && Settings.AskBeforePictureUpload &&
                 System.Windows.MessageBox.Show("Upload this picture to Peergos?", "Peergos Snap", System.Windows.MessageBoxButton.YesNo) != System.Windows.MessageBoxResult.Yes)
             {
+                record.MirrorFile = Mirror(file, now);
+                history.Save();
                 if (TryClipboard(file, "Picture")) Notify(ToastKind.Ok, "Picture copied to the clipboard (not uploaded)", "Paste it with Ctrl+V.", null, file);
                 return;
             }
-            await Deliver(file, Settings.Output);
+            await Deliver(file, Settings.Output, record);
         }
         catch (Exception e)
         {
             Log.Error("picture", e);
             Notify(ToastKind.Error, "Capture failed", e.Message);
         }
+        finally { frozen?.Dispose(); }
+    }
+
+    /// <summary>The delay countdown: a card at the bottom right and the seconds in the tray icon. False = cancelled
+    /// (Cancel on the card, the tray icon or the same hotkey again).</summary>
+    async Task<bool> Countdown(int seconds, string what, string hint)
+    {
+        var cts = countdownCts = new CancellationTokenSource();
+        var card = new CountdownWindow(hint);
+        card.CancelClicked += () => cts.Cancel();
+        try
+        {
+            card.SetSeconds(seconds);
+            card.Show();
+            for (int left = seconds; left > 0; left--)
+            {
+                card.SetSeconds(left);
+                tray.Icon = NumberIcon(left);
+                tray.Text = $"Peergos Snap – {what} {left} s (click to cancel)";
+                await Task.Delay(1000, cts.Token);
+            }
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Notify(ToastKind.Ok, "Countdown cancelled", "Nothing was captured.");
+            return false;
+        }
+        finally
+        {
+            card.Close();
+            countdownCts = null;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            UpdateTip();
+        }
+    }
+
+    Icon NumberIcon(int n)
+    {
+        if (numberIcons.TryGetValue(n, out var icon)) return icon;
+        using var bmp = new Bitmap(32, 32);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            using var b = new SolidBrush(Color.FromArgb(43, 138, 110));
+            g.FillEllipse(b, 0, 0, 31, 31);
+            using var f = new Font("Segoe UI", n > 9 ? 13 : 17, FontStyle.Bold, GraphicsUnit.Pixel);
+            var text = n.ToString();
+            var size = g.MeasureString(text, f);
+            g.DrawString(text, f, Brushes.White, (32 - size.Width) / 2, (32 - size.Height) / 2);
+        }
+        return numberIcons[n] = Icon.FromHandle(bmp.GetHicon());
     }
 
     // ---------- recording ----------
@@ -371,9 +567,25 @@ public sealed class TrayController : IDisposable
 
     public async Task StartRecording()
     {
+        if (countdownCts != null) { countdownCts.Cancel(); return; }
         if (recorder != null || stopping) return;
         var r = await Select(CaptureKind.Video);
         if (r is not { } rect) return;
+        recordingSource = Settings.RememberApp
+            ? Native.Describe(Native.WindowInfoAt(rect.X + rect.Width / 2, rect.Y + rect.Height / 2))
+            : (null, null);
+        if (Settings.DelaySeconds > 0)
+        {
+            // The area is marked; recording starts when the countdown ends (time to open a menu or get ready).
+            frame = new RegionFrame(Geometry.EvenSize(rect), Settings.BorderColor);
+            frame.Show();
+            if (!await Countdown(Settings.DelaySeconds, "Recording starts in", "Get ready: the marked area is recorded when the countdown ends."))
+            {
+                frame?.Close();
+                frame = null;
+                return;
+            }
+        }
         if (Settings.CaptureDelayMs > 0) await Task.Delay(Settings.CaptureDelayMs);
         try
         {
@@ -384,12 +596,18 @@ public sealed class TrayController : IDisposable
         {
             recorder?.Cleanup();
             recorder = null;
+            frame?.Close();
+            frame = null;
             Log.Error("record start", e);
             Notify(ToastKind.Error, "Recording failed", e.Message);
             return;
         }
-        frame = new RegionFrame(recorder.Region, Settings.BorderColor);
-        frame.Show();
+        recordingStarted = DateTime.Now;
+        if (frame == null)
+        {
+            frame = new RegionFrame(recorder.Region, Settings.BorderColor);
+            frame.Show();
+        }
         controls = new RecordingControls(recorder.Region, () => recorder?.Elapsed ?? TimeSpan.Zero);
         controls.StopClicked += () => _ = StopRecording();
         controls.PauseClicked += () => _ = TogglePause();
@@ -451,9 +669,16 @@ public sealed class TrayController : IDisposable
             CloseRecordingUi();
             tray.Text = "Peergos Snap – finishing the video…";
             var video = await rec.StopAsync();
-            cached = Path.Combine(AppPaths.CacheDir, FileNames.Unique(AppPaths.CacheDir, Path.GetFileName(video)));
-            Directory.CreateDirectory(AppPaths.CacheDir);
+            var folder = CaptureFiles.Folder(AppPaths.CacheDir, recordingStarted, Settings.Subfolders);
+            Directory.CreateDirectory(folder);
+            cached = Path.Combine(folder, FileNames.Unique(folder, Path.GetFileName(video)));
             File.Move(video, cached);
+            var record = history.Add(new HistoryRecord
+            {
+                Created = recordingStarted, Kind = "video", File = cached, Width = rec.Region.Width, Height = rec.Region.Height,
+                Seconds = Math.Round(rec.Elapsed.TotalSeconds, 1), Bytes = new FileInfo(cached).Length,
+                App = recordingSource.App, WindowTitle = recordingSource.Title,
+            });
             rec.Cleanup();
             recorder = null;
             stopping = false;
@@ -464,15 +689,24 @@ public sealed class TrayController : IDisposable
             Log.Info("video " + cached + " -> " + dlg.Choice);
             switch (dlg.Choice)
             {
-                case FinishChoice.Upload: await Deliver(cached, OutputMode.SecretLink); break;
-                case FinishChoice.Clipboard: await Deliver(cached, OutputMode.DirectMedia); break;
+                case FinishChoice.Upload: await Deliver(cached, OutputMode.SecretLink, record); break;
+                case FinishChoice.Clipboard: await Deliver(cached, OutputMode.DirectMedia, record); break;
                 case FinishChoice.SaveAs:
                     var sfd = new Microsoft.Win32.SaveFileDialog { FileName = Path.GetFileName(cached), Filter = "Video|*." + Settings.VideoFormat };
                     if (sfd.ShowDialog() == true) { File.Copy(cached, sfd.FileName, true); Notify(ToastKind.Ok, "Video saved", sfd.FileName, null, sfd.FileName); }
-                    Mirror(cached);
+                    record.MirrorFile = Mirror(cached, record.Created);
+                    history.Save();
                     break;
-                case FinishChoice.Discard: File.Delete(cached); Notify(ToastKind.Ok, "Recording discarded", "The video was deleted."); break;
-                default: Mirror(cached); Notify(ToastKind.Ok, "Video kept on this PC only", "Nothing was uploaded or copied.", null, cached); break;
+                case FinishChoice.Discard:
+                    File.Delete(cached);
+                    history.Remove([record.Id]);
+                    Notify(ToastKind.Ok, "Recording discarded", "The video was deleted.");
+                    break;
+                default:
+                    record.MirrorFile = Mirror(cached, record.Created);
+                    history.Save();
+                    Notify(ToastKind.Ok, "Video kept on this PC only", "Nothing was uploaded or copied.", null, cached);
+                    break;
             }
         }
         catch (Exception e)
@@ -491,27 +725,32 @@ public sealed class TrayController : IDisposable
 
     // ---------- output ----------
 
-    void Mirror(string file)
+    /// <summary>Copies a capture into the mirror folder (same subfolders as the captures folder); returns the copy.</summary>
+    string? Mirror(string file, DateTime taken)
     {
-        if (!Settings.MirrorEnabled || string.IsNullOrWhiteSpace(Settings.MirrorFolder)) return;
+        if (!Settings.MirrorEnabled || string.IsNullOrWhiteSpace(Settings.MirrorFolder)) return null;
         try
         {
-            Directory.CreateDirectory(Settings.MirrorFolder);
-            var target = Path.Combine(Settings.MirrorFolder, FileNames.Unique(Settings.MirrorFolder, Path.GetFileName(file)));
+            var folder = CaptureFiles.Folder(Settings.MirrorFolder, taken, Settings.Subfolders);
+            Directory.CreateDirectory(folder);
+            var target = Path.Combine(folder, FileNames.Unique(folder, Path.GetFileName(file)));
             File.Copy(file, target);
+            return target;
         }
         catch (Exception e)
         {
             Log.Error("mirror", e);
             Notify(ToastKind.Warn, "Could not copy to the mirror folder", e.Message);
+            return null;
         }
     }
 
     /// <summary>Sends a finished capture where the output mode says; falls back to the clipboard if the upload fails.
     /// The notification card always says which of the three outcomes happened: link copied, media copied, or failed.</summary>
-    async Task Deliver(string file, OutputMode mode)
+    async Task<BridgeResult?> Deliver(string file, OutputMode mode, HistoryRecord? record = null, bool mirror = true)
     {
-        Mirror(file);
+        var mirrored = mirror ? Mirror(file, record?.Created ?? DateTime.Now) : null;
+        if (record != null && mirrored != null) { record.MirrorFile = mirrored; history.Save(); }
         bool video = !file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase);
         string what = video ? "Video" : "Picture";
         string pasteHint = video ? "The video file is on the clipboard – paste it with Ctrl+V into a chat, mail or folder."
@@ -519,7 +758,7 @@ public sealed class TrayController : IDisposable
         if (mode == OutputMode.DirectMedia)
         {
             if (TryClipboard(file, what)) Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint, null, file);
-            return;
+            return null;
         }
         if (!Settings.PeergosConfigured)
         {
@@ -527,7 +766,7 @@ public sealed class TrayController : IDisposable
                 Notify(ToastKind.Warn, $"{what} copied to the clipboard (not uploaded)",
                     "You are not signed in to Peergos: right-click the tray icon → Settings → Peergos.", null, file,
                     extra: ("Sign in", ShowSettings));
-            return;
+            return new BridgeResult(false, null, null, "Not signed in to Peergos");
         }
         uploads++;
         tray.Icon = recorder == null ? iconBusy : tray.Icon;
@@ -553,6 +792,13 @@ public sealed class TrayController : IDisposable
         if (r.Ok && r.Link != null)
         {
             lastLink = r.Link;
+            if (record != null)
+            {
+                record.Link = r.Link;
+                record.PeergosPath = r.PeergosPath;
+                record.Uploaded = DateTime.Now;
+                history.Save();
+            }
             try
             {
                 ClipboardService.OnUi(() => ClipboardService.SetText(r.Link));
@@ -563,7 +809,7 @@ public sealed class TrayController : IDisposable
                 Log.Error("clipboard link", e);
                 Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.", r.Link, file);
             }
-            return;
+            return r;
         }
         var why = r.Error ?? "Unknown error";
         (string, Action)? signIn = null;
@@ -576,6 +822,15 @@ public sealed class TrayController : IDisposable
             Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
         else if (!Settings.FallbackToClipboard)
             Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
+        return r;
+    }
+
+    /// <summary>Uploads a capture from the history (Upload button there): card, clipboard and history as usual.</summary>
+    public async Task<BridgeResult> UploadRecordAsync(HistoryRecord record)
+    {
+        if (record.File == null || !File.Exists(record.File)) return new BridgeResult(false, null, null, "The file is not on this PC");
+        return await Deliver(record.File, OutputMode.SecretLink, record, mirror: false)
+               ?? new BridgeResult(false, null, null, "Nothing was uploaded");
     }
 
     /// <summary>Puts the media on the clipboard; on failure shows the error card and returns false.</summary>
@@ -609,7 +864,9 @@ public sealed class TrayController : IDisposable
     {
         string t = recorder != null
             ? (recorder.Paused ? "Peergos Snap – recording paused" : "Peergos Snap – recording… click to stop")
-            : $"Peergos Snap – click: {(Settings.DefaultKind == CaptureKind.Video ? "record video" : "take picture")} · {(Settings.Output == OutputMode.SecretLink ? "secret link" : "clipboard")}";
+            : $"Peergos Snap – click: {(Settings.DefaultKind == CaptureKind.Video ? "record video" : "take picture")}"
+              + (Settings.DelaySeconds > 0 ? $" after {Settings.DelaySeconds} s" : "")
+              + $" · {(Settings.Output == OutputMode.SecretLink ? "secret link" : "clipboard")}";
         tray.Text = t.Length > 127 ? t[..127] : t;
     }
 
@@ -629,10 +886,15 @@ public sealed class TrayController : IDisposable
         {
             foreach (var d in Directory.Exists(AppPaths.WorkDir) ? Directory.GetDirectories(AppPaths.WorkDir) : [])
                 try { Directory.Delete(d, true); } catch { }
+            // 0 = keep forever (the default). Otherwise old captures go to the Recycle Bin, never deleted outright.
             if (Settings.CacheKeepDays <= 0 || !Directory.Exists(AppPaths.CacheDir)) return;
             var limit = DateTime.Now.AddDays(-Settings.CacheKeepDays);
-            foreach (var f in Directory.GetFiles(AppPaths.CacheDir))
-                if (File.GetLastWriteTime(f) < limit) File.Delete(f);
+            var old = CaptureFiles.Scan(AppPaths.CacheDir).Where(f => File.GetLastWriteTime(f) < limit).ToList();
+            if (old.Count > 0)
+            {
+                Recycle.Delete(old);
+                Log.Info($"local copies older than {Settings.CacheKeepDays} days moved to the Recycle Bin: {old.Count}");
+            }
         }
         catch (Exception e) { Log.Error("cache cleanup", e); }
     }

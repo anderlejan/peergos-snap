@@ -14,8 +14,12 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **Your Peergos account.** Sign in once (two-factor codes supported). Only the Peergos session is kept, never
   the password. Every capture gets its own short, read-only secret link, the same kind the Peergos web app creates:
   `https://peergos.net/secret/<owner>/<id>#<key>?open=true`.
-- **Safe fallback.** If an upload fails, the capture goes to the clipboard instead. Every capture is also kept in
-  a local captures folder, and you can mirror all captures to a folder of your choice.
+- **Delay with a frozen screen.** Choose 1–5 s in the tray menu (or up to 60 s in Settings); menus opened during
+  the countdown stay in the picture, because the screen freezes when it ends.
+- **History manager.** Every capture with a preview, the app it came from, a label and its link, shown on this PC
+  and in Peergos side by side. Find old links, and delete on this PC (Recycle Bin), in Peergos or both.
+- **Safe fallback.** If an upload fails, the capture goes to the clipboard instead. Every capture is also kept on
+  this PC (forever by default, in one folder per month), and you can mirror all captures to a folder of your choice.
 - **Always know what happened.** After every capture, a notification card (never captured itself) says whether
   you now have the link, the picture/video, or an error with its reason on the clipboard.
 - **18 colour schemes** (dark, medium and bright) and a font size for every window, including the tray menu,

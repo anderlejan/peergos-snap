@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.1.0 – 2026-09-27
+
+- **Delay before capturing, with a frozen screen.** Tray menu → *Delay* → 1–5 seconds (any length up to 60 s in
+  Settings → Capture). A countdown card appears, and the tray icon shows the seconds. When it ends the whole screen
+  freezes – menus and pop-ups opened during the countdown stay in the picture – and you select the area (or click
+  the menu itself) on the frozen screen. Videos: the area is marked first and recording starts when the countdown
+  ends. Cancel with the card, the tray icon or the hotkey. The old delay after releasing the mouse remains as
+  *Extra wait* (Settings → Overlay).
+- **Keep local copies forever by default.** Installs that still had the old 30-day default switch to "keep
+  forever" once. If you set a number of days, older copies go to the Recycle Bin instead of being deleted.
+- **Month folders.** Captures go into one folder per month (`2026-10`), or per day, per year or none (Settings →
+  Files & history). The mirror folder uses the same folders. Captures from 2.0 lying directly in the captures folder
+  are sorted into month folders once.
+- **History manager** (tray menu → History…): every capture with a preview (videos too), time, the app it came from,
+  size, label and link, and whether it is on this PC and/or in Peergos. It has search, filters (pictures, videos,
+  only on this PC, only in Peergos, missing, labelled …), sorting (newest, oldest, name, size, app) and day groups.
+  You can copy or open old links (links of earlier uploads are read back from Peergos), add labels, upload later,
+  and delete from this PC (Recycle Bin), from Peergos (the file and its links) or both, one by one or several at
+  once, always after an inline confirmation. You can also remove entries, remove entries whose files are gone, or
+  clear the whole history; files are never touched by that, and removed entries do not come back.
+- **User notes: text size** control in its header (A− · 100 % · A+, Ctrl+Plus / Ctrl+Minus / Ctrl+0),
+  remembered; the notes window now looks like the rest of the app (User notes module 1.5.0).
+- **Settings: categories in a column on the left**, with a new *Files & history* page.
+- Help updated for all of the above.
+
+
 ## 2.0.0 – 2026-09-27
 
 **Sharing through a folder link was removed.** Links now always come from your Peergos account, in the short

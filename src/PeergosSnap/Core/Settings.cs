@@ -34,6 +34,8 @@ public sealed class Settings
     public int VideoQuality { get; set; } = 23;
     public bool RecordCursor { get; set; } = true;
     public bool AskBeforePictureUpload { get; set; }
+    /// <summary>Countdown before a picture is taken (the screen is then frozen for selecting) or before a video starts. 0 = none.</summary>
+    public int DelaySeconds { get; set; }
 
     // Overlay
     public int OverlayDimPercent { get; set; }
@@ -48,7 +50,14 @@ public sealed class Settings
     public string MirrorFolder { get; set; } = "";
     public bool FallbackToClipboard { get; set; } = true;
     public bool Notifications { get; set; } = true;
-    public int CacheKeepDays { get; set; } = 30;
+    /// <summary>Delete local copies older than this many days; 0 = keep forever (the default since 2.1).</summary>
+    public int CacheKeepDays { get; set; }
+    public SubfolderScheme Subfolders { get; set; } = SubfolderScheme.Month;
+    /// <summary>Set once the flat captures folder of 2.0 was sorted into subfolders.</summary>
+    public bool CapturesTidied { get; set; }
+
+    // History
+    public bool RememberApp { get; set; } = true;
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";
@@ -132,6 +141,14 @@ public sealed class Settings
         File.Move(tmp, file, true);
     }
 
+    /// <summary>Before 2.1 the default was to delete local copies after 30 days; a still unchanged 30 becomes "keep forever".</summary>
+    public static bool IsOldKeepDaysDefault(string lastRunVersion, int keepDays)
+    {
+        var t = (lastRunVersion ?? "").Trim().TrimStart('v');
+        var last = Version.TryParse(t.Contains('.') ? t : t + ".0", out var v) ? v : null;
+        return keepDays == 30 && (last == null || last < new Version(2, 1, 0));
+    }
+
     public Settings Clone() => JsonSerializer.Deserialize<Settings>(JsonSerializer.Serialize(this, Json), Json)!;
 
     public void Clamp()
@@ -141,6 +158,7 @@ public sealed class Settings
         OverlayDimPercent = Math.Clamp(OverlayDimPercent, 0, 70);
         CaptureDelayMs = Math.Clamp(CaptureDelayMs, 0, 30000);
         CacheKeepDays = Math.Clamp(CacheKeepDays, 0, 3650);
+        DelaySeconds = Math.Clamp(DelaySeconds, 0, 60);
         FontPercent = Math.Clamp(FontPercent, 80, 160);
         if (!Theme.Known(ColorScheme)) ColorScheme = "system";
         PromptSourceLocation ??= "";

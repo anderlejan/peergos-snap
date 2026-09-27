@@ -24,9 +24,12 @@ import peergos.shared.user.LinkProperties;
 import peergos.shared.user.LoginData;
 import peergos.shared.user.UserContext;
 import peergos.shared.user.UserStaticData;
+import peergos.shared.user.FileSharedWithState;
+import peergos.shared.user.fs.FileProperties;
 import peergos.shared.user.fs.FileWrapper;
 import peergos.shared.util.Either;
 import peergos.shared.util.Futures;
+import peergos.shared.util.PathUtil;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -37,7 +40,11 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +65,11 @@ import java.util.concurrent.CompletableFuture;
  * upload --server URL --user NAME --file PATH [--folder F] [--name N]    stdin: session
  *        Uploads into /NAME/F (created when missing) and creates a read-only secret link to the file,
  *        in the same short form as the web app: https://HOST/secret/OWNER/ID#KEY?open=true
+ * list   --server URL --user NAME [--folder F]                           stdin: session
+ *        {"ok":true,"folder":"/NAME/F","files":[{"name","path","size","modified","links":[...]}]}: the files in the
+ *        capture folder with their existing secret links (so older links can be shown again).
+ * delete --server URL --user NAME                                        stdin: session, then one path per line
+ *        Deletes each file (Peergos removes its secret links with it): {"ok":true,"deleted":[...],"missing":[...],"failed":[...]}
  * Progress: "@progress N" lines (percent) on stderr while uploading.
  * </pre>
  *
@@ -103,7 +115,7 @@ public class PeergosBridge {
         if (args.length == 0)
             throw new IllegalArgumentException("usage: signin|check|upload ...");
         String cmd = args[0];
-        if (!java.util.Set.of("signin", "check", "upload").contains(cmd))
+        if (!java.util.Set.of("signin", "check", "upload", "list", "delete").contains(cmd))
             throw new IllegalArgumentException("unknown command " + cmd);
         Map<String, String> a = parse(args);
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -148,9 +160,88 @@ public class PeergosBridge {
                 String link = linkBase(ctx, server) + "/" + ctx.getLinkString(props) + "?open=true";
                 return "{\"ok\":true,\"link\":" + json(link) + ",\"path\":" + json(path) + "}";
             }
+            case "list": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                String folder = a.getOrDefault("folder", "PeergosSnap").replace('\\', '/').replaceAll("^/+|/+$", "");
+                String dirPath = "/" + user + (folder.isEmpty() ? "" : "/" + folder);
+                StringBuilder out = new StringBuilder("{\"ok\":true,\"folder\":" + json(dirPath) + ",\"files\":[");
+                Optional<FileWrapper> dir = ctx.getByPath(dirPath).join();
+                if (dir.isPresent() && dir.get().isDirectory()) {
+                    String host = linkBase(ctx, server);
+                    List<FileWrapper> kids = new ArrayList<>(dir.get().getChildren(crypto.hasher, base).join());
+                    kids.sort(Comparator.comparing(f -> f.getFileProperties().name));
+                    boolean first = true;
+                    for (FileWrapper f : kids) {
+                        FileProperties fp = f.getFileProperties();
+                        if (f.isDirectory() || fp.isHidden)
+                            continue;
+                        String path = dirPath + "/" + fp.name;
+                        StringBuilder links = new StringBuilder("[");
+                        try {
+                            FileSharedWithState st = ctx.sharedWith(PathUtil.get(path)).join();
+                            boolean firstLink = true;
+                            for (LinkProperties lp : st.links) {
+                                String l = host + "/" + ctx.getLinkString(lp) + (lp.open ? "?open=true" : "");
+                                links.append(firstLink ? "" : ",").append(json(l));
+                                firstLink = false;
+                            }
+                        } catch (Exception e) {
+                            // a file without sharing state simply has no links
+                        }
+                        links.append("]");
+                        out.append(first ? "" : ",")
+                                .append("{\"name\":").append(json(fp.name))
+                                .append(",\"path\":").append(json(path))
+                                .append(",\"size\":").append(fp.size)
+                                .append(",\"modified\":").append(fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000)
+                                .append(",\"links\":").append(links)
+                                .append("}");
+                        first = false;
+                    }
+                }
+                return out.append("]}").toString();
+            }
+            case "delete": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                List<String> deleted = new ArrayList<>(), missing = new ArrayList<>(), failed = new ArrayList<>();
+                for (String path; !(path = line(stdin).trim()).isEmpty(); ) {
+                    // Only files inside the user's own home can be removed.
+                    if (!path.startsWith("/" + user + "/") || path.contains("/../")) {
+                        failed.add(path + ": not in your Peergos home");
+                        continue;
+                    }
+                    try {
+                        Optional<FileWrapper> file = ctx.getByPath(path).join();
+                        if (file.isEmpty()) {
+                            missing.add(path);
+                            continue;
+                        }
+                        String parentPath = path.substring(0, path.lastIndexOf('/'));
+                        FileWrapper parent = ctx.getByPath(parentPath).join()
+                                .orElseThrow(() -> new IllegalStateException("folder not found"));
+                        file.get().remove(parent, PathUtil.get(path), ctx).join();
+                        deleted.add(path);
+                    } catch (Exception e) {
+                        Throwable r = e;
+                        while (r.getCause() != null && r.getCause() != r)
+                            r = r.getCause();
+                        failed.add(path + ": " + r.getMessage());
+                    }
+                }
+                return "{\"ok\":" + failed.isEmpty() + ",\"deleted\":" + jsonList(deleted) + ",\"missing\":" + jsonList(missing)
+                        + ",\"failed\":" + jsonList(failed)
+                        + (failed.isEmpty() ? "" : ",\"error\":" + json(failed.size() + " could not be deleted: " + failed.get(0))) + "}";
+            }
             default:
                 throw new IllegalArgumentException("unknown command " + cmd);
         }
+    }
+
+    static String jsonList(List<String> items) {
+        StringBuilder b = new StringBuilder("[");
+        for (int i = 0; i < items.size(); i++)
+            b.append(i == 0 ? "" : ",").append(json(items.get(i)));
+        return b.append("]").toString();
     }
 
     static UserContext signIn(String user, String password, BufferedReader stdin, NetworkAccess network, Crypto crypto) {

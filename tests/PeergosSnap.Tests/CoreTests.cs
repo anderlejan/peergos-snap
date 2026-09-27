@@ -395,9 +395,9 @@ public class HelpTests
     public void Help_has_quick_start_and_every_settings_page()
     {
         var html = File.ReadAllText(Path.Combine(Dir, "index.html"));
-        foreach (var id in new[] { "quick-start", "pictures", "videos", "output", "notifications", "peergos", "hotkeys", "updates", "user-notes",
-                     "troubleshooting", "settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-hotkeys",
-                     "settings-appearance", "settings-general" })
+        foreach (var id in new[] { "quick-start", "pictures", "pictures-delay", "videos", "videos-delay", "output", "notifications", "peergos",
+                     "history", "hotkeys", "updates", "user-notes", "troubleshooting", "settings-peergos", "settings-capture", "settings-overlay",
+                     "settings-output", "settings-files", "settings-hotkeys", "settings-appearance", "settings-general" })
             Assert.Contains($"id=\"{id}\"", html);
     }
 

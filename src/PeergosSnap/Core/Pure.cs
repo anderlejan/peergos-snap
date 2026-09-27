@@ -170,7 +170,7 @@ public readonly record struct Hotkey(bool Ctrl, bool Alt, bool Shift, bool Win, 
     }
 }
 
-public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, string? Error, string? Session = null)
+public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, string? Error, string? Session = null, string? Raw = null)
 {
     public static BridgeResult Parse(string stdout)
     {
@@ -181,7 +181,7 @@ public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, st
             using var doc = JsonDocument.Parse(line);
             var r = doc.RootElement;
             string? S(string k) => r.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
-            return new(r.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True, S("link"), S("path") ?? S("home"), S("error"), S("session"));
+            return new(r.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True, S("link"), S("path") ?? S("home") ?? S("folder"), S("error"), S("session"), line);
         }
         catch (JsonException) { return new(false, null, null, "The uploader answer could not be read"); }
     }
@@ -189,6 +189,44 @@ public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, st
 
 public static class PeergosLinks
 {
+    /// <summary>The files of a bridge "list" answer.</summary>
+    public static List<RemoteFile> ParseList(string? raw)
+    {
+        var list = new List<RemoteFile>();
+        if (string.IsNullOrEmpty(raw)) return list;
+        using var doc = JsonDocument.Parse(raw);
+        if (!doc.RootElement.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Array) return list;
+        foreach (var f in files.EnumerateArray())
+        {
+            var links = new List<string>();
+            if (f.TryGetProperty("links", out var ls) && ls.ValueKind == JsonValueKind.Array)
+                links.AddRange(ls.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrEmpty(x))!);
+            var ms = f.TryGetProperty("modified", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt64() : 0;
+            list.Add(new RemoteFile(
+                f.GetProperty("name").GetString() ?? "",
+                f.GetProperty("path").GetString() ?? "",
+                f.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number ? sz.GetInt64() : 0,
+                DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime,
+                links));
+        }
+        return list;
+    }
+
+    /// <summary>The paths a bridge "delete" answer reports as deleted (or already gone).</summary>
+    public static (List<string> Deleted, List<string> Missing, List<string> Failed) ParseDelete(string? raw)
+    {
+        var d = new List<string>(); var m = new List<string>(); var f = new List<string>();
+        if (string.IsNullOrEmpty(raw)) return (d, m, f);
+        using var doc = JsonDocument.Parse(raw);
+        void Read(string key, List<string> into)
+        {
+            if (doc.RootElement.TryGetProperty(key, out var a) && a.ValueKind == JsonValueKind.Array)
+                into.AddRange(a.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0));
+        }
+        Read("deleted", d); Read("missing", m); Read("failed", f);
+        return (d, m, f);
+    }
+
     /// <summary>
     /// A share link in the short form the Peergos web app creates: https://HOST/secret/OWNER/ID#KEY, optionally
     /// followed by ?open=true. The long capability form (https://HOST/#key/key/key/key) is not accepted.

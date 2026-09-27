@@ -8,7 +8,7 @@
   else root.UserNotesCore = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  const MODULE_VERSION = '1.4.0';
+  const MODULE_VERSION = '1.5.0';
   const STATUSES = ['open', 'queued', 'sent', 'done'];
   const STATUS_LABEL = { open: 'Open', queued: 'Queued', sent: 'Sent', done: 'Done' };
   const STATUS_HINT = {
@@ -265,5 +265,19 @@
       '</style></head><body>' + mdToHtml(text) + '</body></html>';
   }
 
-  return { MODULE_VERSION, STATUSES, STATUS_LABEL, STATUS_HINT, PRIORITIES, TYPES, TYPE_LABEL, uid, normalizeNote, migrate, setQueued, queued, baseStatus, matchesFilter, tickMany, selectMany, bulkUpdate, removeNotes, UNDO_DELETES, deletion, pushDeletion, restoreDeletion, markSent, sortByPriority, move, moveBefore, buildPrompt, buildFeedback, buildDoneReport, mdToHtml, buildDoneReportHtml };
+  // 1.5.0: text size of the notes window (percent of the host's size), for the optional size control.
+  const FONT_SIZES = [80, 90, 100, 110, 120, 130, 140, 150, 160];
+  function clampFontSize(v) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 100;
+    return FONT_SIZES.reduce((best, s) => Math.abs(s - n) < Math.abs(best - n) ? s : best, 100);
+  }
+  /** One step smaller (dir < 0), larger (dir > 0) or back to 100 % (dir === 0). */
+  function stepFontSize(v, dir) {
+    if (dir === 0) return 100;
+    const i = FONT_SIZES.indexOf(clampFontSize(v));
+    return FONT_SIZES[Math.min(FONT_SIZES.length - 1, Math.max(0, i + (dir > 0 ? 1 : -1)))];
+  }
+
+  return { MODULE_VERSION, FONT_SIZES, clampFontSize, stepFontSize, STATUSES, STATUS_LABEL, STATUS_HINT, PRIORITIES, TYPES, TYPE_LABEL, uid, normalizeNote, migrate, setQueued, queued, baseStatus, matchesFilter, tickMany, selectMany, bulkUpdate, removeNotes, UNDO_DELETES, deletion, pushDeletion, restoreDeletion, markSent, sortByPriority, move, moveBefore, buildPrompt, buildFeedback, buildDoneReport, mdToHtml, buildDoneReportHtml };
 });

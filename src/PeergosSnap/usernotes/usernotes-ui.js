@@ -9,6 +9,8 @@
  *   });
  *   notesUI.open();  notesUI.isOpen();  notesUI.close();
  *
+ * 1.5.0: optional text size control in the header (create({ fontControl: true })): A− · 100 % · A+, also Ctrl+Plus /
+ *        Ctrl+Minus / Ctrl+0 while the window has the focus; the size is remembered (usernotes.fontSize).
  * 1.3.0: bulk bar for the ticked notes: set type, area, priority or status for all of them, or delete them.
  * 1.4.0: the field with the focus keeps it when the note is redrawn (Tab after changing the status goes on to Details);
  *        the last 5 deletions can be brought back ("↶ Undo delete" in the footer, Ctrl+Z outside text fields).
@@ -93,8 +95,11 @@
           // 1.4.0: Ctrl+Z brings back the last deleted note(s); inside a text field it stays the field's own undo
           else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && st && st.view === 'list' && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && deleted.length) { e.preventDefault(); undoDelete(); }
           else if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && st && st.view === 'list') { e.preventDefault(); moveCur(e.key === 'ArrowUp' ? -1 : 1); }
+          // 1.5.0: text size keys (only with the size control)
+          else if (opts.fontControl && (e.ctrlKey || e.metaKey) && ['+', '=', '-', '0'].includes(e.key)) { e.preventDefault(); setFont(e.key === '0' ? 0 : e.key === '-' ? -1 : 1); }
         });
         box = h('div', { class: 'un-box' });
+        applyFont();
         const size = store.get('size', null);                     // remembered window size (resizable box)
         if (size && size.w > 300 && size.h > 250) { box.style.width = Math.min(size.w, window.innerWidth - 20) + 'px'; box.style.height = Math.min(size.h, window.innerHeight - 20) + 'px'; }
         let r0 = null;                                            // remember the size only when the user actually resized it
@@ -109,9 +114,24 @@
       box.append(...content);
       overlay.focus();
     }
-    // Title bar order (1.2.0, same as the host's windows): title … view controls · host control (e.g. Aa) · Close (always last).
+    // 1.5.0: text size (percent of the host's size), remembered; shown in the header when opts.fontControl is set.
+    let fontSize = C.clampFontSize(store.get('fontSize', 100));
+    function applyFont() { if (box) box.style.fontSize = opts.fontControl ? fontSize + '%' : ''; }
+    function setFont(dir) {
+      fontSize = C.stepFontSize(fontSize, dir); store.set('fontSize', fontSize); applyFont();
+      if (box) box.querySelectorAll('.un-font-val').forEach(b => { b.textContent = fontSize + ' %'; });
+    }
+    function fontGroup() {
+      if (!opts.fontControl) return null;
+      return h('div', { class: 'un-seg un-font un-nodrag', title: 'Text size (Ctrl+Plus, Ctrl+Minus, Ctrl+0)' },
+        h('button', { title: 'Smaller text (Ctrl+Minus)', 'aria-label': 'Smaller text', onclick: () => setFont(-1) }, 'A−'),
+        h('button', { class: 'un-font-val', title: 'Back to 100 % (Ctrl+0)', 'aria-label': 'Normal text size', onclick: () => setFont(0) }, fontSize + ' %'),
+        h('button', { title: 'Larger text (Ctrl+Plus)', 'aria-label': 'Larger text', onclick: () => setFont(1) }, 'A+'));
+    }
+    // Title bar order (1.2.0, same as the host's windows): title … view controls · text size · host control (e.g. Aa) · Close (always last).
     function header(...kids) {
       return h('div', { class: 'un-head', title: 'Drag here to move the window; drag the bottom-right corner to resize it' }, ...kids,
+        fontGroup(),
         opts.extraHeader ? opts.extraHeader() : null,
         h('button', { class: 'un-btn un-close', title: 'Close (Esc)', onclick: close }, 'Close'));
     }
@@ -408,7 +428,7 @@
       return out.box.value;
     }
 
-    return { open, close, isOpen, generate, report, tick, applyBulk, undoDelete, deletedCount: () => deleted.length, _state: () => ({ notes, st }) };
+    return { open, close, isOpen, generate, report, tick, applyBulk, undoDelete, deletedCount: () => deleted.length, setFont, fontSize: () => fontSize, _state: () => ({ notes, st }) };
   }
 
   // Forget the window's remembered choices (filter, prompt mode, window size), e.g. for a host's "factory settings".

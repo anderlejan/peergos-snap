@@ -9,9 +9,10 @@ using PeergosSnap.Core;
 namespace PeergosSnap.UI;
 
 /// <summary>
-/// Full-desktop selection layer that does NOT freeze the screen: the window is (almost) fully transparent, so
-/// games, animations and video keep moving underneath while the user drags. Only a border, an optional dim
-/// outside the selection and a size label are drawn. All coordinates are physical screen pixels.
+/// Full-desktop selection layer. Normally it does NOT freeze the screen: the window is (almost) fully transparent,
+/// so games, animations and video keep moving underneath while the user drags. After a delay countdown it shows the
+/// screen as it was at that moment instead (frozen), so open menus stay in the picture. Only a border, an optional
+/// dim outside the selection and a size label are drawn. All coordinates are physical screen pixels.
 /// </summary>
 public sealed class SelectionOverlay : Window
 {
@@ -31,11 +32,15 @@ public sealed class SelectionOverlay : Window
     PxRect current;
     PxRect? hoverRect;
     double scale = 1;
+    readonly IReadOnlyList<Native.WinInfo>? windows;
 
-    public SelectionOverlay(Settings s, CaptureKind kind)
+    /// <param name="frozen">The whole virtual screen as it was when the countdown ended (null = live selection).</param>
+    /// <param name="windows">The windows at that moment, for clicking a window on the frozen screen.</param>
+    public SelectionOverlay(Settings s, CaptureKind kind, System.Drawing.Bitmap? frozen = null, IReadOnlyList<Native.WinInfo>? windows = null)
     {
         this.s = s;
         this.kind = kind;
+        this.windows = windows;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         ResizeMode = ResizeMode.NoResize;
@@ -45,6 +50,11 @@ public sealed class SelectionOverlay : Window
         Title = "Peergos Snap selection";
         // Alpha 1 keeps the window hit-testable while looking fully transparent.
         Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        if (frozen != null)
+        {
+            var img = ToBitmapSource(frozen);
+            Background = new ImageBrush(img) { Stretch = Stretch.Fill };
+        }
 
         var color = ParseColor(s.BorderColor);
         border.Stroke = new SolidColorBrush(color);
@@ -55,7 +65,7 @@ public sealed class SelectionOverlay : Window
         {
             Foreground = Brushes.White,
             FontSize = 13,
-            Text = (kind == CaptureKind.Video ? "Record video: " : "Picture: ") +
+            Text = (frozen != null ? "Frozen screen – " : "") + (kind == CaptureKind.Video ? "Record video: " : "Picture: ") +
                    "drag an area" + (s.PickWindowOnClick ? " or click a window" : "") + " · Esc cancels",
         };
         canvas.Children.Add(dim);
@@ -107,6 +117,20 @@ public sealed class SelectionOverlay : Window
 
     public Task<PxRect?> Result => result.Task;
 
+    static System.Windows.Media.Imaging.BitmapSource ToBitmapSource(System.Drawing.Bitmap bmp)
+    {
+        var data = bmp.LockBits(new System.Drawing.Rectangle(0, 0, bmp.Width, bmp.Height),
+            System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        try
+        {
+            var src = System.Windows.Media.Imaging.BitmapSource.Create(bmp.Width, bmp.Height, 96, 96, PixelFormats.Bgr24, null,
+                data.Scan0, data.Stride * bmp.Height, data.Stride);
+            src.Freeze();
+            return src;
+        }
+        finally { bmp.UnlockBits(data); }
+    }
+
     static Color ParseColor(string c)
     {
         try { return (Color)ColorConverter.ConvertFromString(c); }
@@ -137,7 +161,7 @@ public sealed class SelectionOverlay : Window
         }
         else if (s.PickWindowOnClick)
         {
-            var w = Native.WindowAt(x, y);
+            var w = Native.WindowAt(x, y, windows);
             if (hoverRect != w)
             {
                 hoverRect = w;
@@ -159,7 +183,7 @@ public sealed class SelectionOverlay : Window
         if (current.Width < 4 || current.Height < 4)
         {
             if (!s.PickWindowOnClick) { hint.Visibility = Visibility.Visible; return; }
-            current = Native.WindowAt(x, y);
+            current = Native.WindowAt(x, y, windows);
         }
         Finish(current.Intersect(screen));
     }

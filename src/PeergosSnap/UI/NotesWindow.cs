@@ -32,7 +32,7 @@ public sealed class NotesWindow : Window
         Theme.Attach(this);
         Theme.Changed += () => Dispatcher.BeginInvoke(PushTheme);
         Title = "Peergos Snap – User notes";
-        Width = 1080;
+        Width = 1200;
         Height = 760;
         MinWidth = 600;
         MinHeight = 400;

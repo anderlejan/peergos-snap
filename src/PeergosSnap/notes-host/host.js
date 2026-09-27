@@ -48,8 +48,9 @@
   const notesUI = UserNotesUI.create({
     api,
     config: () => config,
-    title: 'User notes – Peergos Snap',
+    title: 'User notes',
     toast,
+    fontControl: true,                // text size control in the header (module 1.5.0), remembered by the module
     onClose: () => { closedEl.style.display = 'flex'; rpc('close').catch(() => {}); },
   });
   window.__openNotes = () => { if (!notesUI.isOpen()) { closedEl.style.display = 'none'; notesUI.open(); } };

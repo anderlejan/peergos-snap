@@ -19,6 +19,8 @@ public static class AppPaths
     public static string SettingsFile => Path.Combine(DataDir, "settings.json");
     public static string NotesFile => Path.Combine(DataDir, "user-notes.json");
     public static string PromptsDir => Path.Combine(DataDir, "prompts");
+    public static string HistoryFile => Path.Combine(DataDir, "history.json");
+    public static string ThumbsDir => Path.Combine(LocalDir, "thumbs");
     public static string CacheDir => Path.Combine(LocalDir, "Captures");
     public static string WorkDir => Path.Combine(LocalDir, "work");
     public static string LogFile => Path.Combine(LocalDir, "logs", "peergos-snap.log");

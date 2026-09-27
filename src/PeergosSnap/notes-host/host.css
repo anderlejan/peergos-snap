@@ -1,12 +1,65 @@
-/* Peergos Snap host page for the User notes module: the module's window fills the WPF window. */
-:root { --bg: #15181d; --bg2: #1c1f25; --bg3: #242831; --fg: #e6e8ec; --fg2: #a9afbb; --fg3: #737a88; --line: #343a46;
-  --acc: #3fb68f; --acc2: #2b8a6e; --on-acc: #fff; --sel-bg: #1f3b33; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-size: var(--base-size, 14px); }
-.un-box, .un-box input, .un-box select, .un-box textarea, .un-box button { font-size: inherit; }
+/* Peergos Snap host page for the User notes module: the module's window fills the app window and follows the app's
+   look (Windows 11 style controls, the app's colour scheme and font size). */
+:root { --bg: #16201D; --bg2: #1D2A26; --bg3: #243430; --fg: #E8F1EE; --fg2: #B9CAC4; --fg3: #97ABA4; --line: #34483F;
+  --acc: #4FD1A5; --acc2: #1E7A5D; --on-acc: #FFFFFF; --sel-bg: #243430; --row-line: var(--line); --bg4: var(--bg3); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; font-size: var(--base-size, 14px); }
+.un-box input, .un-box select, .un-box textarea, .un-box button { font-size: inherit; font-family: inherit; }
+
+/* the notes window fills the whole app window */
 .un-overlay { background: var(--bg) !important; }
 .un-box { width: 100vw !important; height: 100vh !important; min-width: 0 !important; min-height: 0 !important;
   border-radius: 0 !important; border: 0 !important; box-shadow: none !important; resize: none !important;
-  left: 0 !important; top: 0 !important; transform: none !important; }
+  left: 0 !important; top: 0 !important; transform: none !important; background: var(--bg) !important; }
+
+/* header like the app's toolbars */
+.un-head { background: var(--bg2); border-bottom: 1px solid var(--line); padding: 10px 16px; cursor: default; }
+/* one row always, Close stays top right: the title shortens with …, the filter buttons scroll sideways when narrow */
+.un-head { flex-wrap: nowrap; }
+.un-head > * { flex: none; }
+.un-head > h2 { flex: 1 1 auto; min-width: 0; }
+.un-head > .un-seg:not(.un-font) { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.un-head > .un-seg:not(.un-font)::-webkit-scrollbar { display: none; }
+.un-head .un-seg button { white-space: nowrap; }
+.un-head h2 { font-size: 1.15em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.un-help { color: var(--fg3); }
+
+/* buttons: Windows 11 style */
+.un-btn { background: color-mix(in srgb, var(--fg) 6%, var(--bg2)); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 4px; padding: 5px 12px; line-height: 1.35; transition: background .12s; }
+.un-btn:hover { background: color-mix(in srgb, var(--fg) 11%, var(--bg2)); border-color: var(--line); }
+.un-btn:active { background: color-mix(in srgb, var(--fg) 3%, var(--bg2)); }
+.un-btn.pri { background: var(--acc2); border-color: var(--acc2); color: var(--on-acc); }
+.un-btn.pri:hover { background: color-mix(in srgb, var(--acc2) 88%, var(--fg)); }
+.un-btn:focus-visible, .un-seg button:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+
+/* segmented choices (filters, modes, text size) */
+.un-seg { border-color: var(--line); border-radius: 6px; background: color-mix(in srgb, var(--fg) 4%, var(--bg2)); }
+.un-seg button { color: var(--fg2); padding: 5px 11px; }
+.un-seg button:hover { background: color-mix(in srgb, var(--fg) 8%, var(--bg2)); color: var(--fg); }
+.un-seg button.on { background: var(--acc2); color: var(--on-acc); }
+
+/* fields */
+.un-mode, .un-editor input[type=text], .un-editor select, .un-editor textarea, .un-output, .un-bulk select, .un-bulk input {
+  background: var(--bg2); color: var(--fg); border: 1px solid var(--line); border-bottom: 1px solid color-mix(in srgb, var(--fg) 35%, var(--line));
+  border-radius: 4px; padding: 6px 10px; }
+.un-editor input:focus, .un-editor select:focus, .un-editor textarea:focus, .un-output:focus, .un-bulk select:focus {
+  outline: none; border-bottom: 2px solid var(--acc); }
+.un-fld > label { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--fg2); }
+
+/* list */
+.un-list { background: var(--bg2); border-color: var(--line); border-radius: 8px; }
+.un-row { border-bottom-color: var(--line); }
+.un-row:hover { background: color-mix(in srgb, var(--fg) 6%, var(--bg2)); }
+.un-row.cur { background: var(--bg3); outline: none; box-shadow: inset 3px 0 0 var(--acc2); }
+.un-row input { accent-color: var(--acc2); }
+.un-bulk { background: var(--bg2); }
+
+/* thin scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 25%, transparent); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
 #toast { position: fixed; right: 16px; bottom: 16px; z-index: 100; padding: 8px 14px; border-radius: 6px; background: var(--bg3);
   color: var(--fg); border: 1px solid var(--line); opacity: 0; transition: opacity .2s; pointer-events: none; }
 #toast.show { opacity: 1; }

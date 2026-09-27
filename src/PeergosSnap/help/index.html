@@ -38,7 +38,7 @@
   <li><strong>Record a video.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, drag over the area to record and let go: recording starts. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again (or click <em>Stop</em>), then choose <em>Upload &amp; copy link</em>.</li>
   <li><strong>Want the picture itself instead of a link?</strong> Right-click the icon → <em>Output</em> → <em>Media to clipboard</em>. Now every capture is copied as a picture or video file, ready to paste.</li>
 </ol>
-<p class="tip">Press <kbd>F1</kbd> in the Settings window to open the help for the page you are on.</p>
+<p class="tip">Want to capture a menu that closes when you click elsewhere? Choose a delay first: right-click the icon → <em>Delay</em> → e.g. <em>3 seconds</em> (see <a href="#pictures-delay">Capturing a menu</a>). All your captures and their links are in <em>History…</em> (see <a href="#history">History</a>). Press <kbd>F1</kbd> in the Settings window for help on the page you are on.</p>
 </section>
 
 <section id="tray" data-keywords="icon notification area menu right click left click hidden pin quit">
@@ -61,10 +61,13 @@
   <tr><td>Take picture</td><td>Starts selecting an area for a picture.</td></tr>
   <tr><td>Record video / Stop recording</td><td>Starts selecting an area to record, or stops the running recording.</td></tr>
   <tr><td>Pause / Resume recording, Cancel recording</td><td>Shown while recording.</td></tr>
+  <tr><td>Delay ▸</td><td>No delay, or 1–5 seconds before a picture is taken or a recording starts (see <a href="#pictures-delay">Capturing a menu</a>). Other lengths: Settings → Capture.</td></tr>
+  <tr><td>Cancel the countdown</td><td>Shown while a delay is counting down.</td></tr>
   <tr><td>Tray click takes: Picture / Video</td><td>What a left click on the icon does.</td></tr>
   <tr><td>Output: Secret link / Media to clipboard</td><td>Where captures go (see <a href="#output">Where your capture goes</a>).</td></tr>
   <tr><td>Videos: Show mouse pointer</td><td>Whether the mouse pointer is visible in videos.</td></tr>
   <tr><td>Copy last link</td><td>Copies the link of the last upload again.</td></tr>
+  <tr><td>History…</td><td>All your captures with previews, labels and links (see <a href="#history">History</a>).</td></tr>
   <tr><td>Open captures folder</td><td>Opens the folder where every capture is also kept on your PC.</td></tr>
   <tr><td>Settings…</td><td>All options.</td></tr>
   <tr><td>User notes…</td><td>Your list of wanted changes (can be hidden in Settings → General).</td></tr>
@@ -88,6 +91,15 @@
   <li><strong>Need a moment after letting go?</strong> Set a delay in Settings → Overlay, for example to let an animation reach the right frame.</li>
   <li><strong>Games:</strong> for the best results run the game in a window or borderless window rather than exclusive full screen.</li>
 </ul>
+<h3 id="pictures-delay">Capturing a menu (delay)</h3>
+<p>Menus and pop-ups close as soon as you click somewhere else, so they can't be selected in the normal way. Use a delay:</p>
+<ol class="steps">
+  <li>Right-click the icon → <em>Delay</em> → choose <em>1</em> to <em>5 seconds</em>. (Any length up to 60 seconds: Settings → Capture.)</li>
+  <li>Start a picture as usual (hotkey, icon or menu). A countdown appears at the bottom right, and the icon shows the seconds left.</li>
+  <li>Now open the menu you want to capture.</li>
+  <li>When the countdown ends, <strong>the screen freezes</strong>: it stays exactly as it was, with your menu. Select the area, or click the menu to take just the menu.</li>
+</ol>
+<p>The delay stays chosen until you change it; the icon's tooltip reminds you. To cancel a countdown, click <em>Cancel</em> on the countdown card, click the icon, or press the picture hotkey again.</p>
 <p>What happens next depends on the output: see <a href="#output">Where your capture goes</a>.</p>
 </section>
 
@@ -110,6 +122,8 @@
   <tr><td>Discard</td><td>Deletes the video.</td></tr>
 </table>
 <p>Closing the window (or pressing <kbd>Esc</kbd>) keeps the video only on your PC, in the captures folder.</p>
+<h3 id="videos-delay">Recording with a delay</h3>
+<p>If a delay is chosen (menu → <em>Delay</em>), you first select the area as usual; it stays marked while the countdown runs, and recording starts when it ends. Use the time to open a menu or get the scene ready.</p>
 <h3 id="videos-pause">Pause and cancel</h3>
 <p><em>Pause</em> stops recording until you click <em>Resume</em>; the parts are joined into one video. You can also pause from the menu or with your own hotkey (Settings → Hotkeys). <em>Cancel</em> throws the recording away.</p>
 <h3 id="videos-pointer">Mouse pointer</h3>
@@ -131,8 +145,9 @@
 <p>If you are offline or Peergos cannot be reached, the picture or video is put on the clipboard instead, so you can still paste it (you can switch this off in Settings → Output). The card tells you why the upload failed.</p>
 <h3 id="output-local">Copies on your PC</h3>
 <ul>
-  <li>Every capture is also kept in the <strong>captures folder</strong>: menu → <em>Open captures folder</em>. Old copies are deleted after 30 days; change that in Settings → Output (0 keeps them forever).</li>
-  <li>To keep every capture in a folder of your own as well, turn on <em>Also save every capture to this folder</em> in Settings → Output.</li>
+  <li>Every capture is also kept in the <strong>captures folder</strong>: menu → <em>Open captures folder</em>. Captures are sorted into one folder per month, named like <em>2026-10</em>; you can choose one folder per day or year, or none (Settings → Files &amp; history).</li>
+  <li>Copies are <strong>kept forever</strong> unless you set a number of days in Settings → Files &amp; history; older copies then go to the Recycle Bin, so nothing is lost by accident.</li>
+  <li>To keep every capture in a folder of your own as well, turn on <em>Also save every capture to this folder</em> (Settings → Files &amp; history). It uses the same monthly folders.</li>
   <li><em>Ask before uploading a picture</em> (Settings → Capture) lets you decide for each picture.</li>
 </ul>
 </section>
@@ -171,6 +186,22 @@
 <p>Everything you upload is in the capture folder of your Peergos account, where you can open, rename or delete it in Peergos as usual. To stop sharing a file, delete it in Peergos.</p>
 </section>
 
+<section id="history" data-keywords="history manager previous old links label delete clean up remote local files list sort search app">
+<h2>History</h2>
+<p>Right-click the icon → <em>History…</em> lists every capture: a preview, when it was taken, the app it came from, its label and link, and where it is: on <em>This PC</em>, in <em>Peergos</em>, or both (the coloured tags).</p>
+<ul>
+  <li><strong>Find a capture:</strong> type in the search box (label, file name, app or date), choose what to show (pictures, videos, only on this PC, only in Peergos, …) and how to sort (newest, oldest, name, size, app). With newest or oldest first, captures are grouped by day.</li>
+  <li><strong>Details:</strong> click a capture to see a larger preview and everything about it. Double-click opens the file (or the link if the file is only in Peergos).</li>
+  <li><strong>Old links:</strong> <em>Copy link</em> or <em>Open link</em> gives you the link again. Links of files uploaded before the history existed are found in your Peergos folder when the history opens.</li>
+  <li><strong>Labels:</strong> type your own name or note into <em>Label</em>; it is saved as you type and shown in the list.</li>
+  <li><strong>Upload later:</strong> a capture that is only on this PC can be uploaded with <em>Upload &amp; copy link</em>.</li>
+  <li><strong>Delete:</strong> <em>From this PC</em> moves the file to the Recycle Bin; <em>From Peergos</em> deletes it from your Peergos folder (its link stops working – this can't be undone); <em>From both</em> does both; <em>Remove from history</em> only removes the entry. Every delete asks first. Select several captures (<kbd>Ctrl</kbd> or <kbd>Shift</kbd> + click) to delete them together.</li>
+  <li><strong>Tidy up:</strong> <em>Clean up</em> → <em>Remove records whose files are gone</em> removes entries that lead to no file any more; <em>Clear the whole history</em> empties the list. Neither deletes files, and removed entries are not added back.</li>
+  <li><em>Refresh</em> looks at the captures folder and your Peergos folder again. The bottom line counts your captures and says when Peergos was last checked.</li>
+</ul>
+<p>Don't want the app names remembered? Settings → Files &amp; history → untick <em>Remember which app each capture came from</em>.</p>
+</section>
+
 <section id="hotkeys" data-keywords="hotkey shortcut keyboard keys ctrl shift change conflict escape">
 <h2>Hotkeys</h2>
 <table>
@@ -186,7 +217,7 @@
 
 <section id="settings" data-keywords="settings options preferences">
 <h2>Settings</h2>
-<p>Right-click the icon → <em>Settings…</em>. Changes apply and are saved at once; there is no Save button. A red note next to an option means the value can't be used yet (for example a folder that does not exist). Press <kbd>F1</kbd> for help on the page you are on.</p>
+<p>Right-click the icon → <em>Settings…</em>. The pages are listed in a column on the left. Changes apply and are saved at once; there is no Save button. A red note next to an option means the value can't be used yet (for example a folder that does not exist). Press <kbd>F1</kbd> for help on the page you are on.</p>
 
 <h3 id="settings-peergos">Peergos</h3>
 <table>
@@ -206,6 +237,7 @@
   <tr><td>Video quality</td><td>Left gives smaller files, right gives sharper videos.</td><td>Middle</td></tr>
   <tr><td>Show the mouse pointer in videos</td><td>Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
   <tr><td>Ask before uploading a picture</td><td>Asks each time; if you say no, the picture is copied instead.</td><td>Off</td></tr>
+  <tr><td>Delay before capturing</td><td>Seconds of countdown before the screen freezes for a picture, or before a recording starts; 0 = none. The menu offers 1–5 seconds quickly.</td><td>0</td></tr>
 </table>
 
 <h3 id="settings-overlay">Overlay</h3>
@@ -215,7 +247,7 @@
   <tr><td>Border colour</td><td>Colour of the selection frame, e.g. <em>#FF3B30</em> or <em>Lime</em>.</td><td>Red</td></tr>
   <tr><td>Show the size while dragging</td><td>Width × height next to the selection.</td><td>On</td></tr>
   <tr><td>A click without dragging takes the window under the pointer</td><td>Quick capture of a whole window.</td><td>On</td></tr>
-  <tr><td>Delay after releasing the mouse</td><td>Waits this many milliseconds before capturing. 0 = instantly.</td><td>0</td></tr>
+  <tr><td>Extra wait after releasing the mouse</td><td>Waits this many milliseconds before capturing, without freezing (for example to let an animation settle). 0 = instantly.</td><td>0</td></tr>
 </table>
 
 <h3 id="settings-output">Output</h3>
@@ -224,9 +256,17 @@
   <tr><td>After a capture</td><td>Upload and copy the secret link, or copy the picture / video itself.</td><td>Secret link</td></tr>
   <tr><td>If the upload fails, copy … to the clipboard instead</td><td>So you can always paste something.</td><td>On</td></tr>
   <tr><td>Show notifications</td><td>Hides the green cards when off; warnings and errors still show.</td><td>On</td></tr>
-  <tr><td>Also save every capture to this folder</td><td>An extra copy of every capture in a folder you choose.</td><td>Off</td></tr>
+</table>
+
+<h3 id="settings-files">Files &amp; history</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
   <tr><td>Local captures folder</td><td>Where every capture is kept on your PC; 📂 opens it.</td><td></td></tr>
-  <tr><td>Delete local copies older than</td><td>Days; 0 keeps them forever.</td><td>30</td></tr>
+  <tr><td>Sort into subfolders</td><td>One folder per month (2026-10), per day (2026-10-05), per year (2026), or none. Also used for the mirror folder.</td><td>Per month</td></tr>
+  <tr><td>Delete local copies older than</td><td>Days; 0 keeps them forever. Older copies go to the Recycle Bin.</td><td>0 (keep forever)</td></tr>
+  <tr><td>Also save every capture to this folder</td><td>An extra copy of every capture in a folder you choose.</td><td>Off</td></tr>
+  <tr><td>Open history</td><td>The history of your captures (see <a href="#history">History</a>).</td><td></td></tr>
+  <tr><td>Remember which app each capture came from</td><td>Shown and searchable in the history.</td><td>On</td></tr>
 </table>
 
 <h3 id="settings-hotkeys">Hotkeys</h3>
@@ -280,6 +320,7 @@
   <li><strong>Several notes at once:</strong> while notes are ticked, a bar under the list changes their type, area, priority or status, or deletes them.</li>
   <li><strong>Done list:</strong> the <em>Done</em> filter lists finished work; print it or save it as PDF.</li>
   <li><strong>Undo:</strong> <kbd>Ctrl</kbd>+<kbd>Z</kbd> (outside text fields) brings back the last five deletions.</li>
+  <li><strong>Text size:</strong> <em>A−</em> and <em>A+</em> at the top make the text smaller or larger, the number in between goes back to 100 %; or press <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>−</kbd>, <kbd>Ctrl</kbd>+<kbd>0</kbd>. User notes remembers its size; 100 % is the app's font size.</li>
 </ul>
 <p>If you change Peergos Snap's source yourself, enter where it is under <em>Source location for AI prompts</em> (Settings → General) so full prompts can name it. Otherwise leave it empty.</p>
 </section>
@@ -295,6 +336,12 @@
   <dd>Check your internet connection. Your capture was put on the clipboard and is in the captures folder (menu → <em>Open captures folder</em>), so nothing is lost.</dd>
   <dt>The link was not copied.</dt>
   <dd>Sometimes another program keeps the clipboard busy for a moment. Use menu → <em>Copy last link</em>, or <em>Open link</em> on the card.</dd>
+  <dt>How do I capture a menu or a pop-up?</dt>
+  <dd>Choose a delay (menu → <em>Delay</em>), start the picture, open the menu during the countdown; the screen then freezes with the menu open. See <a href="#pictures-delay">Capturing a menu</a>.</dd>
+  <dt>Where do I find the link of an older capture?</dt>
+  <dd>In <em>History…</em>: select the capture and click <em>Copy link</em>.</dd>
+  <dt>My Peergos folder is getting full.</dt>
+  <dd>Open <em>History…</em>, choose <em>Show: In Peergos</em>, select what you no longer need and click <em>Delete → From Peergos</em>.</dd>
   <dt>A video of a game is black.</dt>
   <dd>Some games in exclusive full screen can't be recorded. Switch the game to windowed or borderless mode.</dd>
   <dt>The mouse pointer is (not) in my video.</dt>

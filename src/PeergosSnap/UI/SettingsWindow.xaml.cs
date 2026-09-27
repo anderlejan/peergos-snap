@@ -28,7 +28,7 @@ public partial class SettingsWindow : Window
     }
 
     static readonly string[] TabHelp =
-        ["settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-hotkeys", "settings-appearance", "settings-general"];
+        ["settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-files", "settings-hotkeys", "settings-appearance", "settings-general"];
 
     void OpenHelp() => app.ShowHelp(Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < TabHelp.Length ? TabHelp[Tabs.SelectedIndex] : "settings");
 
@@ -63,6 +63,10 @@ public partial class SettingsWindow : Window
         Quality.Value = S.VideoQuality;
         QualityLabel.Text = $"Video quality (CRF {S.VideoQuality})";
         RecordCursor.IsChecked = S.RecordCursor;
+        DelayBox.Text = S.DelaySeconds.ToString();
+        foreach (ComboBoxItem i in SubfolderBox.Items)
+            if ((string)i.Tag == S.Subfolders.ToString()) SubfolderBox.SelectedItem = i;
+        RememberApp.IsChecked = S.RememberApp;
         AskPicture.IsChecked = S.AskBeforePictureUpload;
 
         Dim.Value = S.OverlayDimPercent;
@@ -153,6 +157,19 @@ public partial class SettingsWindow : Window
         FrameRate.SelectionChanged += (_, _) => Change(s => s.FrameRate = int.Parse(Sel(FrameRate)));
         Quality.ValueChanged += (_, _) => { QualityLabel.Text = $"Video quality (CRF {(int)Quality.Value})"; Change(s => s.VideoQuality = (int)Quality.Value); };
         RecordCursor.Click += (_, _) => Change(s => s.RecordCursor = RecordCursor.IsChecked == true);
+        DelayBox.TextChanged += (_, _) =>
+        {
+            bool ok = int.TryParse(DelayBox.Text.Trim(), out var sec) && sec is >= 0 and <= 60;
+            DelayBoxErr.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
+            if (ok) Change(s => s.DelaySeconds = sec);
+        };
+        SubfolderBox.SelectionChanged += (_, _) =>
+        {
+            if (SubfolderBox.SelectedItem is ComboBoxItem { Tag: string t } && Enum.TryParse<SubfolderScheme>(t, out var scheme))
+                Change(s => s.Subfolders = scheme);
+        };
+        RememberApp.Click += (_, _) => Change(s => s.RememberApp = RememberApp.IsChecked == true);
+        OpenHistoryBtn.Click += (_, _) => app.ShowHistory();
         AskPicture.Click += (_, _) => Change(s => s.AskBeforePictureUpload = AskPicture.IsChecked == true);
 
         Dim.ValueChanged += (_, _) => { DimLabel.Text = $"Darken outside the selection ({(int)Dim.Value} %; 0 = fully transparent)"; Change(s => s.OverlayDimPercent = (int)Dim.Value); };

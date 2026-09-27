@@ -3,7 +3,7 @@ using System.Text;
 
 namespace PeergosSnap.Core;
 
-internal static class Native
+public static class Native
 {
     public const int SM_XVIRTUALSCREEN = 76, SM_YVIRTUALSCREEN = 77, SM_CXVIRTUALSCREEN = 78, SM_CYVIRTUALSCREEN = 79;
     public const int GWL_EXSTYLE = -20;
@@ -73,15 +73,17 @@ internal static class Native
         try { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE); } catch { }
     }
 
-    /// <summary>
-    /// The visible top-level window under a screen point (skipping our own windows), as its visible frame.
-    /// Falls back to the monitor when only the desktop is there.
-    /// </summary>
-    public static PxRect WindowAt(int x, int y)
+    /// <summary>A visible top-level window: its visible frame, handle and process.</summary>
+    public sealed record WinInfo(PxRect Rect, IntPtr Handle, uint Pid);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int max);
+
+    /// <summary>The visible top-level windows of other programs, topmost first (menus and tooltips included).</summary>
+    public static List<WinInfo> VisibleWindows()
     {
         uint self = (uint)Environment.ProcessId;
         IntPtr shell = GetShellWindow();
-        PxRect? found = null;
+        var list = new List<WinInfo>();
         EnumWindows((h, _) =>
         {
             if (h == shell || !IsWindowVisible(h) || IsIconic(h)) return true;
@@ -92,13 +94,57 @@ internal static class Native
             GetClassName(h, cls, 64);
             var c = cls.ToString();
             if (c is "Progman" or "WorkerW" or "Shell_TrayWnd" or "Shell_SecondaryTrayWnd") return true;
-            if (DwmGetWindowAttribute(h, DWMWA_EXTENDED_FRAME_BOUNDS, out RECT r, Marshal.SizeOf<RECT>()) != 0) return true;
+            RECT r;
+            if (DwmGetWindowAttribute(h, DWMWA_EXTENDED_FRAME_BOUNDS, out r, Marshal.SizeOf<RECT>()) != 0 && !GetWindowRect(h, out r)) return true;
             var pr = new PxRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
-            if (pr.Width < 8 || pr.Height < 8 || !pr.Contains(x, y)) return true;
-            found = pr;
-            return false;
+            if (pr.Width < 8 || pr.Height < 8) return true;
+            list.Add(new WinInfo(pr, h, pid));
+            return true;
         }, IntPtr.Zero);
-        var mon = MonitorAt(x, y);
-        return found is { } f ? f.Intersect(VirtualScreen()) : mon;
+        return list;
+    }
+
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+
+    /// <summary>The topmost window under a point, from a snapshot (frozen screen) or from the live desktop.</summary>
+    public static WinInfo? WindowInfoAt(int x, int y, IReadOnlyList<WinInfo>? snapshot = null) =>
+        (snapshot ?? VisibleWindows()).FirstOrDefault(w => w.Rect.Contains(x, y));
+
+    /// <summary>
+    /// The visible top-level window under a screen point (skipping our own windows), as its visible frame.
+    /// Falls back to the monitor when only the desktop is there.
+    /// </summary>
+    public static PxRect WindowAt(int x, int y, IReadOnlyList<WinInfo>? snapshot = null)
+    {
+        var found = WindowInfoAt(x, y, snapshot);
+        return found != null ? found.Rect.Intersect(VirtualScreen()) : MonitorAt(x, y);
+    }
+
+    /// <summary>The program a capture comes from: its friendly name (e.g. "Firefox") and window title.</summary>
+    public static (string? App, string? Title) Describe(WinInfo? w)
+    {
+        if (w == null) return (null, null);
+        string? app = null, title = null;
+        try
+        {
+            var sb = new StringBuilder(256);
+            GetWindowText(w.Handle, sb, 256);
+            title = sb.ToString().Trim();
+            if (title.Length == 0) title = null;
+        }
+        catch { }
+        try
+        {
+            using var p = System.Diagnostics.Process.GetProcessById((int)w.Pid);
+            try
+            {
+                var desc = p.MainModule?.FileVersionInfo.FileDescription?.Trim();
+                if (!string.IsNullOrEmpty(desc)) app = desc;
+            }
+            catch { /* protected processes do not show their modules */ }
+            app ??= p.ProcessName;
+        }
+        catch { }
+        return (app, title);
     }
 }
