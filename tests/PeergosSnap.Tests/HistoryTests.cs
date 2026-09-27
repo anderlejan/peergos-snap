@@ -215,6 +215,23 @@ public class HistoryStoreTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void A_discarded_recording_is_not_dismissed()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "pst-" + Guid.NewGuid());
+        try
+        {
+            var s = HistoryStore.Load(Path.Combine(dir, "history.json"));
+            var v = s.Add(new HistoryRecord { File = @"C:\c\Snap_2026-09-27_04-38-58.mp4", Kind = "video" });
+            s.Remove([v.Id], dismiss: false);
+            Assert.Empty(s.Records);
+            Assert.Empty(s.Dismissed);
+            // restored from the Recycle Bin: the next scan finds it again
+            Assert.Single(HistoryLogic.Discover(s.Records, [@"C:\c\Snap_2026-09-27_04-38-58.mp4"], null, _ => DateTime.Now, s.Dismissed));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
 
 public class BridgeAnswerTests

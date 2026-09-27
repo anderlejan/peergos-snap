@@ -698,9 +698,17 @@ public sealed class TrayController : IDisposable
                     history.Save();
                     break;
                 case FinishChoice.Discard:
-                    File.Delete(cached);
-                    history.Remove([record.Id]);
-                    Notify(ToastKind.Ok, "Recording discarded", "The video was deleted.");
+                    // Like every other delete of a capture: to the Recycle Bin, so a wrong click can be undone.
+                    if (Recycle.Delete([cached]).Count == 0)
+                    {
+                        history.Remove([record.Id], dismiss: false);
+                        Notify(ToastKind.Ok, "Recording discarded", "The video was moved to the Recycle Bin.");
+                    }
+                    else
+                    {
+                        history.Save();
+                        Notify(ToastKind.Warn, "Recording not discarded", "It could not be moved to the Recycle Bin and stays in the captures folder.", null, cached);
+                    }
                     break;
                 default:
                     record.MirrorFile = Mirror(cached, record.Created);
