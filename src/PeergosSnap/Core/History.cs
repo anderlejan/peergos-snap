@@ -179,6 +179,8 @@ public static class HistoryLogic
                 continue;
             }
             if (byRemote.Contains(rf.Path) || dismissed?.Contains(rf.Path) == true) continue;
+            // Only captures: other files kept in the same Peergos folder are not part of the history.
+            if (!CaptureFiles.IsCapture(rf.Name)) continue;
             // A local capture with the same name that was never linked to Peergos: the same capture.
             var twin = all.FirstOrDefault(r => r.PeergosPath == null && r.File != null
                                                && string.Equals(System.IO.Path.GetFileName(r.File), rf.Name, StringComparison.OrdinalIgnoreCase));

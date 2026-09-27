@@ -99,9 +99,18 @@ public class HistoryLogicTests
     [Fact]
     public void Removed_entries_are_not_added_back()
     {
-        var dismissed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\c\a.png", "/neo/PeergosSnap/b.png" };
-        var added = HistoryLogic.Discover([], [@"C:\c\a.png"], [Remote("b.png")], FileTime, dismissed);
+        var dismissed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\c\a.png", "/neo/PeergosSnap/Snap_2026-08-01_10-00-00.png" };
+        var added = HistoryLogic.Discover([], [@"C:\c\a.png"], [Remote("Snap_2026-08-01_10-00-00.png")], FileTime, dismissed);
         Assert.Empty(added);
+    }
+
+    [Fact]
+    public void Other_files_in_the_Peergos_folder_are_not_captures()
+    {
+        var added = HistoryLogic.Discover([], [], [Remote("test"), Remote("notes.txt"), Remote("holiday.png"), Remote("Snap_2026-08-01_10-00-00.mp4")], FileTime);
+        var r = Assert.Single(added);
+        Assert.Equal("video", r.Kind);
+        Assert.Equal("/neo/PeergosSnap/Snap_2026-08-01_10-00-00.mp4", r.PeergosPath);
     }
 
     [Fact]

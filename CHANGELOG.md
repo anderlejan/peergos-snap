@@ -24,6 +24,7 @@
   remembered; the notes window now looks like the rest of the app (User notes module 1.5.0).
 - **Settings: categories in a column on the left**, with a new *Files & history* page.
 - Help updated for all of the above.
+- Fixed: Start menu → *Peergos Snap – Help* now opens the Help also when Peergos Snap was not running yet.
 
 
 ## 2.0.0 – 2026-09-27
