@@ -41,6 +41,33 @@ public sealed class Uploader
         finally { OneAtATime.Release(); }
     }
 
+    /// <summary>The files in the Peergos capture folder with their secret links.</summary>
+    public static async Task<(BridgeResult Result, List<RemoteFile> Files)> ListAsync(Settings s)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            var r = await RunAsync(["list", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder],
+                s.Session, null, null, TimeSpan.FromMinutes(3), default);
+            return (r, r.Ok ? PeergosLinks.ParseList(r.Raw) : []);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
+    /// <summary>Deletes files from Peergos (their secret links go with them).</summary>
+    public static async Task<(BridgeResult Result, List<string> Deleted, List<string> Missing, List<string> Failed)> DeleteAsync(Settings s, IEnumerable<string> paths)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            var r = await RunAsync(["delete", "--server", s.Server, "--user", s.Username.Trim()],
+                s.Session + "\n" + string.Join("\n", paths), null, null, TimeSpan.FromMinutes(10), default);
+            var (d, m, f) = PeergosLinks.ParseDelete(r.Raw);
+            return (r, d, m, f);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
     public static async Task<BridgeResult> CheckAsync(Settings s)
     {
         await OneAtATime.WaitAsync();

@@ -32,6 +32,14 @@ public static class ScreenCapture
         return bmp;
     }
 
+    /// <summary>A region of a whole-screen picture (taken of <paramref name="screen"/>).</summary>
+    public static Bitmap Crop(Bitmap full, PxRect screen, PxRect r)
+    {
+        var area = new Rectangle(r.X - screen.X, r.Y - screen.Y, r.Width, r.Height);
+        area.Intersect(new Rectangle(0, 0, full.Width, full.Height));
+        return full.Clone(area, PixelFormat.Format24bppRgb);
+    }
+
     public static void Save(Bitmap bmp, string file, string format)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);

@@ -14,7 +14,7 @@ public static class ThemedMenu
 
     static Color C(string hex) => ColorTranslator.FromHtml(hex);
 
-    public static void Apply(WinForms.ContextMenuStrip menu)
+    public static void Apply(WinForms.ToolStripDropDownMenu menu)
     {
         var s = Theme.Current;
         menu.Renderer = new Renderer(s);

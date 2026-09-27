@@ -1,0 +1,182 @@
+<Window x:Class="PeergosSnap.UI.HistoryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Peergos Snap – History" Width="1120" Height="740" MinWidth="780" MinHeight="460"
+        WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <Style x:Key="Dim" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Fg3}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+        <Style x:Key="Badge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="9"/><Setter Property="Padding" Value="7,1"/><Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+        </Style>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="10,4"/></Style>
+    </Window.Resources>
+    <DockPanel>
+        <!-- toolbar -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="RefreshBtn" Content="Refresh" ToolTip="Look at the captures folder and your Peergos folder again" Margin="6,0,0,0"/>
+                    <Button x:Name="CleanBtn" Content="Clean up ▾" Margin="6,0,0,0">
+                        <Button.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem x:Name="RemoveGoneItem" Header="Remove records whose files are gone…"/>
+                                <MenuItem x:Name="ClearItem" Header="Clear the whole history…"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+                <Grid Width="270" Margin="0,0,10,0">
+                    <TextBox x:Name="SearchBox" ToolTip="Search labels, file names, apps and dates"/>
+                    <TextBlock x:Name="SearchHint" Text="Search labels, names, apps…" IsHitTestVisible="False" Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource Dim}"/>
+                </Grid>
+                <ComboBox x:Name="ShowBox" Width="200" Margin="0,0,10,0" ToolTip="Which captures to show">
+                    <ComboBoxItem Tag="all" Content="All captures"/>
+                    <ComboBoxItem Tag="pictures" Content="Pictures"/>
+                    <ComboBoxItem Tag="videos" Content="Videos"/>
+                    <ComboBoxItem Tag="labelled" Content="With a label"/>
+                    <ComboBoxItem Tag="pc" Content="On this PC"/>
+                    <ComboBoxItem Tag="peergos" Content="In Peergos"/>
+                    <ComboBoxItem Tag="pc-only" Content="Only on this PC"/>
+                    <ComboBoxItem Tag="peergos-only" Content="Only in Peergos"/>
+                    <ComboBoxItem Tag="missing" Content="File missing on this PC"/>
+                </ComboBox>
+                <ComboBox x:Name="SortBox" Width="170" HorizontalAlignment="Left" ToolTip="Sort">
+                    <ComboBoxItem Tag="newest" Content="Newest first"/>
+                    <ComboBoxItem Tag="oldest" Content="Oldest first"/>
+                    <ComboBoxItem Tag="name" Content="Label or name"/>
+                    <ComboBoxItem Tag="size" Content="Largest first"/>
+                    <ComboBoxItem Tag="app" Content="App"/>
+                </ComboBox>
+            </DockPanel>
+        </Border>
+        <!-- status bar -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="12,6">
+            <DockPanel>
+                <TextBlock x:Name="RemoteState" DockPanel.Dock="Right" Style="{StaticResource Dim}"/>
+                <TextBlock x:Name="Counts" Style="{StaticResource Dim}"/>
+            </DockPanel>
+        </Border>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="360"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="400" MinWidth="300"/>
+            </Grid.ColumnDefinitions>
+            <!-- list -->
+            <Grid>
+                <ListBox x:Name="List" SelectionMode="Extended" BorderThickness="0" Background="Transparent"
+                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                         VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{DynamicResource Fg2}" Margin="14,14,0,4"/>
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListBox.GroupStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="2,4">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <Border Width="100" Height="64" CornerRadius="6" Background="{DynamicResource Bg3}" ClipToBounds="True" HorizontalAlignment="Left">
+                                    <Grid>
+                                        <TextBlock Text="{Binding Glyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Fg3}"/>
+                                        <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                        <Border Visibility="{Binding VideoBadge}" Background="#B0000000" CornerRadius="4" Padding="4,0"
+                                                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="3">
+                                            <TextBlock Text="{Binding Duration}" Foreground="White" FontSize="11"/>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Line2}" Style="{StaticResource Dim}" Margin="0,2,0,4"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Style="{StaticResource Badge}" Background="{Binding PcBrush}" ToolTip="{Binding PcTip}">
+                                            <TextBlock Text="This PC" FontSize="11" Foreground="{Binding PcText}"/>
+                                        </Border>
+                                        <Border Style="{StaticResource Badge}" Background="{Binding PeergosBrush}" ToolTip="{Binding PeergosTip}">
+                                            <TextBlock Text="Peergos" FontSize="11" Foreground="{Binding PeergosText}"/>
+                                        </Border>
+                                        <TextBlock Text="🔗 link" FontSize="11" Foreground="{DynamicResource Acc}" Visibility="{Binding LinkBadge}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="Empty" Text="No captures yet. Take a picture or record a video – it appears here." Visibility="Collapsed"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}" TextWrapping="Wrap" MaxWidth="340" TextAlignment="Center"/>
+            </Grid>
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource Line}" ResizeBehavior="PreviousAndNext"/>
+            <!-- details -->
+            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="16,14,16,16">
+                    <TextBlock x:Name="NothingSelected" Text="Select a capture to see it here." Style="{StaticResource Dim}" TextWrapping="Wrap"/>
+                    <StackPanel x:Name="Details" Visibility="Collapsed">
+                        <Border x:Name="PreviewBox" CornerRadius="8" Background="{DynamicResource Bg3}" MinHeight="120" Margin="0,0,0,12" ClipToBounds="True">
+                            <Grid>
+                                <TextBlock x:Name="PreviewNote" TextWrapping="Wrap" Margin="12" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}"/>
+                                <Image x:Name="Preview" MaxHeight="300" Stretch="Uniform"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock x:Name="SelectionTitle" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        <StackPanel x:Name="SinglePanel">
+                            <TextBlock Text="Label" Style="{StaticResource Dim}"/>
+                            <TextBox x:Name="LabelBox" Margin="0,2,0,10" ToolTip="Your own name or note for this capture"/>
+                            <Grid x:Name="InfoGrid" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Taken" Style="{StaticResource Dim}"/>
+                                <TextBlock x:Name="InfoTaken" Grid.Column="1" TextWrapping="Wrap"/>
+                                <TextBlock Grid.Row="1" Text="From" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="InfoApp" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="2" Text="Size" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="InfoSize" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="3" Text="This PC" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="InfoLocal" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="4" Text="Peergos" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                <TextBlock x:Name="InfoRemote" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                <TextBlock Grid.Row="5" Text="Link" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                <TextBox x:Name="InfoLink" Grid.Row="5" Grid.Column="1" IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent" Padding="0"/>
+                            </Grid>
+                            <WrapPanel>
+                                <Button x:Name="CopyLinkBtn" Content="Copy link" Style="{DynamicResource AccentButtonStyle}"/>
+                                <Button x:Name="OpenLinkBtn" Content="Open link"/>
+                                <Button x:Name="OpenFileBtn" Content="Open file"/>
+                                <Button x:Name="ShowFileBtn" Content="Show in folder"/>
+                                <Button x:Name="CopyMediaBtn" Content="Copy picture"/>
+                                <Button x:Name="UploadBtn" Content="Upload &amp; copy link"/>
+                            </WrapPanel>
+                        </StackPanel>
+                        <TextBlock Text="Delete" FontWeight="SemiBold" Margin="0,12,0,6"/>
+                        <WrapPanel>
+                            <Button x:Name="DelLocalBtn" Content="From this PC" ToolTip="Moves the file on this PC to the Recycle Bin"/>
+                            <Button x:Name="DelRemoteBtn" Content="From Peergos" ToolTip="Deletes the file from your Peergos folder; its link stops working"/>
+                            <Button x:Name="DelBothBtn" Content="From both"/>
+                            <Button x:Name="RemoveBtn" Content="Remove from history" ToolTip="Only the history entry; the files stay"/>
+                        </WrapPanel>
+                        <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
+                                Background="{DynamicResource Bg2}" Padding="12" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}"/>
+                                    <Button x:Name="ConfirmNo" Content="Cancel"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="ActionResult" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{DynamicResource Fg2}"/>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</Window>

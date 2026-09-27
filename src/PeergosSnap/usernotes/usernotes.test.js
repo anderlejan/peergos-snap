@@ -6,6 +6,9 @@ const { UserNotesStore, saveText } = require('./usernotes-store');
 let failed = 0;
 const check = (name, cond) => { if (!cond) failed++; console.log((cond ? 'PASS ' : 'FAIL ') + name); };
 
+check('version 1.5.0', C.MODULE_VERSION === '1.5.0');
+check('font size clamps to the steps', C.clampFontSize(97) === 100 && C.clampFontSize(500) === 160 && C.clampFontSize('x') === 100 && C.clampFontSize(84) === 80);
+check('font size steps and resets', C.stepFontSize(100, 1) === 110 && C.stepFontSize(100, -1) === 90 && C.stepFontSize(160, 1) === 160 && C.stepFontSize(80, -1) === 80 && C.stepFontSize(130, 0) === 100);
 const m = C.migrate({ notes: [{ id: '1', title: 'Old', status: 'prompted', promptedAt: '2026-01-01T00:00:00Z' }, { title: 'X', status: '??' }] });
 check('migrate prompted -> sent', m.notes[0].status === 'sent' && m.notes[0].sentAt);
 check('unknown status -> open', m.notes[1].status === 'open');
@@ -21,7 +24,6 @@ check('feedback groups fixes first', C.buildFeedback(list, cfg).indexOf('not wor
 C.markSent(list, ['A', 'B'], { as: 'prompt-short', file: 'f.md' });
 check('markSent', list.every(x => x.status === 'sent' && x.sentAs === 'prompt-short'));
 // 1.1.0
-check('version 1.4.0', C.MODULE_VERSION === '1.4.0');
 const b = ['p', 'q', 'r'].map(id => C.normalizeNote({ id, title: id }));
 C.setQueued(b[0], true); C.setQueued(b[1], true);
 C.bulkUpdate(b, ['p', 'q'], { type: 'fix', area: 'UI', priority: 'high' });
