@@ -117,11 +117,12 @@ public sealed class HistoryStore
         Save();
     }
 
-    /// <summary>Removes records (not their files); the files are not added back by later scans.</summary>
-    public void Remove(IEnumerable<string> ids)
+    /// <summary>Removes records (not their files); the files are not added back by later scans, unless
+    /// <paramref name="dismiss"/> is false (a discarded recording comes back if it is restored from the Recycle Bin).</summary>
+    public void Remove(IEnumerable<string> ids, bool dismiss = true)
     {
         var set = ids.ToHashSet();
-        foreach (var r in records.Where(r => set.Contains(r.Id))) Dismiss(r);
+        if (dismiss) foreach (var r in records.Where(r => set.Contains(r.Id))) Dismiss(r);
         records.RemoveAll(r => set.Contains(r.Id));
         Save();
     }
