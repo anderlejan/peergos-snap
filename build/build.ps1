@@ -35,6 +35,10 @@ if (Test-Path "$Dist\$SetupName") { throw "$SetupName already exists. Installers
 $Jdk = @("C:\Program Files\Microsoft\jdk-25.0.3.9-hotspot") + (Get-ChildItem "C:\Program Files\Microsoft\jdk-25*" -Directory -ErrorAction SilentlyContinue | ForEach-Object FullName) |
   Where-Object { Test-Path "$_\jmods\java.base.jmod" } | Select-Object -First 1
 if (-not $Jdk) { throw "JDK 25 with jmods not found" }
+# The runtime shipped in the installer must match the OpenJDK source attached to the release.
+if (-not (Select-String -Path "$Jdk\release" -SimpleMatch "SOURCE=`".:git:$JdkSourceCommit" -Quiet)) {
+  throw "The JDK in $Jdk was not built from OpenJDK source $JdkSourceCommit; update `$JdkSourceCommit and the source entry in build\deps.ps1."
+}
 $Iscc = @("C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $Iscc) { throw "Inno Setup 6 not found" }
 

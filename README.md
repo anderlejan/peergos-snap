@@ -51,8 +51,9 @@ Guides:
 
 ## Build
 
-You need Windows 11, the .NET 10 SDK, the Microsoft OpenJDK 25 (with jmods), Inno Setup 6, Node.js (for the
-User-notes tests) and git.
+You need Windows 11, the .NET 10 SDK, the Microsoft Build of OpenJDK 25.0.3 (with jmods), Inno Setup 6, Node.js
+(for the User-notes tests) and git. The build stops if the JDK was not built from the OpenJDK source pinned in
+`build/deps.ps1`, because that source is attached to each release.
 
 ```powershell
 .\build\build.ps1            # development build → dist\

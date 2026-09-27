@@ -1,5 +1,5 @@
 # Downloads the corresponding source code of the bundled GPL/AGPL binaries into dist\sources\ so it can be
-# attached to the GitHub release next to the installer (GPL-3.0 section 6 / AGPL-3.0 section 6).
+# attached to the GitHub release next to the installer (GPL-2.0 section 3 / GPL-3.0 section 6 / AGPL-3.0 section 6).
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path "$PSScriptRoot\..").Path
 . "$PSScriptRoot\deps.ps1"
