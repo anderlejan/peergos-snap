@@ -32,8 +32,11 @@ public sealed class NotesWindow : Window
         Theme.Attach(this);
         Theme.Changed += () => Dispatcher.BeginInvoke(PushTheme);
         Title = "Peergos Snap – User notes";
-        Width = 1200;
-        Height = 760;
+        // Larger text needs a larger window for the header to fit in one row; never beyond the screen's work area.
+        double scale = Math.Max(1.0, settings().FontPercent / 100.0);
+        var work = SystemParameters.WorkArea;
+        Width = Math.Min(1200 * scale, work.Width - 40);
+        Height = Math.Min(760 * scale, work.Height - 40);
         MinWidth = 600;
         MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
