@@ -25,6 +25,8 @@
 - **Settings: categories in a column on the left**, with a new *Files & history* page.
 - Help updated for all of the above.
 - *Discard* after a recording moves the video to the Recycle Bin instead of deleting it.
+- The release now also carries the source code of the bundled Java runtime (Microsoft Build of OpenJDK 25.0.3),
+  and the build checks that the runtime was built from exactly that source.
 - Fixed: Start menu → *Peergos Snap – Help* now opens the Help also when Peergos Snap was not running yet.
 
 
