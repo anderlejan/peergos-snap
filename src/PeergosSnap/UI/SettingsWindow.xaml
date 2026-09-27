@@ -22,7 +22,8 @@
                             <Border Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="6">
                                 <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
                             </Border>
-                            <ContentPresenter Grid.Column="1" ContentSource="SelectedContent" Margin="10,0,0,0"/>
+                            <!-- the name lets screen readers (UI Automation) reach the selected page -->
+                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Column="1" ContentSource="SelectedContent" Margin="10,0,0,0"/>
                         </Grid>
                     </ControlTemplate>
                 </Setter.Value>

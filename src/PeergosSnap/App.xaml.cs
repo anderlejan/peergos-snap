@@ -32,7 +32,7 @@ public partial class App : Application
         instance = new SingleInstance();
         if (!instance.IsFirst)
         {
-            // Pass the command to the running copy ("--quit", "--picture", "--video", "--settings", "--notes").
+            // Pass the command to the running copy ("--quit", "--picture", "--video", "--settings", "--notes", "--help", "--history").
             SingleInstance.Send(cmd == "" || cmd == "--tray" ? "--settings" : cmd);
             instance.Dispose();
             instance = null;
@@ -52,7 +52,7 @@ public partial class App : Application
         Log.Info($"start {typeof(App).Assembly.GetName().Version} args=[{string.Join(" ", e.Args)}]");
         tray = new TrayController();
         instance.Listen(tray.Command);
-        if (cmd is "--picture" or "--video" or "--settings" or "--notes") tray.Command(cmd);
+        if (cmd is "--picture" or "--video" or "--settings" or "--notes" or "--help" or "--history") tray.Command(cmd);
     }
 
     protected override void OnExit(ExitEventArgs e)
