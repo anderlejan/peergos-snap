@@ -54,8 +54,14 @@ public static class AudioMath
         return Math.Min(peak, 1f);
     }
 
-    /// <summary>FFmpeg's line when it starts grabbing (with "-loglevel level+info"): the moment the video begins.</summary>
-    public static bool IsVideoStartLine(string? line) => line != null && line.Contains("Press [q] to stop", StringComparison.Ordinal);
+    /// <summary>
+    /// gdigrab's line when it opens the screen and grabs the first frame (with "-loglevel level+info"): the moment the
+    /// video begins. FFmpeg's later "Press [q] to stop" comes only after it has probed the input (about 1.4 s of
+    /// frames that are part of the video), so it must not be used.
+    /// </summary>
+    public static bool IsVideoStartLine(string? line) => line != null &&
+        (line.Contains("Capturing whole desktop", StringComparison.Ordinal) ||
+         (line.Contains("Found window", StringComparison.Ordinal) && line.Contains(", capturing", StringComparison.Ordinal)));
 
     /// <summary>Only warnings and errors of FFmpeg are worth reporting (info lines are not problems).</summary>
     public static bool IsProblemLine(string? line) =>

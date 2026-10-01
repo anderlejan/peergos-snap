@@ -71,7 +71,7 @@ public static class FfmpegArgs
         var r = Geometry.EvenSize(region);
         var a = new List<string>
         {
-            // "level+info": FFmpeg's start line ("Press [q] to stop") marks when the video begins, to align the sound.
+            // "level+info": gdigrab's line "Capturing whole desktop" marks when the video begins, to align the sound.
             "-hide_banner", "-loglevel", "level+info", "-nostats", "-y",
             "-f", "gdigrab", "-framerate", fps.ToString(CultureInfo.InvariantCulture),
             "-draw_mouse", cursor ? "1" : "0",

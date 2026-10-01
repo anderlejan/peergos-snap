@@ -62,7 +62,7 @@ public sealed class Recorder
         foreach (var a in FfmpegArgs.Record(region, s.FrameRate, s.RecordCursor, s.VideoQuality, s.VideoFormat, seg))
             psi.ArgumentList.Add(a);
         var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        // The sound starts just before FFmpeg; FFmpeg's start line tells how much sound came before the first frame.
+        // The sound starts just before FFmpeg; gdigrab's start line tells how much sound came before the first frame.
         LoopbackRecorder? snd = null;
         if (s.RecordSound && !soundBroken)
         {
