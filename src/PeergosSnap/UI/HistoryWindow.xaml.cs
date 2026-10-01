@@ -57,6 +57,7 @@ public partial class HistoryWindow : Window
         {
             if (e.Key == Key.Enter && Selected().FirstOrDefault() is { } it) { OpenItem(it); e.Handled = true; }
             if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && Selected().FirstOrDefault() is { Record.Link: { } l }) { CopyText(l, "Link copied"); e.Handled = true; }
+            if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None && Selected().Count > 0) { DefaultDelete(); e.Handled = true; }
         };
         LabelBox.TextChanged += (_, _) =>
         {
@@ -93,6 +94,7 @@ public partial class HistoryWindow : Window
         DelBothBtn.Click += (_, _) => AskDelete(local: true, remote: true);
         RemoveBtn.Click += (_, _) => AskRemove();
         ConfirmNo.Click += (_, _) => HideConfirm();
+        MarkDefaultDelete();
         ConfirmYes.Click += async (_, _) =>
         {
             var action = pending;
@@ -201,10 +203,12 @@ public partial class HistoryWindow : Window
         NothingSelected.Visibility = sel.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Details.Visibility = sel.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (sel.Count == 0) return;
+        MarkDefaultDelete(); // the default may have changed in Settings meanwhile
         bool signedIn = app.Settings.PeergosConfigured;
         DelLocalBtn.IsEnabled = sel.Any(i => i.Local);
         DelRemoteBtn.IsEnabled = signedIn && sel.Any(i => i.Record.PeergosPath != null && i.InPeergos != false);
-        DelBothBtn.IsEnabled = DelLocalBtn.IsEnabled && DelRemoteBtn.IsEnabled;
+        // From both: whatever exists of the capture, on either side.
+        DelBothBtn.IsEnabled = DelLocalBtn.IsEnabled || DelRemoteBtn.IsEnabled;
         if (sel.Count > 1)
         {
             SinglePanel.Visibility = Visibility.Collapsed;
@@ -281,21 +285,30 @@ public partial class HistoryWindow : Window
         if (remoteItems.Count > 0) parts.Add($"{Count(remoteItems.Count, "file", "files")} will be deleted from your Peergos folder – "
                                              + (remoteItems.Count == 1 ? "its link stops" : "their links stop") + " working, and this cannot be undone");
         var mirrorNote = localItems.Any(i => i.Record.MirrorFile != null) ? " Copies in your mirror folder are kept." : "";
-        var entries = localItems.Concat(remoteItems).Distinct().Count() == 1 ? "the entry" : "the entries";
-        Confirm(string.Join("; ", parts) + "." + mirrorNote + $" The history keeps {entries}.", "Yes, delete", async () =>
+        // Deleting from both places also removes the entries (Settings → Files & history can keep them instead).
+        bool removeEntries = local && remote && app.Settings.DeleteBothRemovesEntry;
+        var touched = localItems.Concat(remoteItems).Distinct().ToList();
+        var entries = touched.Count == 1 ? "the entry" : "the entries";
+        var entryNote = removeEntries ? $" {char.ToUpper(entries[0])}{entries[1..]} leave{(touched.Count == 1 ? "s" : "")} the history." : $" The history keeps {entries}.";
+        Confirm(string.Join("; ", parts) + "." + mirrorNote + entryNote, "Yes, delete", async () =>
         {
             var messages = new List<string>();
+            var localGone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var it in sel.Where(i => i.Record.File != null && !i.Local)) localGone.Add(it.Record.File!);
             if (localItems.Count > 0)
             {
                 var failed = Recycle.Delete(localItems.Select(i => i.Record.File!));
+                foreach (var it in localItems.Where(i => !failed.Contains(i.Record.File!))) localGone.Add(it.Record.File!);
                 messages.Add(failed.Count == 0 ? $"{localItems.Count} moved to the Recycle Bin" : $"{failed.Count} could not be moved to the Recycle Bin");
             }
+            var remoteGone = new HashSet<string>(StringComparer.Ordinal);
             if (remoteItems.Count > 0)
             {
                 Result("Deleting in Peergos…");
                 var (r, deleted, missing, failed) = await Uploader.DeleteAsync(app.Settings.Clone(), remoteItems.Select(i => i.Record.PeergosPath!));
                 foreach (var it in remoteItems.Where(i => deleted.Contains(i.Record.PeergosPath!) || missing.Contains(i.Record.PeergosPath!)))
                 {
+                    remoteGone.Add(it.Record.PeergosPath!);
                     remotePaths?.Remove(it.Record.PeergosPath!);
                     it.Record.PeergosPath = null;
                     it.Record.Link = null;
@@ -304,9 +317,60 @@ public partial class HistoryWindow : Window
                 messages.Add(r.Raw == null && !r.Ok ? "Peergos: " + r.Error
                     : $"{deleted.Count + missing.Count} deleted from Peergos" + (failed.Count > 0 ? $", {failed.Count} failed: {failed[0]}" : ""));
             }
+            if (removeEntries)
+            {
+                // PeergosPath was cleared above for the files deleted there; a null path counts as gone.
+                var ids = HistoryLogic.RemovableAfterDelete(touched.Select(i => i.Record), localGone, remoteGone);
+                // Not dismissed: a file restored from the Recycle Bin comes back into the history.
+                if (ids.Count > 0) Store.Remove(ids, dismiss: false);
+                if (ids.Count > 0) messages.Add($"{Count(ids.Count, "entry", "entries")} removed from the history");
+                if (ids.Count < touched.Count) messages.Add($"{Count(touched.Count - ids.Count, "entry stays", "entries stay")} (not deleted everywhere)");
+            }
             Result(string.Join(" · ", messages));
             Rebuild();
         });
+    }
+
+    /// <summary>The Delete key: the action chosen in Settings → Files & history (from both places by default).</summary>
+    void DefaultDelete()
+    {
+        switch (app.Settings.HistoryDeleteAction)
+        {
+            case HistoryDelete.Local: if (DelLocalBtn.IsEnabled) AskDelete(local: true, remote: false); break;
+            case HistoryDelete.Peergos: if (DelRemoteBtn.IsEnabled) AskDelete(local: false, remote: true); break;
+            case HistoryDelete.Entry: AskRemove(); break;
+            default:
+                // "From both" also works when the capture is only on one side.
+                if (DelLocalBtn.IsEnabled || DelRemoteBtn.IsEnabled) AskDelete(local: true, remote: true);
+                else AskRemove();
+                break;
+        }
+    }
+
+    /// <summary>Highlights the default delete button and names the Delete key in its tooltip.</summary>
+    void MarkDefaultDelete()
+    {
+        var buttons = new Dictionary<HistoryDelete, Button>
+        {
+            [HistoryDelete.Both] = DelBothBtn, [HistoryDelete.Local] = DelLocalBtn,
+            [HistoryDelete.Peergos] = DelRemoteBtn, [HistoryDelete.Entry] = RemoveBtn,
+        };
+        var tips = new Dictionary<HistoryDelete, string>
+        {
+            [HistoryDelete.Both] = app.Settings.DeleteBothRemovesEntry
+                ? "Deletes the file on this PC (Recycle Bin) and in Peergos, and removes the entry from the history"
+                : "Deletes the file on this PC (Recycle Bin) and in Peergos; the history keeps the entry",
+            [HistoryDelete.Local] = "Moves the file on this PC to the Recycle Bin",
+            [HistoryDelete.Peergos] = "Deletes the file from your Peergos folder; its link stops working",
+            [HistoryDelete.Entry] = "Only the history entry; the files stay",
+        };
+        foreach (var (kind, b) in buttons)
+        {
+            bool isDefault = kind == app.Settings.HistoryDeleteAction;
+            b.ToolTip = tips[kind] + (isDefault ? "  (Delete key)" : "");
+            if (isDefault) b.SetResourceReference(StyleProperty, "AccentButtonStyle");
+            else b.ClearValue(StyleProperty);
+        }
     }
 
     void AskRemove()

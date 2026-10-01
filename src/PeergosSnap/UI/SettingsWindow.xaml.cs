@@ -67,6 +67,9 @@ public partial class SettingsWindow : Window
         foreach (ComboBoxItem i in SubfolderBox.Items)
             if ((string)i.Tag == S.Subfolders.ToString()) SubfolderBox.SelectedItem = i;
         RememberApp.IsChecked = S.RememberApp;
+        foreach (ComboBoxItem i in HistoryDeleteBox.Items)
+            if ((string)i.Tag == S.HistoryDeleteAction.ToString()) HistoryDeleteBox.SelectedItem = i;
+        BothRemovesEntry.IsChecked = S.DeleteBothRemovesEntry;
         AskPicture.IsChecked = S.AskBeforePictureUpload;
 
         Dim.Value = S.OverlayDimPercent;
@@ -84,6 +87,9 @@ public partial class SettingsWindow : Window
         MirrorFolder.Text = S.MirrorFolder;
         CachePath.Text = AppPaths.CacheDir;
         KeepDays.Text = S.CacheKeepDays.ToString();
+        foreach (ComboBoxItem i in KeepCopiesBox.Items)
+            if ((string)i.Tag == S.KeepLocalCopies.ToString()) KeepCopiesBox.SelectedItem = i;
+        DiscardPerm.IsChecked = S.DiscardPermanently;
 
         HkPicture.Text = S.HotkeyPicture;
         HkVideo.Text = S.HotkeyVideo;
@@ -169,6 +175,12 @@ public partial class SettingsWindow : Window
                 Change(s => s.Subfolders = scheme);
         };
         RememberApp.Click += (_, _) => Change(s => s.RememberApp = RememberApp.IsChecked == true);
+        HistoryDeleteBox.SelectionChanged += (_, _) =>
+        {
+            if (HistoryDeleteBox.SelectedItem is ComboBoxItem { Tag: string t } && Enum.TryParse<HistoryDelete>(t, out var d))
+                Change(s => s.HistoryDeleteAction = d);
+        };
+        BothRemovesEntry.Click += (_, _) => Change(s => s.DeleteBothRemovesEntry = BothRemovesEntry.IsChecked == true);
         OpenHistoryBtn.Click += (_, _) => app.ShowHistory();
         AskPicture.Click += (_, _) => Change(s => s.AskBeforePictureUpload = AskPicture.IsChecked == true);
 
@@ -202,6 +214,12 @@ public partial class SettingsWindow : Window
         };
         MirrorOpen.Click += (_, _) => { if (Directory.Exists(MirrorFolder.Text)) Shell(MirrorFolder.Text); };
         CacheOpen.Click += (_, _) => { Directory.CreateDirectory(AppPaths.CacheDir); Shell(AppPaths.CacheDir); };
+        KeepCopiesBox.SelectionChanged += (_, _) =>
+        {
+            if (KeepCopiesBox.SelectedItem is ComboBoxItem { Tag: string t } && Enum.TryParse<LocalCopies>(t, out var k))
+                Change(s => s.KeepLocalCopies = k);
+        };
+        DiscardPerm.Click += (_, _) => Change(s => s.DiscardPermanently = DiscardPerm.IsChecked == true);
         KeepDays.TextChanged += (_, _) => { if (int.TryParse(KeepDays.Text, out var d) && d >= 0) Change(s => s.CacheKeepDays = d); };
 
         WireHotkey(HkPicture, (s, v) => s.HotkeyPicture = v);

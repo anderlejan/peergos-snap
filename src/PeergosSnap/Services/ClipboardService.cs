@@ -49,6 +49,25 @@ public static class ClipboardService
         else d.Invoke(a);
     }
 
+    /// <summary>Empties the clipboard if it still holds this link or this file (a discarded capture must not be pasted
+    /// later). Anything else the user copied meanwhile stays.</summary>
+    public static bool ClearIfOurs(string? text, string? file)
+    {
+        bool cleared = false;
+        OnUi(() =>
+        {
+            try
+            {
+                bool ours = text != null && WinForms.Clipboard.ContainsText() && WinForms.Clipboard.GetText() == text;
+                if (!ours && file != null && WinForms.Clipboard.ContainsFileDropList())
+                    ours = WinForms.Clipboard.GetFileDropList().Cast<string>().Any(f => string.Equals(f, file, StringComparison.OrdinalIgnoreCase));
+                if (ours) { Retry(WinForms.Clipboard.Clear); cleared = true; }
+            }
+            catch (Exception e) { Log.Error("clipboard clear", e); }
+        });
+        return cleared;
+    }
+
     public static void MediaToClipboard(string file)
     {
         var ext = Path.GetExtension(file).ToLowerInvariant();

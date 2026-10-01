@@ -25,6 +25,28 @@ public static class Recycle
     const uint FO_DELETE = 3;
     const ushort FOF_SILENT = 0x4, FOF_NOCONFIRMATION = 0x10, FOF_ALLOWUNDO = 0x40, FOF_NOERRORUI = 0x400;
 
+    /// <summary>Deletes the files for good (<paramref name="permanently"/>) or into the Recycle Bin; returns the ones
+    /// that are still there.</summary>
+    public static List<string> Remove(IEnumerable<string> files, bool permanently)
+    {
+        if (!permanently) return Delete(files);
+        var failed = new List<string>();
+        foreach (var f in files)
+        {
+            try
+            {
+                if (File.Exists(f)) File.Delete(f);
+                Log.Info("deleted " + f);
+            }
+            catch (Exception e)
+            {
+                failed.Add(f);
+                Log.Error("delete " + f, e);
+            }
+        }
+        return failed;
+    }
+
     /// <summary>Moves the files to the Recycle Bin; returns the ones that could not be moved.</summary>
     public static List<string> Delete(IEnumerable<string> files)
     {

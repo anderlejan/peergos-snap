@@ -487,15 +487,16 @@ public sealed class TrayController : IDisposable
                 Created = now, Kind = "picture", File = file, Width = rect.Width, Height = rect.Height,
                 Bytes = new FileInfo(file).Length, App = source.App, WindowTitle = source.Title,
             });
-            if (Settings.Output == OutputMode.SecretLink && Settings.AskBeforePictureUpload &&
-                System.Windows.MessageBox.Show("Upload this picture to Peergos?", "Peergos Snap", System.Windows.MessageBoxButton.YesNo) != System.Windows.MessageBoxResult.Yes)
+            if (Settings.AskBeforePictureUpload)
             {
-                record.MirrorFile = Mirror(file, now);
-                history.Save();
-                if (TryClipboard(file, "Picture")) Notify(ToastKind.Ok, "Picture copied to the clipboard (not uploaded)", "Paste it with Ctrl+V.", null, file);
+                // Settings → Capture: decide for each picture, as after a recording (upload, copy, save as, discard).
+                var dlg = new FinishRecordingDialog(file, TimeSpan.Zero, Settings, video: false);
+                dlg.ShowDialog();
+                Log.Info("picture " + file + " -> " + dlg.Choice);
+                await Finish(file, record, dlg.Choice);
                 return;
             }
-            await Deliver(file, Settings.Output, record);
+            await Deliver(file, Settings.Output, record, fresh: true);
         }
         catch (Exception e)
         {
@@ -687,35 +688,7 @@ public sealed class TrayController : IDisposable
             var dlg = new FinishRecordingDialog(cached, rec.Elapsed, Settings);
             dlg.ShowDialog();
             Log.Info("video " + cached + " -> " + dlg.Choice);
-            switch (dlg.Choice)
-            {
-                case FinishChoice.Upload: await Deliver(cached, OutputMode.SecretLink, record); break;
-                case FinishChoice.Clipboard: await Deliver(cached, OutputMode.DirectMedia, record); break;
-                case FinishChoice.SaveAs:
-                    var sfd = new Microsoft.Win32.SaveFileDialog { FileName = Path.GetFileName(cached), Filter = "Video|*." + Settings.VideoFormat };
-                    if (sfd.ShowDialog() == true) { File.Copy(cached, sfd.FileName, true); Notify(ToastKind.Ok, "Video saved", sfd.FileName, null, sfd.FileName); }
-                    record.MirrorFile = Mirror(cached, record.Created);
-                    history.Save();
-                    break;
-                case FinishChoice.Discard:
-                    // Like every other delete of a capture: to the Recycle Bin, so a wrong click can be undone.
-                    if (Recycle.Delete([cached]).Count == 0)
-                    {
-                        history.Remove([record.Id], dismiss: false);
-                        Notify(ToastKind.Ok, "Recording discarded", "The video was moved to the Recycle Bin.");
-                    }
-                    else
-                    {
-                        history.Save();
-                        Notify(ToastKind.Warn, "Recording not discarded", "It could not be moved to the Recycle Bin and stays in the captures folder.", null, cached);
-                    }
-                    break;
-                default:
-                    record.MirrorFile = Mirror(cached, record.Created);
-                    history.Save();
-                    Notify(ToastKind.Ok, "Video kept on this PC only", "Nothing was uploaded or copied.", null, cached);
-                    break;
-            }
+            await Finish(cached, record, dlg.Choice);
         }
         catch (Exception e)
         {
@@ -732,6 +705,96 @@ public sealed class TrayController : IDisposable
     }
 
     // ---------- output ----------
+
+    /// <summary>Carries out the choice of the finish dialog (after a recording, or after a picture when asked for).</summary>
+    async Task Finish(string file, HistoryRecord record, FinishChoice choice)
+    {
+        bool video = CaptureFiles.IsVideo(file);
+        string What = video ? "Video" : "Picture", what = What.ToLowerInvariant();
+        switch (choice)
+        {
+            case FinishChoice.Upload: await Deliver(file, OutputMode.SecretLink, record, fresh: true); break;
+            case FinishChoice.Clipboard: await Deliver(file, OutputMode.DirectMedia, record, fresh: true); break;
+            case FinishChoice.SaveAs:
+                var ext = Path.GetExtension(file).TrimStart('.');
+                var sfd = new Microsoft.Win32.SaveFileDialog { FileName = Path.GetFileName(file), Filter = $"{What}|*.{ext}" };
+                if (sfd.ShowDialog() == true) { File.Copy(file, sfd.FileName, true); Notify(ToastKind.Ok, $"{What} saved", sfd.FileName, null, sfd.FileName); }
+                record.MirrorFile = Mirror(file, record.Created);
+                history.Save();
+                break;
+            case FinishChoice.Discard:
+                // Nothing was uploaded or mirrored yet. Deleted at once by default (Settings → Files & history),
+                // otherwise into the Recycle Bin so a wrong click can be undone.
+                bool perm = Settings.DiscardPermanently;
+                if (Recycle.Remove([file], perm).Count == 0)
+                {
+                    history.Remove([record.Id], dismiss: false);
+                    Notify(ToastKind.Ok, $"{What} discarded", perm ? $"The {what} was deleted; nothing was kept." : $"The {what} was moved to the Recycle Bin.");
+                }
+                else
+                {
+                    history.Save();
+                    Notify(ToastKind.Warn, $"{What} not discarded", (perm ? "It could not be deleted" : "It could not be moved to the Recycle Bin") + " and stays in the captures folder.", null, file);
+                }
+                break;
+            default:
+                record.MirrorFile = Mirror(file, record.Created);
+                history.Save();
+                Notify(ToastKind.Ok, $"{What} kept on this PC only", "Nothing was uploaded or copied.", null, file);
+                break;
+        }
+    }
+
+    /// <summary>"Discard" on the card after a capture was delivered: the capture is removed everywhere it went –
+    /// this PC (captures and mirror folder), Peergos (the link stops working), the clipboard if it still holds it,
+    /// and the history.</summary>
+    async Task DiscardDelivered(HistoryRecord record)
+    {
+        bool perm = Settings.DiscardPermanently;
+        string What = record.IsVideo ? "Video" : "Picture";
+        var problems = new List<string>();
+        ClipboardService.ClearIfOurs(record.Link, record.File);
+        if (record.Link != null && lastLink == record.Link) lastLink = null;
+        var files = new[] { record.File, record.MirrorFile }.Where(f => f != null && File.Exists(f)).Select(f => f!).ToList();
+        if (Recycle.Remove(files, perm) is { Count: > 0 } failed)
+            problems.Add((perm ? "could not delete " : "could not move to the Recycle Bin: ") + string.Join(", ", failed.Select(Path.GetFileName)));
+        bool wasUploaded = record.PeergosPath != null;
+        if (wasUploaded)
+        {
+            if (!Settings.PeergosConfigured) problems.Add("not signed in to Peergos, so it stays there");
+            else
+            {
+                var (r, deleted, missing, f) = await Uploader.DeleteAsync(Settings.Clone(), [record.PeergosPath!]);
+                if (deleted.Count + missing.Count == 0) problems.Add("Peergos: " + (f.FirstOrDefault() ?? r.Error ?? "not deleted"));
+                else { record.PeergosPath = null; record.Link = null; }
+            }
+        }
+        if (problems.Count == 0)
+        {
+            history.Remove([record.Id], dismiss: false);
+            Notify(ToastKind.Ok, $"{What} discarded",
+                (perm ? "Deleted from this PC" : "Moved to the Recycle Bin") + (wasUploaded ? " and from Peergos – the link no longer works." : "."));
+        }
+        else
+        {
+            history.Save();
+            Notify(ToastKind.Warn, $"{What} not fully discarded", string.Join("\n", problems) + "\nSee History… for what is left.", extra: ("History", ShowHistory));
+        }
+    }
+
+    /// <summary>Settings → Files & history → "Keep a copy on this PC: only if the upload fails": after a successful
+    /// upload the copy in the captures folder is deleted (the mirror folder is a separate choice and keeps its copy).</summary>
+    void DropLocalCopy(HistoryRecord record, string file)
+    {
+        try
+        {
+            if (File.Exists(file)) File.Delete(file);
+            record.File = null;
+            history.Save();
+            Log.Info("local copy not kept (uploaded): " + file);
+        }
+        catch (Exception e) { Log.Error("drop local copy " + file, e); }
+    }
 
     /// <summary>Copies a capture into the mirror folder (same subfolders as the captures folder); returns the copy.</summary>
     string? Mirror(string file, DateTime taken)
@@ -755,8 +818,10 @@ public sealed class TrayController : IDisposable
 
     /// <summary>Sends a finished capture where the output mode says; falls back to the clipboard if the upload fails.
     /// The notification card always says which of the three outcomes happened: link copied, media copied, or failed.</summary>
-    async Task<BridgeResult?> Deliver(string file, OutputMode mode, HistoryRecord? record = null, bool mirror = true)
+    async Task<BridgeResult?> Deliver(string file, OutputMode mode, HistoryRecord? record = null, bool mirror = true, bool fresh = false)
     {
+        // A fresh capture (not one uploaded later from the history) can be discarded from its card.
+        Action? discard = fresh && record != null ? () => _ = DiscardDelivered(record) : null;
         var mirrored = mirror ? Mirror(file, record?.Created ?? DateTime.Now) : null;
         if (record != null && mirrored != null) { record.MirrorFile = mirrored; history.Save(); }
         bool video = !file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase);
@@ -765,7 +830,7 @@ public sealed class TrayController : IDisposable
                                  : "The picture is on the clipboard – paste it with Ctrl+V.";
         if (mode == OutputMode.DirectMedia)
         {
-            if (TryClipboard(file, what)) Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint, null, file);
+            if (TryClipboard(file, what)) Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint, null, file, discard: discard);
             return null;
         }
         if (!Settings.PeergosConfigured)
@@ -773,7 +838,7 @@ public sealed class TrayController : IDisposable
             if (TryClipboard(file, what))
                 Notify(ToastKind.Warn, $"{what} copied to the clipboard (not uploaded)",
                     "You are not signed in to Peergos: right-click the tray icon → Settings → Peergos.", null, file,
-                    extra: ("Sign in", ShowSettings));
+                    extra: ("Sign in", ShowSettings), discard: discard);
             return new BridgeResult(false, null, null, "Not signed in to Peergos");
         }
         uploads++;
@@ -810,13 +875,15 @@ public sealed class TrayController : IDisposable
             try
             {
                 ClipboardService.OnUi(() => ClipboardService.SetText(r.Link));
-                Notify(ToastKind.Ok, "Link copied to the clipboard", $"{what} uploaded to Peergos ({r.PeergosPath}). Paste the link with Ctrl+V.", r.Link, file);
+                Notify(ToastKind.Ok, "Link copied to the clipboard", $"{what} uploaded to Peergos ({r.PeergosPath}). Paste the link with Ctrl+V.", r.Link, file, discard: discard);
             }
             catch (Exception e)
             {
                 Log.Error("clipboard link", e);
-                Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.", r.Link, file);
+                Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.", r.Link, file, discard: discard);
             }
+            // The card has already shown the picture; the local copy can go now if only failed uploads keep one.
+            if (fresh && record != null && Settings.KeepLocalCopies == LocalCopies.OnlyIfUploadFails) DropLocalCopy(record, file);
             return r;
         }
         var why = r.Error ?? "Unknown error";
@@ -827,9 +894,9 @@ public sealed class TrayController : IDisposable
             signIn = ("Sign in", ShowSettings);
         }
         if (Settings.FallbackToClipboard && TryClipboard(file, what))
-            Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
+            Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn, discard: discard);
         else if (!Settings.FallbackToClipboard)
-            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn);
+            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn, discard: discard);
         return r;
     }
 
@@ -860,11 +927,11 @@ public sealed class TrayController : IDisposable
     /// <summary>Shows the app's notification card. Busy and success cards follow the Notifications setting;
     /// warnings and errors are always shown.</summary>
     void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
-        (string, Action)? extra = null)
+        (string, Action)? extra = null, Action? discard = null)
     {
         if (kind != ToastKind.Busy) Log.Info($"notify: {title} – {text}");
         if (!Settings.Notifications && kind is ToastKind.Ok or ToastKind.Busy && extra == null) return;
-        try { ToastWindow.Show(kind, title, text, link, file, percent, extra); }
+        try { ToastWindow.Show(kind, title, text, link, file, percent, extra, discard); }
         catch (Exception e) { Log.Error("toast", e); }
     }
 
