@@ -7,6 +7,10 @@ namespace PeergosSnap.Core;
 
 public enum CaptureKind { Picture, Video }
 public enum OutputMode { SecretLink, DirectMedia }
+/// <summary>What the Delete key (and the highlighted button) does in the history.</summary>
+public enum HistoryDelete { Both, Local, Peergos, Entry }
+/// <summary>Which captures keep their copy in the local captures folder.</summary>
+public enum LocalCopies { Always, OnlyIfUploadFails }
 
 /// <summary>All user settings. Saved as JSON; secrets are protected with Windows DPAPI (current user).</summary>
 public sealed class Settings
@@ -33,6 +37,8 @@ public sealed class Settings
     public int FrameRate { get; set; } = 30;
     public int VideoQuality { get; set; } = 23;
     public bool RecordCursor { get; set; } = true;
+    /// <summary>Since 2.2: videos get the sound Windows plays while recording (only when there was any).</summary>
+    public bool RecordSound { get; set; } = true;
     public bool AskBeforePictureUpload { get; set; }
     /// <summary>Countdown before a picture is taken (the screen is then frozen for selecting) or before a video starts. 0 = none.</summary>
     public int DelaySeconds { get; set; }
@@ -56,8 +62,29 @@ public sealed class Settings
     /// <summary>Set once the flat captures folder of 2.0 was sorted into subfolders.</summary>
     public bool CapturesTidied { get; set; }
 
+    /// <summary>Since 2.2: keep the copy in the captures folder always (default), or only when the upload failed.</summary>
+    public LocalCopies KeepLocalCopies { get; set; } = LocalCopies.Always;
+    /// <summary>Since 2.2: discarded captures are deleted at once (default) instead of going to the Recycle Bin.</summary>
+    public bool DiscardPermanently { get; set; } = true;
+
     // History
     public bool RememberApp { get; set; } = true;
+    public HistoryDelete HistoryDeleteAction { get; set; } = HistoryDelete.Both;
+    /// <summary>Deleting a capture from this PC and Peergos also removes its history entry (default); off keeps the entry.</summary>
+    public bool DeleteBothRemovesEntry { get; set; } = true;
+
+    // Direct sharing with friends (since 2.2)
+    /// <summary>Receive pictures that friends send directly (keeps a connection to Peergos open while friends are set up).</summary>
+    public bool DirectReceive { get; set; } = true;
+    /// <summary>The friends this user shares with directly (Peergos usernames).</summary>
+    public List<string> DirectFriends { get; set; } = [];
+    /// <summary>Show the direct window (without taking the keyboard) when a friend sends something.</summary>
+    public bool DirectBringToFront { get; set; } = true;
+    /// <summary>Received files are kept in your Peergos; this also downloads each one to this PC when it arrives.</summary>
+    public bool DirectKeepOnPc { get; set; } = true;
+    /// <summary>How often the friends' folders are checked for new pictures.</summary>
+    public int DirectCheckSeconds { get; set; } = 3;
+    public string DirectLastFriend { get; set; } = "";
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";
@@ -167,5 +194,8 @@ public sealed class Settings
         if (string.IsNullOrWhiteSpace(Server)) Server = DefaultServer;
         Server = Server.Trim().TrimEnd('/');
         AccountFolder = (AccountFolder ?? "").Trim().Trim('/', '\\');
+        DirectCheckSeconds = Math.Clamp(DirectCheckSeconds, 2, 60);
+        DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
+        DirectLastFriend ??= "";
     }
 }

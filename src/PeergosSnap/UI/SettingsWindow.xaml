@@ -120,11 +120,13 @@
                     <Slider x:Name="Quality" Minimum="15" Maximum="40" Width="300" HorizontalAlignment="Left" IsDirectionReversed="True" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,2,0,2"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Left = smaller files, right = sharper (x264 CRF 40 … 15, default 23)."/>
                     <CheckBox x:Name="RecordCursor" Content="Show the mouse pointer in videos"/>
+                    <CheckBox x:Name="RecordSound" Content="Record the sound Windows plays (only when there is any)"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Everything you hear from this PC – videos, games, calls, notification sounds – goes into the video. A recording during which Windows played nothing gets no sound track. Your microphone is not recorded."/>
                     <TextBlock Text="Delay before capturing (seconds, 0 = none, up to 60)" Margin="0,10,0,0"/>
                     <TextBox x:Name="DelayBox" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DelayBoxErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 0 to 60"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Pictures: after the countdown the screen freezes and you select the area – open a menu during the countdown and it stays in the picture. Videos: you select the area first; recording starts when the countdown ends. The tray menu offers 1–5 seconds quickly (Delay ▸)."/>
-                    <CheckBox x:Name="AskPicture" Content="Ask before uploading a picture"/>
+                    <CheckBox x:Name="AskPicture" Content="After a picture, ask what to do (upload, copy, save as or discard)"/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Overlay">
@@ -166,6 +168,14 @@
                         <ComboBoxItem Tag="None" Content="No subfolders"/>
                     </ComboBox>
                     <TextBlock Style="{StaticResource Hint}" Text="Used for the captures folder and for the mirror folder below. Captures already saved stay where they are."/>
+                    <TextBlock Text="Keep a copy on this PC" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="KeepCopiesBox" Width="320" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="Always" Content="Always"/>
+                        <ComboBoxItem Tag="OnlyIfUploadFails" Content="Only if the upload fails"/>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource Hint}" Text="'Only if the upload fails' deletes the copy in the captures folder as soon as the capture is in Peergos; the history keeps its link. Captures that are only copied to the clipboard or kept on this PC stay. The mirror folder below is a separate choice."/>
+                    <CheckBox x:Name="DiscardPerm" Content="Discarded captures are deleted at once, never kept (no Recycle Bin)"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On by default: 'Discard' leaves nothing behind – on this PC, in the mirror folder, in Peergos or in the history. Off moves discarded files to the Recycle Bin instead."/>
                     <TextBlock Text="Delete local copies older than (days, 0 = keep forever)"/>
                     <TextBox x:Name="KeepDays" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Keep forever is the default. If you set a number, older copies go to the Recycle Bin, so nothing is lost by accident."/>
@@ -180,6 +190,36 @@
                     <TextBlock Style="{StaticResource Hint}" Text="Every capture is listed in the history with its preview, label, link and where it is (this PC, Peergos). There you can find old links again, add labels and delete what you no longer need – on this PC, in Peergos or both."/>
                     <Button x:Name="OpenHistoryBtn" Content="Open history" HorizontalAlignment="Left" Margin="0,0,0,8"/>
                     <CheckBox x:Name="RememberApp" Content="Remember which app each capture came from"/>
+                    <TextBlock Text="Delete key in the history" Margin="0,8,0,0"/>
+                    <ComboBox x:Name="HistoryDeleteBox" Width="320" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="Both" Content="Delete from this PC and Peergos"/>
+                        <ComboBoxItem Tag="Local" Content="Delete from this PC"/>
+                        <ComboBoxItem Tag="Peergos" Content="Delete from Peergos"/>
+                        <ComboBoxItem Tag="Entry" Content="Only remove the history entry"/>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource Hint}" Text="The Delete key does this for the selected captures, always after a confirmation; its button is highlighted."/>
+                    <CheckBox x:Name="BothRemovesEntry" Content="Deleting from this PC and Peergos also removes the entry from the history"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On by default. Off keeps the entry, without files, so you still see what you deleted."/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
+            <TabItem Header="Direct">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="Pictures straight to a friend" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin or star it. Your friend gets their own copy in their Peergos, so it is theirs: Delete only ever removes your own copies. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="OpenDirectBtn" Content="Open the direct window" Style="{DynamicResource AccentButtonStyle}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="DirectInfo" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                    <CheckBox x:Name="DirectReceive" Content="Receive pictures from friends at once"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Keeps a connection to Peergos open in the background while you share with friends (it uses some memory). Off: pictures from friends only arrive while the direct window is open."/>
+                    <CheckBox x:Name="DirectFront" Content="Show the direct window when a friend sends something"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="It comes to the front without taking the keyboard from the app you are typing in. Off: only a notification card."/>
+                    <CheckBox x:Name="DirectKeepOnPc" Content="Also keep received files on this PC"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Every file you receive is copied into your Peergos (PeergosSnap-Direct/(friend)/(month)/received). On: it is also downloaded to this PC when it arrives. Off: it stays only in your Peergos and is downloaded when you open it."/>
+                    <TextBlock Text="Check for new pictures every (seconds, 2 to 60)"/>
+                    <TextBox x:Name="DirectSeconds" Width="120" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="DirectSecondsErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 2 to 60"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Where the files are: in your Peergos, PeergosSnap-Direct/(friend)/(month) holds what you sent (each file shared read-only with that friend) and received/ your copies of what they sent; on this PC, the Direct folder next to the captures folder."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Hotkeys">

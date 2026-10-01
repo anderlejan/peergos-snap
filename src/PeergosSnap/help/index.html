@@ -38,6 +38,7 @@
   <li><strong>Record a video.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, drag over the area to record and let go: recording starts. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again (or click <em>Stop</em>), then choose <em>Upload &amp; copy link</em>.</li>
   <li><strong>Want the picture itself instead of a link?</strong> Right-click the icon → <em>Output</em> → <em>Media to clipboard</em>. Now every capture is copied as a picture or video file, ready to paste.</li>
 </ol>
+<p class="tip">Talking with a friend who also uses Peergos Snap? Send pictures straight to their screen: see <a href="#direct">Direct to a friend</a>.</p>
 <p class="tip">Want to capture a menu that closes when you click elsewhere? Choose a delay first: right-click the icon → <em>Delay</em> → e.g. <em>3 seconds</em> (see <a href="#pictures-delay">Capturing a menu</a>). All your captures and their links are in <em>History…</em> (see <a href="#history">History</a>). Press <kbd>F1</kbd> in the Settings window for help on the page you are on.</p>
 </section>
 
@@ -65,7 +66,8 @@
   <tr><td>Cancel the countdown</td><td>Shown while a delay is counting down.</td></tr>
   <tr><td>Tray click takes: Picture / Video</td><td>What a left click on the icon does.</td></tr>
   <tr><td>Output: Secret link / Media to clipboard</td><td>Where captures go (see <a href="#output">Where your capture goes</a>).</td></tr>
-  <tr><td>Videos: Show mouse pointer</td><td>Whether the mouse pointer is visible in videos.</td></tr>
+  <tr><td>Videos: Show mouse pointer, Record sound</td><td>Whether the mouse pointer is visible in videos, and whether they get the sound your PC plays.</td></tr>
+  <tr><td>Direct to a friend ▸</td><td><em>Send a picture to …</em> each friend you share with directly, and <em>Open the direct window</em> (see <a href="#direct">Direct to a friend</a>).</td></tr>
   <tr><td>Copy last link</td><td>Copies the link of the last upload again.</td></tr>
   <tr><td>History…</td><td>All your captures with previews, labels and links (see <a href="#history">History</a>).</td></tr>
   <tr><td>Open captures folder</td><td>Opens the folder where every capture is also kept on your PC.</td></tr>
@@ -101,6 +103,9 @@
 </ol>
 <p>The delay stays chosen until you change it; the icon's tooltip reminds you. To cancel a countdown, click <em>Cancel</em> on the countdown card, click the icon, or press the picture hotkey again.</p>
 <p>What happens next depends on the output: see <a href="#output">Where your capture goes</a>.</p>
+<h3 id="pictures-discard">Changed your mind? Discard</h3>
+<p>The card that appears after a picture has a <em>Discard</em> button. It removes the picture everywhere it went: from this PC (also from your mirror folder), from Peergos (the link stops working), from the clipboard if it is still there, and from the history. By default nothing is kept, not even in the Recycle Bin; Settings → Files &amp; history can send discarded captures to the Recycle Bin instead.</p>
+<p>To decide before anything happens, turn on <em>After a picture, ask what to do</em> (Settings → Capture): you then see the picture and choose <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em> or <em>Discard</em>, as after a recording. <kbd>Delete</kbd> discards, <kbd>Esc</kbd> keeps the picture on this PC only.</p>
 </section>
 
 <section id="videos" data-keywords="video record recording stop pause resume cancel mp4 webm mouse pointer cursor frame bar finish dialog sound audio">
@@ -119,9 +124,9 @@
   <tr><td>Upload &amp; copy link</td><td>Uploads to Peergos and copies the link.</td></tr>
   <tr><td>Copy video</td><td>Copies the video file, to paste into a chat, an e-mail or a folder. Nothing is uploaded.</td></tr>
   <tr><td>Save as…</td><td>Saves a copy wherever you like. Nothing is uploaded.</td></tr>
-  <tr><td>Discard</td><td>Moves the video to the Recycle Bin (you can restore it from there).</td></tr>
+  <tr><td>Discard</td><td>Deletes the video at once, nothing is kept (or moves it to the Recycle Bin, if you chose that in Settings → Files &amp; history).</td></tr>
 </table>
-<p>Closing the window (or pressing <kbd>Esc</kbd>) keeps the video only on your PC, in the captures folder.</p>
+<p>Closing the window (or pressing <kbd>Esc</kbd>) keeps the video only on your PC, in the captures folder. After an upload, the card also offers <em>Discard</em> (see <a href="#pictures-discard">Discard</a>). The window also says whether the video has sound.</p>
 <h3 id="videos-delay">Recording with a delay</h3>
 <p>If a delay is chosen (menu → <em>Delay</em>), you first select the area as usual; it stays marked while the countdown runs, and recording starts when it ends. Use the time to open a menu or get the scene ready.</p>
 <h3 id="videos-pause">Pause and cancel</h3>
@@ -129,7 +134,9 @@
 <h3 id="videos-pointer">Mouse pointer</h3>
 <p>Choose whether the mouse pointer appears in videos: menu → <em>Videos</em> → <em>Show mouse pointer</em>, or Settings → Capture. Pictures never include the pointer.</p>
 <h3 id="videos-format">Format and quality</h3>
-<p>Videos are MP4 by default (plays everywhere); WebM is available too. Frame rate and quality are in Settings → Capture. Videos are recorded without sound.</p>
+<p>Videos are MP4 by default (plays everywhere); WebM is available too. Frame rate and quality are in Settings → Capture.</p>
+<h3 id="videos-sound">Sound</h3>
+<p>Videos get the sound your PC plays while you record: a video you watch, a game, a call, a notification sound. Your microphone is not recorded. If nothing played during the whole recording, the video has no sound track at all. Turn it off in the menu (<em>Videos</em> → <em>Record sound</em>) or in Settings → Capture.</p>
 </section>
 
 <section id="output" data-keywords="output secret link clipboard paste media fallback mirror folder local copy captures folder ask before upload">
@@ -148,7 +155,8 @@
   <li>Every capture is also kept in the <strong>captures folder</strong>: menu → <em>Open captures folder</em>. Captures are sorted into one folder per month, named like <em>2026-10</em>; you can choose one folder per day or year, or none (Settings → Files &amp; history).</li>
   <li>Copies are <strong>kept forever</strong> unless you set a number of days in Settings → Files &amp; history; older copies then go to the Recycle Bin, so nothing is lost by accident.</li>
   <li>To keep every capture in a folder of your own as well, turn on <em>Also save every capture to this folder</em> (Settings → Files &amp; history). It uses the same monthly folders.</li>
-  <li><em>Ask before uploading a picture</em> (Settings → Capture) lets you decide for each picture.</li>
+  <li><strong>Only keep a copy when the upload fails:</strong> Settings → Files &amp; history → <em>Keep a copy on this PC</em> → <em>Only if the upload fails</em>. A capture that reached Peergos is then not kept in the captures folder; the history still has its link. Captures that are only copied to the clipboard or kept on this PC stay.</li>
+  <li><em>After a picture, ask what to do</em> (Settings → Capture) lets you decide for each picture.</li>
 </ul>
 </section>
 
@@ -163,7 +171,7 @@
   <tr><td><span class="dot warn"></span><strong>… copied to the clipboard (not uploaded)</strong></td><td>The picture or video, because you are not signed in. Button: <em>Sign in</em>.</td></tr>
   <tr><td><span class="dot err"></span><strong>… failed</strong></td><td>Nothing new. The card gives the reason; the file stays in the captures folder.</td></tr>
 </table>
-<p>While uploading, the card shows the progress. <em>Show notifications</em> in Settings → Output hides the green cards; orange and red ones always appear.</p>
+<p>After a capture the card also has a <em>Discard</em> button (see <a href="#pictures-discard">Discard</a>). While uploading, the card shows the progress. <em>Show notifications</em> in Settings → Output hides the green cards; orange and red ones always appear.</p>
 </section>
 
 <section id="peergos" data-keywords="peergos account sign in sign out login password two-factor authenticator code server folder session link share">
@@ -195,11 +203,33 @@
   <li><strong>Old links:</strong> <em>Copy link</em> or <em>Open link</em> gives you the link again. Links of files uploaded before the history existed are found in your Peergos folder when the history opens.</li>
   <li><strong>Labels:</strong> type your own name or note into <em>Label</em>; it is saved as you type and shown in the list.</li>
   <li><strong>Upload later:</strong> a capture that is only on this PC can be uploaded with <em>Upload &amp; copy link</em>.</li>
-  <li><strong>Delete:</strong> <em>From this PC</em> moves the file to the Recycle Bin; <em>From Peergos</em> deletes it from your Peergos folder (its link stops working – this can't be undone); <em>From both</em> does both; <em>Remove from history</em> only removes the entry. Every delete asks first. Select several captures (<kbd>Ctrl</kbd> or <kbd>Shift</kbd> + click) to delete them together.</li>
+  <li><strong>Delete:</strong> <em>From both</em> deletes the capture on this PC (Recycle Bin) and in Peergos (its link stops working – this can't be undone) and removes the entry from the history; <em>From this PC</em> and <em>From Peergos</em> delete on one side only; <em>Remove from history</em> only removes the entry. Every delete asks first. Select several captures (<kbd>Ctrl</kbd> or <kbd>Shift</kbd> + click) to delete them together.</li>
+  <li><strong>Delete key:</strong> <kbd>Delete</kbd> does the default action, which is highlighted: <em>From both</em>, unless you choose another one in Settings → Files &amp; history. There you can also keep entries in the history after deleting from both places.</li>
   <li><strong>Tidy up:</strong> <em>Clean up</em> → <em>Remove records whose files are gone</em> removes entries that lead to no file any more; <em>Clear the whole history</em> empties the list. Neither deletes files, and removed entries are not added back.</li>
   <li><em>Refresh</em> looks at the captures folder and your Peergos folder again. The bottom line counts your captures and says when Peergos was last checked.</li>
 </ul>
 <p>Don't want the app names remembered? Settings → Files &amp; history → untick <em>Remember which app each capture came from</em>.</p>
+</section>
+
+<section id="direct" data-keywords="direct friend share send receive instant drop paste preview zoom label pin star window chat call">
+<h2>Direct to a friend</h2>
+<p>While you talk with someone in another app, you can show them a picture (or send a video or any other file) at once: send it, and within seconds it appears on their screen in the <strong>direct window</strong>. They don't have to do anything. Both of you can then zoom, save, label, pin and star it. Your friend gets their own copy in their Peergos, so it is theirs to keep or delete.</p>
+<ol class="steps">
+  <li><strong>Become friends once.</strong> Menu → <em>Direct to a friend</em> → <em>Open the direct window</em> → <em>Friends…</em>. Enter your friend's Peergos username and click <em>Add</em>. They accept your friend request (Peergos Snap shows it to them with an <em>Accept</em> button; it also works in Peergos itself). If you are friends in Peergos already, nothing needs to be accepted.</li>
+  <li><strong>Send a picture or file.</strong> Drop pictures, videos or other files on the dashed area of the direct window, paste one with <kbd>Ctrl</kbd>+<kbd>V</kbd>, click <em>Choose files…</em>, or click <em>Take picture</em> to select an area of the screen. From the menu: <em>Direct to a friend</em> → <em>Send a picture to …</em>.</li>
+  <li><strong>Your friend sees it.</strong> Their direct window comes up with your picture (without taking the keyboard from what they are typing) and a card says what arrived.</li>
+</ol>
+<h3 id="direct-window">The direct window</h3>
+<ul>
+  <li><strong>Choose the friend</strong> at the top, and the <strong>month</strong>: what you send is kept in one folder per month.</li>
+  <li><strong>Zoom:</strong> <em>+</em> and <em>−</em>, <kbd>Ctrl</kbd> + mouse wheel, <em>Fit</em> (<kbd>F</kbd>) or <em>100 %</em> (<kbd>0</kbd>). Drag the picture to move around in it.</li>
+  <li><strong>Label</strong> a picture by typing under it; <strong>Star</strong> it; <strong>Pin</strong> it so it stays at the top. Your friend sees your labels, stars and pins, and you see theirs.</li>
+  <li><em>Save as…</em> keeps a copy wherever you like, <em>Copy</em> puts it on the clipboard, <em>Open</em> opens it in its app.</li>
+  <li><em>Delete</em> (or <kbd>Delete</kbd>), after a question, deletes <strong>your own copy</strong> – from your Peergos and this PC. Whether you sent it or received it, your friend's copy stays theirs.</li>
+</ul>
+<h3 id="direct-privacy">Who can see it</h3>
+<p>What you send stays in <strong>your</strong> Peergos, in a folder for that friend (<em>PeergosSnap-Direct</em> → the friend's name → one folder per month). The folder itself is not shared: each file you send is shared, read-only, with that one friend only, so they see exactly what you sent them and nothing else. No link is created. When it arrives, your friend's Peergos Snap copies it into <strong>their</strong> Peergos (the month's <em>received</em> folder) – from then on it is their copy. What you receive is copied into yours the same way, and with <em>Also keep received files on this PC</em> (Settings → Direct, on by default) also downloaded to the <em>Direct</em> folder next to the captures folder.</p>
+<p>Both of you need Peergos Snap running and signed in to Peergos. To receive pictures at once, Peergos Snap keeps a connection to Peergos open while you have friends to share with; you can turn this off in Settings → Direct (pictures then arrive while the direct window is open).</p>
 </section>
 
 <section id="hotkeys" data-keywords="hotkey shortcut keyboard keys ctrl shift change conflict escape">
@@ -236,7 +266,8 @@
   <tr><td>Video frame rate</td><td>Pictures per second: 15, 24, 30 or 60.</td><td>30</td></tr>
   <tr><td>Video quality</td><td>Left gives smaller files, right gives sharper videos.</td><td>Middle</td></tr>
   <tr><td>Show the mouse pointer in videos</td><td>Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
-  <tr><td>Ask before uploading a picture</td><td>Asks each time; if you say no, the picture is copied instead.</td><td>Off</td></tr>
+  <tr><td>Record the sound Windows plays</td><td>Videos get the sound of your PC; no sound track when nothing played. Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
+  <tr><td>After a picture, ask what to do</td><td>Shows the picture with <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em> and <em>Discard</em>.</td><td>Off</td></tr>
   <tr><td>Delay before capturing</td><td>Seconds of countdown before the screen freezes for a picture, or before a recording starts; 0 = none. The menu offers 1–5 seconds quickly.</td><td>0</td></tr>
 </table>
 
@@ -262,11 +293,25 @@
 <table>
   <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
   <tr><td>Local captures folder</td><td>Where every capture is kept on your PC; 📂 opens it.</td><td></td></tr>
+  <tr><td>Keep a copy on this PC</td><td><em>Always</em>, or <em>Only if the upload fails</em>: captures that reached Peergos are then not kept here.</td><td>Always</td></tr>
+  <tr><td>Discarded captures are deleted at once</td><td>Nothing is kept of a discarded capture; off moves it to the Recycle Bin.</td><td>On</td></tr>
   <tr><td>Sort into subfolders</td><td>One folder per month (2026-10), per day (2026-10-05), per year (2026), or none. Also used for the mirror folder.</td><td>Per month</td></tr>
   <tr><td>Delete local copies older than</td><td>Days; 0 keeps them forever. Older copies go to the Recycle Bin.</td><td>0 (keep forever)</td></tr>
   <tr><td>Also save every capture to this folder</td><td>An extra copy of every capture in a folder you choose.</td><td>Off</td></tr>
   <tr><td>Open history</td><td>The history of your captures (see <a href="#history">History</a>).</td><td></td></tr>
   <tr><td>Remember which app each capture came from</td><td>Shown and searchable in the history.</td><td>On</td></tr>
+  <tr><td>Delete key in the history</td><td>What <kbd>Delete</kbd> does: delete from this PC and Peergos, from one of them, or only remove the entry.</td><td>From this PC and Peergos</td></tr>
+  <tr><td>Deleting from this PC and Peergos also removes the entry</td><td>Off keeps the entry (without files) in the history.</td><td>On</td></tr>
+</table>
+
+<h3 id="settings-direct">Direct</h3>
+<table>
+  <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
+  <tr><td>Open the direct window</td><td>Send pictures to friends and see theirs (see <a href="#direct">Direct to a friend</a>).</td><td></td></tr>
+  <tr><td>Receive pictures from friends at once</td><td>Keeps a connection to Peergos open while you share with friends. Off: pictures arrive only while the direct window is open.</td><td>On</td></tr>
+  <tr><td>Show the direct window when a friend sends something</td><td>Off: only a card tells you.</td><td>On</td></tr>
+  <tr><td>Also keep received files on this PC</td><td>What you receive is always copied into your Peergos. On: also downloaded to this PC when it arrives. Off: downloaded when you open it.</td><td>On</td></tr>
+  <tr><td>Check for new pictures every</td><td>Seconds between two looks at the shared folders (2–60).</td><td>3</td></tr>
 </table>
 
 <h3 id="settings-hotkeys">Hotkeys</h3>
@@ -342,6 +387,10 @@
   <dd>In <em>History…</em>: select the capture and click <em>Copy link</em>.</dd>
   <dt>My Peergos folder is getting full.</dt>
   <dd>Open <em>History…</em>, choose <em>Show: In Peergos</em>, select what you no longer need and click <em>Delete → From Peergos</em>.</dd>
+  <dt>My video has no sound.</dt>
+  <dd>Videos only get a sound track when your PC played something while recording. Check that <em>Record sound</em> is ticked (menu → <em>Videos</em>). The window after the recording says whether the video has sound.</dd>
+  <dt>My friend does not receive my pictures.</dt>
+  <dd>You both need Peergos Snap running and signed in, and to be friends in Peergos: open the direct window → <em>Friends…</em> and look at the status under your friend's name. <em>Waiting until they accept</em> means your friend still has to accept the friend request.</dd>
   <dt>A video of a game is black.</dt>
   <dd>Some games in exclusive full screen can't be recorded. Switch the game to windowed or borderless mode.</dd>
   <dt>The mouse pointer is (not) in my video.</dt>

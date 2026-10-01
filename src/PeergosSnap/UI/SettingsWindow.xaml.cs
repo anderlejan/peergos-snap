@@ -28,7 +28,7 @@ public partial class SettingsWindow : Window
     }
 
     static readonly string[] TabHelp =
-        ["settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-files", "settings-hotkeys", "settings-appearance", "settings-general"];
+        ["settings-peergos", "settings-capture", "settings-overlay", "settings-output", "settings-files", "settings-direct", "settings-hotkeys", "settings-appearance", "settings-general"];
 
     void OpenHelp() => app.ShowHelp(Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < TabHelp.Length ? TabHelp[Tabs.SelectedIndex] : "settings");
 
@@ -63,10 +63,14 @@ public partial class SettingsWindow : Window
         Quality.Value = S.VideoQuality;
         QualityLabel.Text = $"Video quality (CRF {S.VideoQuality})";
         RecordCursor.IsChecked = S.RecordCursor;
+        RecordSound.IsChecked = S.RecordSound;
         DelayBox.Text = S.DelaySeconds.ToString();
         foreach (ComboBoxItem i in SubfolderBox.Items)
             if ((string)i.Tag == S.Subfolders.ToString()) SubfolderBox.SelectedItem = i;
         RememberApp.IsChecked = S.RememberApp;
+        foreach (ComboBoxItem i in HistoryDeleteBox.Items)
+            if ((string)i.Tag == S.HistoryDeleteAction.ToString()) HistoryDeleteBox.SelectedItem = i;
+        BothRemovesEntry.IsChecked = S.DeleteBothRemovesEntry;
         AskPicture.IsChecked = S.AskBeforePictureUpload;
 
         Dim.Value = S.OverlayDimPercent;
@@ -84,6 +88,16 @@ public partial class SettingsWindow : Window
         MirrorFolder.Text = S.MirrorFolder;
         CachePath.Text = AppPaths.CacheDir;
         KeepDays.Text = S.CacheKeepDays.ToString();
+        foreach (ComboBoxItem i in KeepCopiesBox.Items)
+            if ((string)i.Tag == S.KeepLocalCopies.ToString()) KeepCopiesBox.SelectedItem = i;
+        DiscardPerm.IsChecked = S.DiscardPermanently;
+
+        DirectReceive.IsChecked = S.DirectReceive;
+        DirectFront.IsChecked = S.DirectBringToFront;
+        DirectKeepOnPc.IsChecked = S.DirectKeepOnPc;
+        DirectSeconds.Text = S.DirectCheckSeconds.ToString();
+        DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…"
+            : "Sharing directly with " + string.Join(", ", S.DirectFriends) + ".";
 
         HkPicture.Text = S.HotkeyPicture;
         HkVideo.Text = S.HotkeyVideo;
@@ -106,7 +120,7 @@ public partial class SettingsWindow : Window
         ShowNotes.IsChecked = S.ShowUserNotes;
         var ver = typeof(App).Assembly.GetName().Version;
         About.Text = $"Peergos Snap {ver?.ToString(3)} · GPL-3.0-or-later · https://github.com/anderlejan/peergos-snap\n" +
-                     "Uses Peergos (AGPL-3.0), FFmpeg (GPL-3.0), OpenJDK runtime (GPL-2.0 with Classpath Exception) and Microsoft WebView2 SDK (BSD-3-Clause).";
+                     "Uses Peergos (AGPL-3.0), FFmpeg (GPL-3.0), OpenJDK runtime (GPL-2.0 with Classpath Exception), NAudio (MIT) and Microsoft WebView2 SDK (BSD-3-Clause).";
     }
 
     void Wire()
@@ -157,6 +171,7 @@ public partial class SettingsWindow : Window
         FrameRate.SelectionChanged += (_, _) => Change(s => s.FrameRate = int.Parse(Sel(FrameRate)));
         Quality.ValueChanged += (_, _) => { QualityLabel.Text = $"Video quality (CRF {(int)Quality.Value})"; Change(s => s.VideoQuality = (int)Quality.Value); };
         RecordCursor.Click += (_, _) => Change(s => s.RecordCursor = RecordCursor.IsChecked == true);
+        RecordSound.Click += (_, _) => Change(s => s.RecordSound = RecordSound.IsChecked == true);
         DelayBox.TextChanged += (_, _) =>
         {
             bool ok = int.TryParse(DelayBox.Text.Trim(), out var sec) && sec is >= 0 and <= 60;
@@ -169,6 +184,12 @@ public partial class SettingsWindow : Window
                 Change(s => s.Subfolders = scheme);
         };
         RememberApp.Click += (_, _) => Change(s => s.RememberApp = RememberApp.IsChecked == true);
+        HistoryDeleteBox.SelectionChanged += (_, _) =>
+        {
+            if (HistoryDeleteBox.SelectedItem is ComboBoxItem { Tag: string t } && Enum.TryParse<HistoryDelete>(t, out var d))
+                Change(s => s.HistoryDeleteAction = d);
+        };
+        BothRemovesEntry.Click += (_, _) => Change(s => s.DeleteBothRemovesEntry = BothRemovesEntry.IsChecked == true);
         OpenHistoryBtn.Click += (_, _) => app.ShowHistory();
         AskPicture.Click += (_, _) => Change(s => s.AskBeforePictureUpload = AskPicture.IsChecked == true);
 
@@ -202,7 +223,24 @@ public partial class SettingsWindow : Window
         };
         MirrorOpen.Click += (_, _) => { if (Directory.Exists(MirrorFolder.Text)) Shell(MirrorFolder.Text); };
         CacheOpen.Click += (_, _) => { Directory.CreateDirectory(AppPaths.CacheDir); Shell(AppPaths.CacheDir); };
+        KeepCopiesBox.SelectionChanged += (_, _) =>
+        {
+            if (KeepCopiesBox.SelectedItem is ComboBoxItem { Tag: string t } && Enum.TryParse<LocalCopies>(t, out var k))
+                Change(s => s.KeepLocalCopies = k);
+        };
+        DiscardPerm.Click += (_, _) => Change(s => s.DiscardPermanently = DiscardPerm.IsChecked == true);
         KeepDays.TextChanged += (_, _) => { if (int.TryParse(KeepDays.Text, out var d) && d >= 0) Change(s => s.CacheKeepDays = d); };
+
+        OpenDirectBtn.Click += (_, _) => app.Direct.ShowWindow(null, null);
+        DirectReceive.Click += (_, _) => Change(s => s.DirectReceive = DirectReceive.IsChecked == true);
+        DirectFront.Click += (_, _) => Change(s => s.DirectBringToFront = DirectFront.IsChecked == true);
+        DirectKeepOnPc.Click += (_, _) => Change(s => s.DirectKeepOnPc = DirectKeepOnPc.IsChecked == true);
+        DirectSeconds.TextChanged += (_, _) =>
+        {
+            bool ok = int.TryParse(DirectSeconds.Text.Trim(), out var sec) && sec is >= 2 and <= 60;
+            DirectSecondsErr.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
+            if (ok) Change(s => s.DirectCheckSeconds = sec);
+        };
 
         WireHotkey(HkPicture, (s, v) => s.HotkeyPicture = v);
         WireHotkey(HkVideo, (s, v) => s.HotkeyVideo = v);
