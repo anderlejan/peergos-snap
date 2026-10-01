@@ -1,0 +1,154 @@
+<Window x:Class="PeergosSnap.UI.DirectWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Peergos Snap – Direct" Width="1120" Height="760" MinWidth="760" MinHeight="480"
+        WindowStartupLocation="CenterScreen" AllowDrop="True">
+    <Window.Resources>
+        <Style x:Key="Dim" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Fg3}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="10,4"/></Style>
+        <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="10,4"/></Style>
+    </Window.Resources>
+    <DockPanel>
+        <!-- top bar: who and which month -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,10">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="RefreshBtn" Content="Refresh" Margin="6,0,0,0" ToolTip="Look at the shared folders again"/>
+                    <Button x:Name="FriendsBtn" Content="Friends…" Margin="6,0,0,0" ToolTip="Add friends, accept friend requests"/>
+                </StackPanel>
+                <TextBlock Text="Share with" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox x:Name="FriendBox" Width="200" ToolTip="The friend you share pictures with"/>
+                <TextBlock Text="Month" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                <ComboBox x:Name="MonthBox" Width="130" HorizontalAlignment="Left" ToolTip="Each month has its own shared folder"/>
+            </DockPanel>
+        </Border>
+        <!-- status line -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="12,6">
+            <DockPanel>
+                <TextBlock x:Name="CountText" DockPanel.Dock="Right" Style="{StaticResource Dim}"/>
+                <TextBlock x:Name="StatusText" Style="{StaticResource Dim}"/>
+            </DockPanel>
+        </Border>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="360" MinWidth="280"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*" MinWidth="320"/>
+            </Grid.ColumnDefinitions>
+            <!-- left: the drop zone and the shared pictures -->
+            <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="10">
+                    <Rectangle x:Name="DropFrame" RadiusX="10" RadiusY="10" StrokeThickness="2" StrokeDashArray="5 3"
+                               Stroke="{DynamicResource Acc2}" Fill="{DynamicResource Bg2}"/>
+                    <StackPanel Margin="16,14">
+                        <TextBlock x:Name="DropTitle" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Text="Send a picture"/>
+                        <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,4,0,10"
+                                   Text="Drop pictures here, paste one (Ctrl+V) or choose files. Your friend sees them at once."/>
+                        <WrapPanel>
+                            <Button x:Name="ChooseBtn" Content="Choose files…" Style="{DynamicResource AccentButtonStyle}"/>
+                            <Button x:Name="PasteBtn" Content="Paste" ToolTip="Send the picture or files on the clipboard (Ctrl+V)"/>
+                            <Button x:Name="CaptureBtn" Content="Take picture" ToolTip="Select an area of the screen and send it"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="SendState" TextWrapping="Wrap" Foreground="{DynamicResource Fg2}"/>
+                    </StackPanel>
+                </Grid>
+                <Grid>
+                    <ListBox x:Name="List" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,4">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                    <Border Width="82" Height="58" CornerRadius="6" Background="{DynamicResource Bg3}" ClipToBounds="True" HorizontalAlignment="Left">
+                                        <Grid>
+                                            <TextBlock Text="{Binding Glyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Fg3}"/>
+                                            <Image Source="{Binding Thumb}" Stretch="UniformToFill"/>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Line2}" Style="{StaticResource Dim}" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding Badges}" Foreground="{DynamicResource Acc}" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock x:Name="Empty" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20"
+                               Style="{StaticResource Dim}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="300"/>
+                </Grid>
+            </DockPanel>
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource Line}" ResizeBehavior="PreviousAndNext"/>
+            <!-- right: the picture -->
+            <DockPanel Grid.Column="2">
+                <Border DockPanel.Dock="Top" Padding="10,8,4,2" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
+                    <WrapPanel>
+                        <Button x:Name="ZoomOutBtn" Content="−" ToolTip="Zoom out (−, or Ctrl + mouse wheel)" MinWidth="34"/>
+                        <TextBlock x:Name="ZoomText" Width="58" TextAlignment="Center" VerticalAlignment="Center" Margin="0,0,6,6"/>
+                        <Button x:Name="ZoomInBtn" Content="+" ToolTip="Zoom in (+, or Ctrl + mouse wheel)" MinWidth="34"/>
+                        <Button x:Name="FitBtn" Content="Fit" ToolTip="The whole picture (F)"/>
+                        <Button x:Name="ActualBtn" Content="100 %" ToolTip="Actual size (0)"/>
+                        <ToggleButton x:Name="StarBtn" Content="☆ Star" ToolTip="Star it – your friend sees your star"/>
+                        <ToggleButton x:Name="PinBtn" Content="📌 Pin" ToolTip="Pinned pictures stay at the top, for both of you"/>
+                        <Button x:Name="SaveBtn" Content="Save as…" ToolTip="Save a copy on this PC"/>
+                        <Button x:Name="CopyBtn" Content="Copy" ToolTip="Copy the picture to the clipboard"/>
+                        <Button x:Name="OpenBtn" Content="Open" ToolTip="Open it in its app"/>
+                        <Button x:Name="DeleteBtn" Content="Delete" ToolTip="Delete it for both of you"/>
+                    </WrapPanel>
+                </Border>
+                <Border DockPanel.Dock="Bottom" Padding="10,8" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">
+                    <StackPanel>
+                        <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
+                                Background="{DynamicResource Bg2}" Padding="12" Margin="0,0,0,8">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}" Margin="8,0,6,0"/>
+                                    <Button x:Name="ConfirmNo" Content="Cancel" Margin="0"/>
+                                </StackPanel>
+                                <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                        <DockPanel>
+                            <TextBlock Text="Label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="InfoText" DockPanel.Dock="Right" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="10,0,0,0" MaxWidth="320"/>
+                            <TextBox x:Name="LabelBox" ToolTip="A name or note for this picture – your friend sees it too"/>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+                <Grid Background="{DynamicResource Bg3}">
+                    <ScrollViewer x:Name="Viewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <Image x:Name="Picture" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Image.LayoutTransform><ScaleTransform x:Name="Zoom" ScaleX="1" ScaleY="1"/></Image.LayoutTransform>
+                        </Image>
+                    </ScrollViewer>
+                    <TextBlock x:Name="ViewerNote" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="360" Margin="20"/>
+                </Grid>
+            </DockPanel>
+            <!-- friends panel, over the window's right side -->
+            <Border x:Name="FriendsPanel" Grid.Column="2" Visibility="Collapsed" HorizontalAlignment="Right" VerticalAlignment="Top" Width="380"
+                    Margin="0,8,12,0" Padding="16" CornerRadius="10" BorderThickness="1" BorderBrush="{DynamicResource Line}" Background="{DynamicResource Bg2}">
+                <StackPanel>
+                    <DockPanel Margin="0,0,0,8">
+                        <Button x:Name="FriendsClose" DockPanel.Dock="Right" Content="✕" Margin="0" Padding="8,2" ToolTip="Close"/>
+                        <TextBlock Text="Friends" FontWeight="SemiBold" FontSize="15" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock Text="Add a friend by their Peergos username" Margin="0,0,0,4"/>
+                    <DockPanel>
+                        <Button x:Name="AddBtn" DockPanel.Dock="Right" Content="Add" Style="{DynamicResource AccentButtonStyle}" Margin="6,0,0,0"/>
+                        <TextBox x:Name="AddBox"/>
+                    </DockPanel>
+                    <TextBlock x:Name="AddResult" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource Fg2}"/>
+                    <TextBlock x:Name="IncomingTitle" Text="Friend requests" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                    <StackPanel x:Name="IncomingList"/>
+                    <TextBlock Text="Sharing directly with" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                    <StackPanel x:Name="FriendList"/>
+                    <CheckBox x:Name="BringFront" Content="Show this window when a friend sends something" Margin="0,12,0,0"/>
+                    <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,8,0,0"
+                               Text="Only friends can share directly: a friend request has to be accepted once. Each of you then has a folder in Peergos (one per month) that only the two of you can see and change."/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

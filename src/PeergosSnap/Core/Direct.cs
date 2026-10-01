@@ -1,0 +1,97 @@
+using System.Globalization;
+using System.Text.Json;
+
+namespace PeergosSnap.Core;
+
+/// <summary>A picture (or file) shared directly between two friends, as the bridge lists it.</summary>
+public sealed record DirectItem(string Name, string Path, string From, long Size, DateTime Modified, string Label, bool Pinned,
+    IReadOnlyList<string> Stars)
+{
+    public bool IsImage => System.IO.Path.GetExtension(Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
+    public string Month => Path.Split('/') is { Length: >= 6 } p ? p[4] : "";
+}
+
+/// <summary>Who the user can share directly with, from the bridge's "friends" / "discover" answers.</summary>
+public sealed record DirectFriends(IReadOnlyList<string> Friends, IReadOnlyList<string> Incoming, IReadOnlyList<string> Outgoing,
+    IReadOnlyList<string> Direct);
+
+/// <summary>Pure logic of the direct mode (unit tested).</summary>
+public static class DirectLogic
+{
+    public static string MonthOf(DateTime t) => t.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+
+    /// <summary>A Peergos username as the bridge accepts it (lower case letters, digits, '-' and '_').</summary>
+    public static string? NormaliseUser(string? text)
+    {
+        var n = (text ?? "").Trim().TrimStart('@').ToLowerInvariant();
+        return n.Length is > 0 and <= 64 && n.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_') ? n : null;
+    }
+
+    public static List<DirectItem> ParseItems(JsonElement items)
+    {
+        var list = new List<DirectItem>();
+        if (items.ValueKind != JsonValueKind.Array) return list;
+        foreach (var i in items.EnumerateArray())
+        {
+            string S(string k) => i.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            long N(string k) => i.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+            var stars = i.TryGetProperty("stars", out var st) && st.ValueKind == JsonValueKind.Array
+                ? st.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
+                : [];
+            list.Add(new DirectItem(S("name"), S("path"), S("from"), N("size"),
+                DateTimeOffset.FromUnixTimeMilliseconds(N("modified")).LocalDateTime, S("label"),
+                i.TryGetProperty("pinned", out var p) && p.ValueKind == JsonValueKind.True, stars));
+        }
+        return list;
+    }
+
+    public static DirectFriends ParseFriends(JsonElement r)
+    {
+        List<string> L(string k) => r.TryGetProperty(k, out var a) && a.ValueKind == JsonValueKind.Array
+            ? a.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
+            : [];
+        return new DirectFriends(L("friends"), L("incoming"), L("outgoing"), L("direct"));
+    }
+
+    /// <summary>Pinned first, then the newest.</summary>
+    public static IEnumerable<DirectItem> Sort(IEnumerable<DirectItem> items) =>
+        items.OrderByDescending(i => i.Pinned).ThenByDescending(i => i.Modified).ThenBy(i => i.Name, StringComparer.Ordinal);
+
+    /// <summary>The friend's pictures that were not there before (what just arrived).</summary>
+    public static List<DirectItem> Arrived(IEnumerable<DirectItem> items, string me, IReadOnlySet<string> seen) =>
+        items.Where(i => !string.Equals(i.From, me, StringComparison.OrdinalIgnoreCase) && !seen.Contains(i.Path)).ToList();
+
+    /// <summary>Where a direct picture is kept on this PC: root\friend\month\name (names made safe for Windows).</summary>
+    public static string CacheFile(string root, string friend, DirectItem item)
+    {
+        var bad = new HashSet<char>(System.IO.Path.GetInvalidFileNameChars()) { '\\', '/', ':', '*', '?', '"', '<', '>', '|' };
+        string Safe(string s)
+        {
+            var t = new string(s.Select(c => bad.Contains(c) || c < 32 ? '_' : c).ToArray()).Trim().TrimEnd('.');
+            return t.Length == 0 || t is "." or ".." ? "_" : t;
+        }
+        var prefix = string.Equals(item.From, friend, StringComparison.OrdinalIgnoreCase) ? "" : "mine-";
+        return System.IO.Path.Combine(root, Safe(friend), Safe(item.Month.Length > 0 ? item.Month : "other"), Safe(prefix + item.Name));
+    }
+
+    /// <summary>"userd and you", "you", "userd" – who starred a picture.</summary>
+    public static string StarredBy(IReadOnlyList<string> stars, string me)
+    {
+        var names = stars.Select(s => string.Equals(s, me, StringComparison.OrdinalIgnoreCase) ? "you" : s).OrderBy(s => s == "you").ToList();
+        return names.Count switch { 0 => "", 1 => names[0], _ => string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1] };
+    }
+
+    /// <summary>The state of a friendship in plain words, for the friends list.</summary>
+    public static string Status(string user, DirectFriends f) =>
+        f.Friends.Contains(user) ? (f.Direct.Contains(user) ? "Friends – sharing with you" : "Friends")
+        : f.Incoming.Contains(user) ? "Asked to be your friend"
+        : f.Outgoing.Contains(user) ? "Waiting until they accept"
+        : "Not friends yet";
+
+    /// <summary>Paths seen so far: only the current and the previous month are kept, so the file stays small.</summary>
+    public static HashSet<string> Prune(IEnumerable<string> seen, DateTime now)
+    {
+        var keep = new[] { MonthOf(now), MonthOf(now.AddMonths(-1)) };
+        return seen.Where(p => keep.Any(m => p.Contains("/" + m + "/", StringComparison.Ordinal))).ToHashSet();
+    }
+}

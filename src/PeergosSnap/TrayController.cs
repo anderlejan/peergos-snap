@@ -36,6 +36,8 @@ public sealed class TrayController : IDisposable
     bool installingUpdate;
     UpdateInfo? pendingUpdate;
     public Dictionary<string, string?> HotkeyErrors { get; } = [];
+    readonly DirectHub direct;
+    public DirectHub Direct => direct;
 
     public TrayController()
     {
@@ -69,6 +71,12 @@ public sealed class TrayController : IDisposable
         }
         else StartupNotices();
         _ = MigrateLegacyPassword();
+
+        // Direct sharing with friends: connect a little after the start (the tray must not wait for Java).
+        direct = new DirectHub(this);
+        var directStart = new DispatcherTimer { Interval = TimeSpan.FromSeconds(20) };
+        directStart.Tick += async (_, _) => { directStart.Stop(); await direct.StartAsync(); };
+        directStart.Start();
 
         // Updates: once shortly after the start, then the hourly timer checks whether a day has passed.
         updateTimer.Tick += async (_, _) => await AutoUpdate(false);
@@ -179,7 +187,7 @@ public sealed class TrayController : IDisposable
 
     // ---------- updates ----------
 
-    bool Busy => recorder != null || uploads > 0 || selecting || stopping;
+    bool Busy => recorder != null || uploads > 0 || selecting || stopping || direct?.Busy == true;
 
     async Task AutoUpdate(bool atStart)
     {
@@ -239,12 +247,13 @@ public sealed class TrayController : IDisposable
 
     public void UpdateSettings(Action<Settings> change)
     {
-        var scheme = Settings.ColorScheme;
+        var before = Settings.Clone();
         change(Settings);
         Settings.Save(AppPaths.SettingsFile);
         ApplySettings();
         UpdateTip();
-        if (scheme != Settings.ColorScheme) RebuildOpenWindows();
+        if (before.ColorScheme != Settings.ColorScheme) RebuildOpenWindows();
+        direct?.SettingsChanged(before);
     }
 
     /// <summary>WPF's Fluent style cannot fully restyle an open window, so a new colour scheme re-creates the open
@@ -338,6 +347,21 @@ public sealed class TrayController : IDisposable
         m.Items.Add(new WinForms.ToolStripLabel("Videos"));
         m.Items.Add(Item("    Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
         m.Items.Add(Item("    Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
+        // Direct sharing: pictures straight to a friend's screen.
+        var dm = new WinForms.ToolStripMenuItem("Direct to a friend");
+        foreach (var f in direct.Friends)
+        {
+            var friend = f;
+            var send = new WinForms.ToolStripMenuItem($"Send a picture to {friend}") { Enabled = !rec };
+            send.Click += (_, _) => _ = CapturePicture(toFriend: friend);
+            dm.DropDownItems.Add(send);
+        }
+        if (direct.Friends.Count > 0) dm.DropDownItems.Add(new WinForms.ToolStripSeparator());
+        var openDirect = new WinForms.ToolStripMenuItem("Open the direct window");
+        openDirect.Click += (_, _) => direct.ShowWindow(null, null);
+        dm.DropDownItems.Add(openDirect);
+        ThemedMenu.Apply(dm.DropDown as WinForms.ToolStripDropDownMenu ?? new WinForms.ToolStripDropDownMenu());
+        m.Items.Add(dm);
         m.Items.Add(new WinForms.ToolStripSeparator());
         if (lastLink != null) m.Items.Add(Item("Copy last link", () => ClipboardService.SetText(lastLink)));
         m.Items.Add(Item("History…", ShowHistory));
@@ -420,6 +444,7 @@ public sealed class TrayController : IDisposable
             case "--help": ShowHelp(""); break;
             case "--menu": ShowMenu(); break;
             case "--history": ShowHistory(); break;
+            case "--direct": direct.ShowWindow(null, null); break;
             case "--quit": System.Windows.Application.Current.Shutdown(); break;
         }
     }
@@ -445,7 +470,8 @@ public sealed class TrayController : IDisposable
         finally { selecting = false; }
     }
 
-    public async Task CapturePicture()
+    /// <summary>Takes a picture; with <paramref name="toFriend"/> it goes straight to that friend (direct mode).</summary>
+    public async Task CapturePicture(string? toFriend = null)
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; } // pressing again cancels the countdown
         if (recorder != null || selecting) return;
@@ -488,6 +514,11 @@ public sealed class TrayController : IDisposable
                 Created = now, Kind = "picture", File = file, Width = rect.Width, Height = rect.Height,
                 Bytes = new FileInfo(file).Length, App = source.App, WindowTitle = source.Title,
             });
+            if (toFriend != null)
+            {
+                await SendDirect(toFriend, file, record);
+                return;
+            }
             if (Settings.AskBeforePictureUpload)
             {
                 // Settings → Capture: decide for each picture, as after a recording (upload, copy, save as, discard).
@@ -784,6 +815,35 @@ public sealed class TrayController : IDisposable
         }
     }
 
+    /// <summary>A picture taken for a friend goes straight into the folder shared with them.</summary>
+    async Task SendDirect(string friend, string file, HistoryRecord record)
+    {
+        uploads++;
+        tray.Icon = iconBusy;
+        Notify(ToastKind.Busy, $"Sending the picture to {friend}…", Path.GetFileName(file), null, file);
+        try
+        {
+            await direct.SendAsync(friend, [file]);
+            record.Label = record.Label.Length > 0 ? record.Label : $"Sent to {friend}";
+            history.Save();
+            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file, extra: ("Open", () => direct.ShowWindow(friend, null)));
+            if (Settings.KeepLocalCopies == LocalCopies.OnlyIfUploadFails) DropLocalCopy(record, file);
+        }
+        catch (DirectException e)
+        {
+            if (Settings.FallbackToClipboard && TryClipboard(file, "Picture"))
+                Notify(ToastKind.Warn, $"Not sent to {friend} – the picture is on the clipboard instead", e.Message + "\nA copy is kept in the captures folder.", null, file);
+            else
+                Notify(ToastKind.Error, $"Not sent to {friend}", e.Message + "\nA copy is kept in the captures folder.", null, file);
+        }
+        finally
+        {
+            uploads--;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            UpdateTip();
+        }
+    }
+
     /// <summary>Settings → Files & history → "Keep a copy on this PC: only if the upload fails": after a successful
     /// upload the copy in the captures folder is deleted (the mirror folder is a separate choice and keeps its copy).</summary>
     void DropLocalCopy(HistoryRecord record, string file)
@@ -928,7 +988,7 @@ public sealed class TrayController : IDisposable
 
     /// <summary>Shows the app's notification card. Busy and success cards follow the Notifications setting;
     /// warnings and errors are always shown.</summary>
-    void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
+    public void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
         (string, Action)? extra = null, Action? discard = null)
     {
         if (kind != ToastKind.Busy) Log.Info($"notify: {title} – {text}");
@@ -1013,6 +1073,7 @@ public sealed class TrayController : IDisposable
             try { recorder.CancelAsync().Wait(5000); } catch { }
         }
         updateTimer.Stop();
+        direct.Dispose();
         hotkeys.Dispose();
         tray.Visible = false;
         tray.Dispose();

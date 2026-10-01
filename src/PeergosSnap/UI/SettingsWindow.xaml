@@ -202,6 +202,24 @@
                     <TextBlock Style="{StaticResource Hint}" Text="On by default. Off keeps the entry, without files, so you still see what you deleted."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
+            <TabItem Header="Direct">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
+                    <TextBlock Text="Pictures straight to a friend" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin, star or delete it. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button x:Name="OpenDirectBtn" Content="Open the direct window" Style="{DynamicResource AccentButtonStyle}"/>
+                    </StackPanel>
+                    <TextBlock x:Name="DirectInfo" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                    <CheckBox x:Name="DirectReceive" Content="Receive pictures from friends at once"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Keeps a connection to Peergos open in the background while you share with friends (it uses some memory). Off: pictures from friends only arrive while the direct window is open."/>
+                    <CheckBox x:Name="DirectFront" Content="Show the direct window when a friend sends something"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="It comes to the front without taking the keyboard from the app you are typing in. Off: only a notification card."/>
+                    <TextBlock Text="Check for new pictures every (seconds, 2 to 60)"/>
+                    <TextBox x:Name="DirectSeconds" Width="120" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="DirectSecondsErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 2 to 60"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Where the pictures are: in Peergos, in PeergosSnap-Direct/(friend)/(month) of each of you; on this PC, a copy of everything you open or receive in the Direct folder next to the captures folder."/>
+                </StackPanel></ScrollViewer>
+            </TabItem>
             <TabItem Header="Hotkeys">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Style="{StaticResource Hint}" Text="Click a box and press the keys (with Ctrl, Alt, Shift or Win). Backspace or Delete clears it."/>

@@ -25,6 +25,9 @@ public static class AppPaths
     public static string WorkDir => Path.Combine(LocalDir, "work");
     public static string LogFile => Path.Combine(LocalDir, "logs", "peergos-snap.log");
     public static string WebViewDir => Path.Combine(LocalDir, "WebView2");
+    /// <summary>Pictures shared directly with friends, as received or sent (friend\month\name).</summary>
+    public static string DirectDir => Path.Combine(LocalDir, "Direct");
+    public static string DirectStateFile => Path.Combine(DataDir, "direct.json");
 
     public static string AppDir => AppContext.BaseDirectory;
     public static string FfmpegExe => Path.Combine(AppDir, "tools", "ffmpeg", "ffmpeg.exe");

@@ -73,6 +73,17 @@ public sealed class Settings
     /// <summary>Deleting a capture from this PC and Peergos also removes its history entry (default); off keeps the entry.</summary>
     public bool DeleteBothRemovesEntry { get; set; } = true;
 
+    // Direct sharing with friends (since 2.2)
+    /// <summary>Receive pictures that friends send directly (keeps a connection to Peergos open while friends are set up).</summary>
+    public bool DirectReceive { get; set; } = true;
+    /// <summary>The friends this user shares with directly (Peergos usernames).</summary>
+    public List<string> DirectFriends { get; set; } = [];
+    /// <summary>Show the direct window (without taking the keyboard) when a friend sends something.</summary>
+    public bool DirectBringToFront { get; set; } = true;
+    /// <summary>How often the friends' folders are checked for new pictures.</summary>
+    public int DirectCheckSeconds { get; set; } = 3;
+    public string DirectLastFriend { get; set; } = "";
+
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";
     public string HotkeyVideo { get; set; } = "Ctrl+Shift+2";
@@ -181,5 +192,8 @@ public sealed class Settings
         if (string.IsNullOrWhiteSpace(Server)) Server = DefaultServer;
         Server = Server.Trim().TrimEnd('/');
         AccountFolder = (AccountFolder ?? "").Trim().Trim('/', '\\');
+        DirectCheckSeconds = Math.Clamp(DirectCheckSeconds, 2, 60);
+        DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
+        DirectLastFriend ??= "";
     }
 }

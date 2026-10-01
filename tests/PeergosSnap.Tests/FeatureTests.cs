@@ -130,3 +130,114 @@ public class SoundTests
         Assert.Contains("-nostats", a);
     }
 }
+
+/// <summary>2.2: direct sharing with a friend. The JSON lines are shaped like answers of the bridge (sample names).</summary>
+public class DirectTests
+{
+    const string List = """
+        {"id":"1","ok":true,"friend":"userb","month":"2026-10","items":[{"name":"Snap_test.png","path":"/usera/PeergosSnap-Direct/userb/2026-10/Snap_test.png","from":"usera","size":300000,"modified":1790824756000,"label":"newer","pinned":false,"stars":["usera","userb"]},{"name":"Photo äöü (2).png","path":"/userb/PeergosSnap-Direct/usera/2026-10/Photo äöü (2).png","from":"userb","size":5000,"modified":1790824789000,"label":"","pinned":false,"stars":[]}],"months":["2026-10"]}
+        """;
+    const string Discover = """
+        {"id":"2","ok":true,"friends":["userb"],"followers":["userb"],"following":["userb"],"incoming":[],"outgoing":[],"direct":["userb"]}
+        """;
+
+    static List<DirectItem> Items() => DirectLogic.ParseItems(System.Text.Json.JsonDocument.Parse(List).RootElement.GetProperty("items"));
+
+    [Fact]
+    public void Reads_the_bridge_list()
+    {
+        var items = Items();
+        Assert.Equal(2, items.Count);
+        var mine = items.Single(i => i.From == "usera");
+        Assert.Equal("Snap_test.png", mine.Name);
+        Assert.Equal("newer", mine.Label);
+        Assert.Equal(["usera", "userb"], mine.Stars);
+        Assert.Equal(300000, mine.Size);
+        Assert.True(mine.IsImage);
+        Assert.Equal(mine.Path.Split('/')[4], mine.Month);
+        Assert.Contains(items, i => i.From == "userb" && i.Name == "Photo äöü (2).png");
+    }
+
+    [Fact]
+    public void Reads_the_bridge_friends()
+    {
+        var f = DirectLogic.ParseFriends(System.Text.Json.JsonDocument.Parse(Discover).RootElement);
+        Assert.Equal(["userb"], f.Friends);
+        Assert.Equal(["userb"], f.Direct);
+        Assert.Empty(f.Incoming);
+        Assert.Equal("Friends – sharing with you", DirectLogic.Status("userb", f));
+        Assert.Equal("Not friends yet", DirectLogic.Status("userc", f));
+        Assert.Equal("Asked to be your friend", DirectLogic.Status("x", f with { Incoming = ["x"] }));
+        Assert.Equal("Waiting until they accept", DirectLogic.Status("y", f with { Outgoing = ["y"] }));
+    }
+
+    static DirectItem I(string name, string from, int minute, bool pinned = false) =>
+        new(name, $"/{from}/PeergosSnap-Direct/x/2026-10/{name}", from, 1, new DateTime(2026, 10, 1, 10, minute, 0), "", pinned, []);
+
+    [Fact]
+    public void Pinned_first_then_newest()
+    {
+        var sorted = DirectLogic.Sort([I("a.png", "usera", 1), I("b.png", "userb", 5), I("c.png", "userb", 3, pinned: true)]).Select(i => i.Name);
+        Assert.Equal(["c.png", "b.png", "a.png"], sorted);
+    }
+
+    [Fact]
+    public void Only_the_friends_new_pictures_arrive()
+    {
+        var items = new[] { I("a.png", "usera", 1), I("b.png", "userb", 2), I("c.png", "userb", 3) };
+        var seen = new HashSet<string> { items[1].Path };
+        Assert.Equal(["c.png"], DirectLogic.Arrived(items, "usera", seen).Select(i => i.Name));
+        Assert.All(DirectLogic.Arrived(items, "userb", new HashSet<string>()), i => Assert.Equal("usera", i.From)); // own pictures never "arrive"
+    }
+
+    [Theory]
+    [InlineData("Userd", "userd")]
+    [InlineData(" @usera_b-2 ", "usera_b-2")]
+    [InlineData("../evil", null)]
+    [InlineData("a b", null)]
+    [InlineData("", null)]
+    public void Usernames_are_checked(string input, string? expected) => Assert.Equal(expected, DirectLogic.NormaliseUser(input));
+
+    [Fact]
+    public void Local_copies_are_safe_file_names()
+    {
+        var root = Path.Combine("r");
+        var theirs = new DirectItem("x:y?.png", "/userb/PeergosSnap-Direct/usera/2026-10/x:y?.png", "userb", 1, DateTime.Now, "", false, []);
+        var mine = theirs with { From = "usera", Path = "/usera/PeergosSnap-Direct/userb/2026-10/x:y?.png" };
+        Assert.Equal(Path.Combine("r", "userb", "2026-10", "x_y_.png"), DirectLogic.CacheFile(root, "userb", theirs));
+        Assert.Equal(Path.Combine("r", "userb", "2026-10", "mine-x_y_.png"), DirectLogic.CacheFile(root, "userb", mine)); // same name from both sides
+        var tricky = theirs with { Name = "..", Path = "/userb/PeergosSnap-Direct/usera/../.." };
+        Assert.DoesNotContain("..", DirectLogic.CacheFile(root, "userb", tricky));
+    }
+
+    [Fact]
+    public void Who_starred()
+    {
+        Assert.Equal("", DirectLogic.StarredBy([], "usera"));
+        Assert.Equal("you", DirectLogic.StarredBy(["usera"], "usera"));
+        Assert.Equal("userb and you", DirectLogic.StarredBy(["usera", "userb"], "usera"));
+    }
+
+    [Fact]
+    public void Seen_list_keeps_two_months()
+    {
+        var kept = DirectLogic.Prune(["/a/PeergosSnap-Direct/b/2026-10/x.png", "/a/PeergosSnap-Direct/b/2026-09/y.png", "/a/PeergosSnap-Direct/b/2026-07/z.png"],
+            new DateTime(2026, 10, 15));
+        Assert.Equal(2, kept.Count);
+        Assert.DoesNotContain("/a/PeergosSnap-Direct/b/2026-07/z.png", kept);
+    }
+
+    [Fact]
+    public void Direct_settings_defaults_and_cleanup()
+    {
+        var s = new Settings();
+        Assert.True(s.DirectReceive);
+        Assert.True(s.DirectBringToFront);
+        Assert.Equal(3, s.DirectCheckSeconds);
+        s.DirectFriends = ["Userb", "userb", "bad name", "userc"];
+        s.DirectCheckSeconds = 0;
+        s.Clamp();
+        Assert.Equal(["userb", "userc"], s.DirectFriends);
+        Assert.Equal(2, s.DirectCheckSeconds);
+    }
+}
