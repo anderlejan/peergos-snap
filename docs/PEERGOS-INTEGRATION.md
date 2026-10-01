@@ -44,6 +44,9 @@ java -cp peergos-snap-bridge.jar;Peergos.jar snap.bridge.PeergosBridge <command>
   signin --server URL --user NAME                           stdin: password [, then the two-factor code on request]
   check  --server URL --user NAME                           stdin: session
   upload --server URL --user NAME --file PATH [--folder F] [--name N]    stdin: session
+  list   --server URL --user NAME [--folder F]              stdin: session
+  delete --server URL --user NAME                           stdin: session, then one path per line
+  serve  --server URL --user NAME                           stdin: session, then JSON commands (direct mode, below)
 stdout: one JSON line  {"ok":true,"session":"…"} | {"ok":true,"link":"…","path":"…"} | {"ok":false,"error":"…"}
 stderr: "@progress N" (percent), "@mfa totp" (code needed), plus Peergos logs
 ```
@@ -58,3 +61,33 @@ Together with the Peergos developers this was identified as something that shoul
 writer, and such links are being disabled on the Peergos side. Peergos Snap 2.0 removed the folder mode and that
 link type completely. A folder link stored by 1.x is kept untouched in the settings file (unused) for a possible
 future folder feature.
+
+## Direct mode (2.2): sharing with a friend
+
+Two users who are **friends in Peergos** (a follow request sent and accepted with reciprocation) share pictures
+without links:
+
+- Each user has `/<me>/PeergosSnap-Direct/<friend>/`, shared **for writing with that friend only**
+  (`shareWriteAccessWith`). Pictures go into one subfolder per month (`2026-10`), created inside the shared folder,
+  so the friend can read and write them too. Sending = uploading into one's own folder.
+- The app keeps one bridge process running (`serve`): it restores the session once and then answers JSON commands on
+  stdin (`friends`, `discover`, `add`, `accept`, `decline`, `open`, `list`, `send`, `get`, `delete`, `meta`, `watch`,
+  `quit`), one JSON answer per line on stdout. With `watch`, it lists the current month of both folders of each
+  watched friend every few seconds and prints a `changed` event whenever anything differs. "Instant" therefore means
+  within the check interval (3 s by default) plus Peergos' own caching of folder versions.
+- Labels, pins and stars are stored next to the pictures, one file per user and folder:
+  `.snapmeta-<user>.json` = `{"v":1,"items":{"<name>":{"label","labelAt","pin","pinAt","star"}}}`. Each side only
+  writes its own file, so they never overwrite each other; on reading, the newest label and pin win and stars are
+  the union.
+- A long-running session caches folder versions. When the other side changed a folder, a write is refused
+  ("concurrent modification") or fails on a missing parent; the session then signs in again from the session data
+  (`NetworkAccess.clear()` + `restoreContext`) and retries.
+- `discover` lists friends who have a direct folder for this user, so the receiving side is set up without doing
+  anything. The app only keeps the session running while there are friends to share with.
+- Only paths of the shape `/<owner>/PeergosSnap-Direct/<other>/<yyyy-MM>/<name>` with this user as owner or other
+  are accepted by `get`, `delete` and `meta`.
+
+Tested end to end against a local Peergos 1.35.1 server with two accounts (friend request, sharing, sending, receiving
+without asking, identical download, labels/pins/stars both ways, newest label wins, non-ASCII and duplicate names,
+deleting in the friend's folder, refusing other paths).
+

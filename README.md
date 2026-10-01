@@ -6,9 +6,13 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **Live, non-freezing selection.** The screen keeps moving while you drag, so games, Second Life and videos stay
   live. The picture is taken the instant you release the mouse (a delay is optional). A click without dragging
   takes the window under the pointer.
-- **Region video (MP4 or WebM)** with a floating Stop · Pause · Cancel bar that never shows in the video. You can
-  also click the tray icon once to start and again to stop. A short dialog then offers *Upload & copy link*,
-  *Copy video*, *Save as…* or *Discard*.
+- **Region video (MP4 or WebM) with sound** – the sound Windows plays, only when there is any – and a floating
+  Stop · Pause · Cancel bar that never shows in the video. You can also click the tray icon once to start and again
+  to stop. A short dialog then offers *Upload & copy link*, *Copy video*, *Save as…* or *Discard*.
+- **Direct to a friend.** Drop, paste or capture a picture and it appears on your friend's screen within seconds, in
+  a window where both of you can zoom, save, label, pin, star and delete it. Built on a Peergos folder per friend
+  that only the two of you can see.
+- **Discard** any capture from its notification card: gone from this PC, Peergos, the clipboard and the history.
 - **Two outputs, switched in the tray menu.** *Secret link* uploads the capture to Peergos and copies a link.
   *Media to clipboard* copies the picture or video file itself, ready for Ctrl+V.
 - **Your Peergos account.** Sign in once (two-factor codes supported). Only the Peergos session is kept, never
@@ -19,7 +23,8 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **History manager.** Every capture with a preview, the app it came from, a label and its link, shown on this PC
   and in Peergos side by side. Find old links, and delete on this PC (Recycle Bin), in Peergos or both.
 - **Safe fallback.** If an upload fails, the capture goes to the clipboard instead. Every capture is also kept on
-  this PC (forever by default, in one folder per month), and you can mirror all captures to a folder of your choice.
+  this PC (forever by default, in one folder per month, or only when the upload failed), and you can mirror all
+  captures to a folder of your choice.
 - **Always know what happened.** After every capture, a notification card (never captured itself) says whether
   you now have the link, the picture/video, or an error with its reason on the clipboard.
 - **18 colour schemes** (dark, medium and bright) and a font size for every window, including the tray menu,
@@ -29,8 +34,8 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **Built-in Help** with a quick start (tray menu → Help, or F1 in Settings).
 - **Global hotkeys**, which you can change: Ctrl+Shift+1 takes a picture, Ctrl+Shift+2 starts or stops a video.
   You can add hotkeys for pause and for switching the output.
-- **Self-contained.** FFmpeg, a Java runtime, the Peergos client and the .NET runtime are all bundled, so nothing
-  needs to be on PATH.
+- **Self-contained.** FFmpeg, a Java runtime, the Peergos client, NAudio and the .NET runtime are all bundled, so
+  nothing needs to be on PATH.
 - **User notes** (tray menu). Keep a list of wanted changes while you test, then turn them into an AI prompt or
   user feedback.
 

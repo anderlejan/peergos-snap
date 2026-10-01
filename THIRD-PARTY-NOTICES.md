@@ -18,6 +18,7 @@ Every GitHub release also carries the **corresponding source code** of the bundl
 | OpenJDK runtime (Microsoft Build of OpenJDK, jlink image) | 25.0.3+9 (source commit 7a05ec815bae) | GPL-2.0 with Classpath Exception | `runtime\` | https://github.com/microsoft/openjdk-jdk25u/tree/7a05ec815bae26c959a47577a4490630822712a1 · attached to each release · licence texts in `runtime\legal\` and `licenses\openjdk-legal\` |
 | .NET runtime + WPF/WinForms (self-contained) | 10.0 | MIT | app folder | https://github.com/dotnet/runtime · https://github.com/dotnet/wpf |
 | Microsoft WebView2 SDK (`Microsoft.Web.WebView2` NuGet: loader + managed wrapper) | 1.0.3650.58 | BSD-3-Clause | `Microsoft.Web.WebView2.*.dll`, `WebView2Loader.dll` | https://www.nuget.org/packages/Microsoft.Web.WebView2 |
+| NAudio (`NAudio.Wasapi`, `NAudio.Core` NuGet) – system sound of videos | 2.2.1 | MIT (text below) | `NAudio.Wasapi.dll`, `NAudio.Core.dll` | https://github.com/naudio/NAudio |
 | Microsoft Edge WebView2 Runtime | part of Windows 11 | Microsoft (OS component, **not** redistributed) | – | – |
 
 Build-time only (not shipped): xUnit (Apache-2.0), Microsoft.NET.Test.Sdk (MIT), Inno Setup (Inno Setup licence;
@@ -29,6 +30,25 @@ with this project under GPL-3.0-or-later.
 Peergos.jar is the unmodified official release; it contains the Peergos code and the libraries Peergos itself
 bundles, each under its own licence as listed in the Peergos repository (`lib/` and its licence files).
 The tray/app icon is original artwork drawn by `build/make-icon.ps1` (GPL-3.0-or-later with the project).
+
+## NAudio licence
+
+```
+Copyright 2020 Mark Heath
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+```
 
 ## Written offer
 

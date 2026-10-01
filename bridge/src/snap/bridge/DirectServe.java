@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  * stdin:  the session, then one JSON command per line: {"id":"1","cmd":"...", ...}
  * stdout: one JSON line per answer {"id":"1","ok":true,...} | {"id":"1","ok":false,"error":"..."}
  *         and events {"event":"ready"|"changed"|"problem", ...}
- * commands: friends · add {user} · accept {user} · decline {user} · open {friend} · list {friend, month}
+ * commands: friends · discover · add {user} · accept {user} · decline {user} · open {friend} · list {friend, month}
  *           send {friend, file, [name], [month]} · get {path, to} · delete {path}
  *           meta {path, [label], [pin], [star]} · watch {friends:"a,b", month, [interval]} · quit
  * </pre>
@@ -137,7 +137,7 @@ final class DirectServe {
                 answer.putAll(r);
                 emit(answer);
                 // A change made here shows up at once, not only at the next check.
-                if (!"list".equals(cmd) && !"friends".equals(cmd) && !"get".equals(cmd))
+                if (!"list".equals(cmd) && !"friends".equals(cmd) && !"discover".equals(cmd) && !"get".equals(cmd))
                     next = System.currentTimeMillis();
             } catch (Throwable t) {
                 t.printStackTrace(); // stderr: the app's log keeps the last lines of a failure
@@ -156,6 +156,16 @@ final class DirectServe {
     Map<String, Object> handle(String cmd, Map<String, Object> c) throws Exception {
         switch (cmd) {
             case "friends": return friends();
+            case "discover": {
+                // Friends who opened a direct folder for me: the app watches them without being asked.
+                Map<String, Object> r = friends();
+                List<String> direct = new ArrayList<>();
+                for (Object f : (List<?>) r.get("friends"))
+                    if (ctx.getByPath(theirs((String) f)).join().isPresent())
+                        direct.add((String) f);
+                r.put("direct", direct);
+                return r;
+            }
             case "add": {
                 String user = name(Json.str(c, "user"));
                 if (user.equals(me))

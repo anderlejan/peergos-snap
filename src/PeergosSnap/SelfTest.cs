@@ -119,6 +119,10 @@ public static class SelfTest
                 var r = Run(AppPaths.JavaExe, ["-cp", Path.Combine(AppPaths.BridgeDir, "peergos-snap-bridge.jar") + ";" + Path.Combine(AppPaths.BridgeDir, "Peergos.jar"),
                     "snap.bridge.PeergosBridge", "nonsense"], stdoutOnly: true);
                 Check("bridge starts", r.Contains("\"ok\":false") && r.Contains("unknown command"), r.Trim());
+                // Direct mode: the long-running session is in the bridge (without a session it must refuse politely).
+                var sv = Run(AppPaths.JavaExe, ["-cp", Path.Combine(AppPaths.BridgeDir, "peergos-snap-bridge.jar") + ";" + Path.Combine(AppPaths.BridgeDir, "Peergos.jar"),
+                    "snap.bridge.PeergosBridge", "serve", "--server", "http://127.0.0.1:9", "--user", "nobody"], stdoutOnly: true);
+                Check("bridge direct mode present", sv.Contains("\"ok\":false") && !sv.Contains("unknown command"), sv.Trim());
                 if (saved != null)
                 {
                     if (!saved.PeergosConfigured) Check("peergos upload", false, "not signed in to Peergos in the app");

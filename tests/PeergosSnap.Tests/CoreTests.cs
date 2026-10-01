@@ -397,7 +397,8 @@ public class HelpTests
         var html = File.ReadAllText(Path.Combine(Dir, "index.html"));
         foreach (var id in new[] { "quick-start", "pictures", "pictures-delay", "videos", "videos-delay", "output", "notifications", "peergos",
                      "history", "hotkeys", "updates", "user-notes", "troubleshooting", "settings-peergos", "settings-capture", "settings-overlay",
-                     "settings-output", "settings-files", "settings-hotkeys", "settings-appearance", "settings-general" })
+                     "settings-output", "settings-files", "settings-hotkeys", "settings-appearance", "settings-general",
+                     "direct", "settings-direct", "videos-sound", "pictures-discard" })
             Assert.Contains($"id=\"{id}\"", html);
     }
 
