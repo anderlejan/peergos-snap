@@ -203,9 +203,12 @@ final class DirectServe {
                         boolean yes = cmd.equals("accept");
                         await(ctx.sendReplyFollowRequest(r, yes, yes), WRITE);
                         if (yes) {
-                            // Friends (again): a folder for them from an earlier friendship is shared again now.
+                            // Friends (again): a folder for them from an earlier friendship is shared again – now if
+                            // Peergos already counts us as friends, otherwise (their side has not completed the
+                            // friendship yet) at the next "open", thanks to the mark.
                             refresh();
-                            reshare(user);
+                            markReshare(user);
+                            try { reshare(user); } catch (Exception e) { System.err.println("direct: reshare " + user + ": " + message(e)); }
                         }
                         return map("done", true);
                     }
