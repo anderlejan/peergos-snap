@@ -95,7 +95,7 @@ public partial class SettingsWindow : Window
         DirectReceive.IsChecked = S.DirectReceive;
         DirectFront.IsChecked = S.DirectBringToFront;
         DirectSeconds.Text = S.DirectCheckSeconds.ToString();
-        DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…."
+        DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…"
             : "Sharing directly with " + string.Join(", ", S.DirectFriends) + ".";
 
         HkPicture.Text = S.HotkeyPicture;
