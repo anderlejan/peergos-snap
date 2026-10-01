@@ -52,6 +52,9 @@ public static class SelfTest
             // Recording with a pause in the middle
             if (Recorder.FfmpegAvailable)
             {
+                // A plain window under the test area, so whatever the user is working in behind it (a game drawing its
+                // own pointer, a video) does not change what is recorded.
+                using var stage = TestStage.Show(rect);
                 var rec = new Recorder(rect, s);
                 rec.Start();
                 Thread.Sleep(1500);
@@ -84,12 +87,26 @@ public static class SelfTest
 
                 // Sound: a tone played while recording (with a pause in between) must be in the video, in full length,
                 // and in step with the picture: it starts 1 s after the recording, so it must start about 1 s into the video.
+                // The tone has an unusual pitch and is looked for only around it, so other sound playing on this PC
+                // (music, a game) does not disturb the check.
                 try
                 {
+                    // Silence first: no sound track at all (only noted, because something else may be playing on this PC).
+                    var quiet = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
+                    quiet.Start();
+                    Thread.Sleep(1200);
+                    var qv = quiet.StopAsync().Result;
+                    var qp = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", qv]);
+                    bool otherSound = quiet.HasSound || qp.Contains("Audio:");
+                    if (!otherSound) Check("silent recording has no sound track", true, quiet.SoundNote);
+                    else report.Add("NOTE silent recording got sound – something else is playing on this PC. " + quiet.SoundNote);
+                    quiet.Cleanup();
+
+                    const double pitch = 1871; // Hz
                     var toned = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
                     toned.Start();
                     Thread.Sleep(1000);
-                    var tone = LoopbackRecorder.PlayToneAsync(TimeSpan.FromSeconds(3.2));
+                    var tone = LoopbackRecorder.PlayToneAsync(TimeSpan.FromSeconds(3.2), pitch);
                     Thread.Sleep(500);
                     toned.PauseAsync().Wait();
                     Thread.Sleep(300);
@@ -103,23 +120,18 @@ public static class SelfTest
                         $"{toned.SoundNote}; {FirstLine(tp, "Duration")}; {FirstLine(tp, "Audio:")} (if this fails: is the PC muted or without speakers?)");
                     if (toned.HasSound)
                     {
-                        var sd = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", tv, "-map", "0:a:0", "-af", "silencedetect=noise=-45dB:d=0.3", "-f", "null", "-"]);
+                        var band = $"bandpass=f={pitch}:width_type=h:w=60,silencedetect=noise=-45dB:d=0.3";
+                        var sd = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", tv, "-map", "0:a:0", "-af", band, "-f", "null", "-"]);
                         var onset = ToneOnset(sd);
-                        // The tone itself starts a little late on a busy PC (audio output latency): 1.1–1.45 s was measured.
-                        Check("sound in step with the picture", onset is >= 0.6 and <= 1.8,
-                            onset == null ? "the tone starts at the very beginning of the video (expected ≈ 1 s)" : $"the tone starts at {onset:0.00} s in the video (expected ≈ 1 s)");
+                        // The tone itself starts a little late on a busy PC (audio output latency): 1.1–1.57 s was measured.
+                        bool inStep = onset is >= 0.6 and <= 1.8;
+                        var detail = onset == null ? "the tone starts at the very beginning of the video (expected ≈ 1 s)" : $"the tone starts at {onset:0.00} s in the video (expected ≈ 1 s)";
+                        if (!inStep && otherSound)
+                            report.Add("NOTE sound in step with the picture not checked: other sound on this PC was loud at the test pitch – " + detail);
+                        else
+                            Check("sound in step with the picture", inStep, detail);
                     }
                     toned.Cleanup();
-
-                    // Silence: no sound track at all (only noted, because something else may be playing on this PC).
-                    var quiet = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
-                    quiet.Start();
-                    Thread.Sleep(1200);
-                    var qv = quiet.StopAsync().Result;
-                    var qp = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", qv]);
-                    if (!quiet.HasSound && !qp.Contains("Audio:")) Check("silent recording has no sound track", true, quiet.SoundNote);
-                    else report.Add("NOTE silent recording got sound – was something playing on this PC? " + quiet.SoundNote);
-                    quiet.Cleanup();
                 }
                 catch (Exception e) { Check("video with sound", false, e.Message); }
             }
@@ -194,6 +206,62 @@ public static class SelfTest
                 if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 60) n++;
             }
         return n;
+    }
+
+    /// <summary>
+    /// A plain white window on top of the self-test's screen area for the recording checks, so what the user is
+    /// working in behind it (e.g. a game that draws its own mouse pointer) does not change what is recorded. It never
+    /// takes the keyboard and has its own UI thread.
+    /// </summary>
+    sealed class TestStage : IDisposable
+    {
+        readonly Thread thread;
+        System.Windows.Forms.Form? form;
+
+        TestStage(PxRect r)
+        {
+            using var shown = new ManualResetEventSlim();
+            thread = new Thread(() =>
+            {
+                form = new StageForm
+                {
+                    StartPosition = System.Windows.Forms.FormStartPosition.Manual,
+                    FormBorderStyle = System.Windows.Forms.FormBorderStyle.None,
+                    ShowInTaskbar = false,
+                    TopMost = true,
+                    BackColor = System.Drawing.Color.White,
+                    Bounds = new System.Drawing.Rectangle(r.X - 20, r.Y - 20, r.Width + 40, r.Height + 40),
+                };
+                form.Shown += (_, _) => shown.Set();
+                System.Windows.Forms.Application.Run(form);
+            }) { IsBackground = true, Name = "selftest-stage" };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            shown.Wait(5000);
+            Thread.Sleep(300); // painted
+        }
+
+        public static TestStage Show(PxRect r) => new(r);
+
+        public void Dispose()
+        {
+            try { form?.Invoke(() => form.Close()); } catch { }
+            thread.Join(3000);
+        }
+
+        sealed class StageForm : System.Windows.Forms.Form
+        {
+            protected override bool ShowWithoutActivation => true;
+            protected override System.Windows.Forms.CreateParams CreateParams
+            {
+                get
+                {
+                    var cp = base.CreateParams;
+                    cp.ExStyle |= 0x08000000 /* WS_EX_NOACTIVATE */ | 0x00000080 /* WS_EX_TOOLWINDOW */;
+                    return cp;
+                }
+            }
+        }
     }
 
     /// <summary>From FFmpeg's silencedetect output: where the silence at the start of the sound ends (null = no silence at the start).</summary>

@@ -120,12 +120,12 @@ public sealed class LoopbackRecorder : IDisposable
     }
 
     /// <summary>For the self-test: plays a quiet tone on the default output device for the given time.</summary>
-    public static async Task PlayToneAsync(TimeSpan length)
+    public static async Task PlayToneAsync(TimeSpan length, double frequency = 440)
     {
         using var output = new WasapiOut(AudioClientShareMode.Shared, 100);
         var tone = new NAudio.Wave.SampleProviders.SignalGenerator(48000, 2)
         {
-            Type = NAudio.Wave.SampleProviders.SignalGeneratorType.Sin, Frequency = 440, Gain = 0.2,
+            Type = NAudio.Wave.SampleProviders.SignalGeneratorType.Sin, Frequency = frequency, Gain = 0.2,
         };
         output.Init(tone);
         output.Play();
