@@ -158,10 +158,10 @@
                         </StackPanel>
                         <TextBlock Text="Delete" FontWeight="SemiBold" Margin="0,12,0,6"/>
                         <WrapPanel>
-                            <Button x:Name="DelLocalBtn" Content="From this PC" ToolTip="Moves the file on this PC to the Recycle Bin"/>
-                            <Button x:Name="DelRemoteBtn" Content="From Peergos" ToolTip="Deletes the file from your Peergos folder; its link stops working"/>
                             <Button x:Name="DelBothBtn" Content="From both"/>
-                            <Button x:Name="RemoveBtn" Content="Remove from history" ToolTip="Only the history entry; the files stay"/>
+                            <Button x:Name="DelLocalBtn" Content="From this PC"/>
+                            <Button x:Name="DelRemoteBtn" Content="From Peergos"/>
+                            <Button x:Name="RemoveBtn" Content="Remove from history"/>
                         </WrapPanel>
                         <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
                                 Background="{DynamicResource Bg2}" Padding="12" Margin="0,8,0,0">

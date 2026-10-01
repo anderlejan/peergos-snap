@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.2.0 – 2026-10-01
+
+- **Direct to a friend.** Send a picture, video or any file straight to a friend's screen while you talk with them in
+  another app: drop it on the direct window, paste it (Ctrl+V), choose files, or take a picture for them (tray menu →
+  *Direct to a friend*). It appears on their side within seconds, in a window where both of you can zoom, save, label,
+  pin and star it – labels, pins and stars are seen by both. What you send stays in your Peergos
+  (`PeergosSnap-Direct/<friend>/<month>`); each file is shared read-only with that friend only – the folder is not
+  shared and no link is created. The receiver's Peergos Snap copies it into their own Peergos (`…/<month>/received`),
+  so each side has its own copy, and *Delete* only ever deletes your own. *Also keep received files on this PC*
+  (Settings → Direct, on by default) downloads what arrives. Friends are
+  added in the window (*Friends…*: friend requests sent and accepted there). The receiving side needs nothing but
+  Peergos Snap running and signed in. New Settings page *Direct*.
+- **Sound in videos.** Videos get the sound Windows plays while recording (on by default; tray menu → *Videos* →
+  *Record sound*, or Settings → Capture). A recording during which nothing played gets no sound track. The microphone
+  is not recorded.
+- **Discard for pictures.** The card after a capture has *Discard*: the capture is removed from this PC (and the
+  mirror folder), from Peergos (the link stops working), from the clipboard if it is still there, and from the
+  history. *After a picture, ask what to do* (Settings → Capture, formerly *Ask before uploading a picture*) offers
+  the same choices as after a recording, including *Discard*.
+- **Discarded captures are deleted at once** by default, never kept (also videos, which went to the Recycle Bin in
+  2.1). Settings → Files & history can bring the Recycle Bin back.
+- **Keep a copy on this PC: only if the upload fails** (Settings → Files & history; default *Always*).
+- **History: the Delete key** runs the default delete action, highlighted in the details: *From both* by default,
+  which now also removes the entry from the history (Settings → Files & history can keep it, or choose another
+  default). *From both* also works when the capture is only on one side.
+- Help updated for all of the above.
+
 ## 2.1.0 – 2026-09-27
 
 - **Delay before capturing, with a frozen screen.** Tray menu → *Delay* → 1–5 seconds (any length up to 60 s in

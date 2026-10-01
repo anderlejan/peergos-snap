@@ -11,7 +11,7 @@
     <AssemblyName>PeergosSnap</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\PeergosSnap.ico</ApplicationIcon>
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <Product>Peergos Snap</Product>
     <Company>Jan Anderle</Company>
     <Copyright>Copyright (C) 2026 Jan Anderle. GPL-3.0-or-later.</Copyright>
@@ -32,6 +32,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
+    <!-- System sound for videos (WASAPI loopback). MIT licence, see THIRD-PARTY-NOTICES.md. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -207,6 +207,24 @@ public static class HistoryLogic
         return added;
     }
 
+    /// <summary>
+    /// After "delete from both": the entries whose capture is now gone from both places and can leave the history.
+    /// A record counts as gone on this PC when its file was deleted or was already missing (or there was none), and as gone in Peergos
+    /// when its file there was deleted or already missing (or it was never uploaded). Entries where a delete failed stay.
+    /// </summary>
+    public static List<string> RemovableAfterDelete(IEnumerable<HistoryRecord> selected, IReadOnlyCollection<string> localGone,
+        IReadOnlyCollection<string> remoteGone)
+    {
+        var ids = new List<string>();
+        foreach (var r in selected)
+        {
+            bool goneHere = r.File == null || localGone.Contains(r.File);
+            bool peergosGone = r.PeergosPath == null || remoteGone.Contains(r.PeergosPath);
+            if (goneHere && peergosGone && (r.File != null || r.PeergosPath != null)) ids.Add(r.Id);
+        }
+        return ids;
+    }
+
     /// <summary>Is the file in Peergos? null = unknown (not signed in, not looked yet).</summary>
     public static bool? InPeergos(HistoryRecord r, IReadOnlyCollection<string>? remotePaths) =>
         r.PeergosPath == null ? false : remotePaths == null ? null : remotePaths.Contains(r.PeergosPath);

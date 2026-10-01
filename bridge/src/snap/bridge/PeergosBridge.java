@@ -70,6 +70,8 @@ import java.util.concurrent.CompletableFuture;
  *        capture folder with their existing secret links (so older links can be shown again).
  * delete --server URL --user NAME                                        stdin: session, then one path per line
  *        Deletes each file (Peergos removes its secret links with it): {"ok":true,"deleted":[...],"missing":[...],"failed":[...]}
+ * serve  --server URL --user NAME                                        stdin: session, then JSON commands
+ *        Stays running for the direct mode (sharing with a friend): see DirectServe.
  * Progress: "@progress N" lines (percent) on stderr while uploading.
  * </pre>
  *
@@ -78,10 +80,13 @@ import java.util.concurrent.CompletableFuture;
 public class PeergosBridge {
 
     static final PrintStream PROGRESS = System.err;
+    /** The real stdout (Peergos's own logging goes to stderr). */
+    static PrintStream RESULT = System.out;
 
     public static void main(String[] args) {
-        PrintStream out = System.out;
-        // Peergos logs to stdout/stderr; keep stdout for our single JSON result.
+        PrintStream out = new PrintStream(new java.io.FileOutputStream(java.io.FileDescriptor.out), true, StandardCharsets.UTF_8);
+        RESULT = out;
+        // Peergos logs to stdout/stderr; keep stdout for our JSON results.
         System.setOut(System.err);
         int code = 0;
         String result;
@@ -115,7 +120,7 @@ public class PeergosBridge {
         if (args.length == 0)
             throw new IllegalArgumentException("usage: signin|check|upload ...");
         String cmd = args[0];
-        if (!java.util.Set.of("signin", "check", "upload", "list", "delete").contains(cmd))
+        if (!java.util.Set.of("signin", "check", "upload", "list", "delete", "serve").contains(cmd))
             throw new IllegalArgumentException("unknown command " + cmd);
         Map<String, String> a = parse(args);
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -231,6 +236,11 @@ public class PeergosBridge {
                 return "{\"ok\":" + failed.isEmpty() + ",\"deleted\":" + jsonList(deleted) + ",\"missing\":" + jsonList(missing)
                         + ",\"failed\":" + jsonList(failed)
                         + (failed.isEmpty() ? "" : ",\"error\":" + json(failed.size() + " could not be deleted: " + failed.get(0))) + "}";
+            }
+            case "serve": {
+                String session = line(stdin);
+                UserContext ctx = restore(user, session, base, crypto);
+                return new DirectServe(ctx, user, session, base, crypto, RESULT).run(stdin);
             }
             default:
                 throw new IllegalArgumentException("unknown command " + cmd);
