@@ -120,6 +120,8 @@
                     <Slider x:Name="Quality" Minimum="15" Maximum="40" Width="300" HorizontalAlignment="Left" IsDirectionReversed="True" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,2,0,2"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Left = smaller files, right = sharper (x264 CRF 40 … 15, default 23)."/>
                     <CheckBox x:Name="RecordCursor" Content="Show the mouse pointer in videos"/>
+                    <CheckBox x:Name="RecordSound" Content="Record the sound Windows plays (only when there is any)"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Everything you hear from this PC – videos, games, calls, notification sounds – goes into the video. A recording during which Windows played nothing gets no sound track. Your microphone is not recorded."/>
                     <TextBlock Text="Delay before capturing (seconds, 0 = none, up to 60)" Margin="0,10,0,0"/>
                     <TextBox x:Name="DelayBox" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DelayBoxErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 0 to 60"/>

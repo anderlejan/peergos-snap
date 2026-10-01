@@ -37,6 +37,8 @@ public sealed class Settings
     public int FrameRate { get; set; } = 30;
     public int VideoQuality { get; set; } = 23;
     public bool RecordCursor { get; set; } = true;
+    /// <summary>Since 2.2: videos get the sound Windows plays while recording (only when there was any).</summary>
+    public bool RecordSound { get; set; } = true;
     public bool AskBeforePictureUpload { get; set; }
     /// <summary>Countdown before a picture is taken (the screen is then frozen for selecting) or before a video starts. 0 = none.</summary>
     public int DelaySeconds { get; set; }
