@@ -328,6 +328,9 @@ final class DirectServe {
                     found.add(new Object[]{k, side[0], side[1]});
             }
         }
+        // Peergos returns folder contents as an unordered set: a fixed order keeps the "changed" check from firing
+        // on every poll when nothing changed.
+        found.sort(Comparator.comparing((Object[] f) -> (String) f[2]).thenComparing(f -> ((FileWrapper) f[0]).getFileProperties().name));
         for (Object[] f : found) {
             FileProperties fp = ((FileWrapper) f[0]).getFileProperties();
             Map<String, Object> m = meta.getOrDefault(f[2] + "/" + fp.name, Map.of());
