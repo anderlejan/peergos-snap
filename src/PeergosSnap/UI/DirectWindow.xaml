@@ -94,7 +94,7 @@
                         <Button x:Name="SaveBtn" Content="Save as…" ToolTip="Save a copy on this PC"/>
                         <Button x:Name="CopyBtn" Content="Copy" ToolTip="Copy the picture to the clipboard"/>
                         <Button x:Name="OpenBtn" Content="Open" ToolTip="Open it in its app"/>
-                        <Button x:Name="DeleteBtn" Content="Delete" ToolTip="What you sent: delete it for both of you. What you received: delete it on your side."/>
+                        <Button x:Name="DeleteBtn" Content="Delete" ToolTip="Delete your copy (in your Peergos and on this PC); your friend's copy stays theirs"/>
                     </WrapPanel>
                 </Border>
                 <Border DockPanel.Dock="Bottom" Padding="10,8" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0">

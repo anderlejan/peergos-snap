@@ -94,6 +94,7 @@ public partial class SettingsWindow : Window
 
         DirectReceive.IsChecked = S.DirectReceive;
         DirectFront.IsChecked = S.DirectBringToFront;
+        DirectKeepOnPc.IsChecked = S.DirectKeepOnPc;
         DirectSeconds.Text = S.DirectCheckSeconds.ToString();
         DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…"
             : "Sharing directly with " + string.Join(", ", S.DirectFriends) + ".";
@@ -233,6 +234,7 @@ public partial class SettingsWindow : Window
         OpenDirectBtn.Click += (_, _) => app.Direct.ShowWindow(null, null);
         DirectReceive.Click += (_, _) => Change(s => s.DirectReceive = DirectReceive.IsChecked == true);
         DirectFront.Click += (_, _) => Change(s => s.DirectBringToFront = DirectFront.IsChecked == true);
+        DirectKeepOnPc.Click += (_, _) => Change(s => s.DirectKeepOnPc = DirectKeepOnPc.IsChecked == true);
         DirectSeconds.TextChanged += (_, _) =>
         {
             bool ok = int.TryParse(DirectSeconds.Text.Trim(), out var sec) && sec is >= 2 and <= 60;

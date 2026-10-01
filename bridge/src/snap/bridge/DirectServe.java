@@ -39,12 +39,12 @@ import java.util.concurrent.TimeoutException;
 /**
  * Long-running session for the direct mode. Each user keeps one folder per friend,
  * <code>/ME/PeergosSnap-Direct/FRIEND</code>, with one subfolder per month (<code>2026-10</code>). The folders are not
- * shared: every file sent to a friend is uploaded there and then that one file is shared read-only with that friend,
- * so the friend sees exactly what was sent to them, and a new share is made for every file (a friendship that ended
- * and started again needs nothing repaired). Only the sender can delete a file; deleting it ends the share.
+ * shared: every file sent to a friend is uploaded there and then that one file is shared read-only with that friend.
+ * The friend's session copies it into their own <code>MONTH/received</code> folder: from then on each side has its own
+ * copy and can only ever delete its own (deleting what you sent does not touch the copy your friend already has).
  * Labels, pins and stars of both sides' files are kept by each user in their own month folder
- * (<code>.snapmeta-USER.json</code>, keyed "SENDER/NAME"), shared read-only with the friend, so the two sides never
- * write into each other's folders.
+ * (<code>.snapmeta-USER.json</code>, keyed "SENDER/NAME", also remembering which files were copied: "got"), shared
+ * read-only with the friend, so the two sides never write into each other's folders.
  *
  * <pre>
  * stdin:  the session, then one JSON command per line: {"id":"1","cmd":"...", ...}
@@ -217,15 +217,9 @@ final class DirectServe {
             case "get": return map("file", get(direct(Json.str(c, "path")), Path.of(Objects.requireNonNull(Json.str(c, "to"), "to"))).toString());
             case "delete": {
                 String path = direct(Json.str(c, "path"));
-                String owner = path.split("/")[1];
-                if (!owner.equals(me)) {
-                    // Their file is only shared with me: their original stays in their Peergos. On my side it is
-                    // hidden for good (in my meta file, so on every PC); the app deletes its downloaded copy.
-                    Map<String, Object> h = new HashMap<>(c);
-                    h.put("hide", true);
-                    retry(() -> meta(h));
-                    return map("deleted", false, "hidden", true);
-                }
+                // Only my own copies: what I sent, or my copy of what I received. The friend's copy is theirs.
+                if (!path.split("/")[1].equals(me))
+                    throw new IllegalArgumentException("That is your friend's copy: only they can delete it");
                 return map("deleted", retry(() -> {
                     Optional<FileWrapper> f = await(ctx.getByPath(path));
                     if (f.isEmpty())
@@ -312,30 +306,94 @@ final class DirectServe {
         return await(d.get().getChildren(crypto.hasher, net));
     }
 
-    /** All files of one month between me and a friend (sent by either), with labels, pins and stars merged. */
+    /** Received copies live in my own month folder for the friend, in this subfolder (never shared). */
+    static final String RECEIVED = "received";
+
+    /**
+     * All files of one month between me and a friend – what I sent, and my own copies of what they sent – with labels,
+     * pins and stars of both sides merged. Files the friend shared with me that I have no copy of yet are copied into
+     * my <code>received</code> folder first: from then on that copy is mine (the sender deleting theirs does not touch
+     * it). Each file is copied once – "got" in my meta file remembers it, so a copy I deleted does not come back.
+     */
     List<Object> list(String friend, String month) {
-        List<Object> items = new ArrayList<>();
+        return list(friend, month, true);
+    }
+
+    List<Object> list(String friend, String month, boolean copyNew) {
+        String myDir = mine(friend) + "/" + month, theirDir = theirs(friend) + "/" + month, inDir = myDir + "/" + RECEIVED;
         Map<String, Map<String, Object>> meta = new HashMap<>();
+        Map<String, Object> myMeta = Map.of();
         List<Object[]> found = new ArrayList<>(); // {file, folder, sender}
-        for (String[] side : new String[][]{{mine(friend) + "/" + month, me}, {theirs(friend) + "/" + month, friend}}) {
-            for (FileWrapper k : files(side[0])) {
-                String n = k.getFileProperties().name;
-                if (k.isDirectory())
-                    continue;
-                if (n.equals(META_PREFIX + side[1] + ".json"))
-                    mergeMeta(meta, side[1], readMeta(side[0] + "/" + n, k));
-                else if (!n.startsWith("."))
-                    found.add(new Object[]{k, side[0], side[1]});
+        for (FileWrapper k : files(myDir)) {
+            String n = k.getFileProperties().name;
+            if (k.isDirectory())
+                continue;
+            if (n.equals(META_PREFIX + me + ".json")) {
+                myMeta = readMeta(myDir + "/" + n, k);
+                mergeMeta(meta, me, myMeta);
+            } else if (!n.startsWith("."))
+                found.add(new Object[]{k, myDir, me});
+        }
+        Map<String, FileWrapper> shared = new HashMap<>(); // the friend's originals shared with me
+        for (FileWrapper k : files(theirDir)) {
+            String n = k.getFileProperties().name;
+            if (k.isDirectory())
+                continue;
+            if (n.equals(META_PREFIX + friend + ".json"))
+                mergeMeta(meta, friend, readMeta(theirDir + "/" + n, k));
+            else if (!n.startsWith("."))
+                shared.put(n, k);
+        }
+        Set<String> have = new HashSet<>();
+        for (FileWrapper k : files(inDir)) {
+            String n = k.getFileProperties().name;
+            if (!k.isDirectory() && !n.startsWith(".")) {
+                found.add(new Object[]{k, inDir, friend});
+                have.add(n);
             }
         }
+        if (copyNew) {
+            List<String> fresh = new ArrayList<>();
+            for (String n : shared.keySet())
+                if (!have.contains(n) && !(myMeta.get(friend + "/" + n) instanceof Map<?, ?> it && Boolean.TRUE.equals(it.get("got"))))
+                    fresh.add(n);
+            if (!fresh.isEmpty()) {
+                Collections.sort(fresh);
+                List<String> got = new ArrayList<>();
+                for (String n : fresh) {
+                    try {
+                        retry(() -> {
+                            FileWrapper in = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend + "/" + month + "/" + RECEIVED, net, crypto);
+                            return await(shared.get(n).copyTo(in, ctx), WRITE);
+                        });
+                        got.add(friend + "/" + n);
+                    } catch (Exception e) {
+                        System.err.println("direct: copy " + theirDir + "/" + n + ": " + message(e)); // tried again at the next check
+                    }
+                }
+                if (!got.isEmpty()) {
+                    refresh();
+                    try {
+                        retry(() -> updateMyMeta(friend, month, items -> {
+                            for (String key : got)
+                                items.put(key, withEntry(items.get(key), "got", true));
+                            return null;
+                        }));
+                    } catch (Exception e) {
+                        // the copies exist, so they are not copied again; "got" is written with the next change
+                        System.err.println("direct: remember copies: " + message(e));
+                    }
+                    return list(friend, month, false);
+                }
+            }
+        }
+        List<Object> items = new ArrayList<>();
         // Peergos returns folder contents as an unordered set: a fixed order keeps the "changed" check from firing
         // on every poll when nothing changed.
         found.sort(Comparator.comparing((Object[] f) -> (String) f[2]).thenComparing(f -> ((FileWrapper) f[0]).getFileProperties().name));
         for (Object[] f : found) {
             FileProperties fp = ((FileWrapper) f[0]).getFileProperties();
             Map<String, Object> m = meta.getOrDefault(f[2] + "/" + fp.name, Map.of());
-            if (m.get("hiddenBy") instanceof List<?> hb && hb.contains(me))
-                continue; // I deleted it on my side (their original stays theirs)
             items.add(map("name", fp.name, "path", f[1] + "/" + fp.name, "from", f[2], "size", fp.size,
                     "modified", fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000,
                     "label", m.getOrDefault("label", ""), "pinned", m.getOrDefault("pinned", false),
@@ -364,14 +422,14 @@ final class DirectServe {
         }
     }
 
-    /** Label and pin: the newest change of either side wins. Stars: everyone who starred. Hidden: per user. */
+    /** Label and pin: the newest change of either side wins. Stars: everyone who starred. */
     @SuppressWarnings("unchecked")
     static void mergeMeta(Map<String, Map<String, Object>> into, String user, Map<String, Object> items) {
         for (Map.Entry<String, Object> e : items.entrySet()) {
             if (!(e.getValue() instanceof Map))
                 continue;
             Map<String, Object> it = (Map<String, Object>) e.getValue();
-            Map<String, Object> m = into.computeIfAbsent(e.getKey(), k -> new HashMap<>(Map.of("labelAt", -1L, "pinAt", -1L, "stars", new ArrayList<String>(), "hiddenBy", new ArrayList<String>())));
+            Map<String, Object> m = into.computeIfAbsent(e.getKey(), k -> new HashMap<>(Map.of("labelAt", -1L, "pinAt", -1L, "stars", new ArrayList<String>())));
             long la = Json.num(it, "labelAt", -1), pa = Json.num(it, "pinAt", -1);
             if (it.containsKey("label") && la > (long) m.get("labelAt")) {
                 m.put("label", Json.str(it, "label"));
@@ -381,8 +439,6 @@ final class DirectServe {
                 m.put("pinned", Json.bool(it, "pin"));
                 m.put("pinAt", pa);
             }
-            if (Json.bool(it, "hide"))
-                ((List<String>) m.get("hiddenBy")).add(user);
             if (Json.bool(it, "star"))
                 ((List<String>) m.get("stars")).add(user);
         }
@@ -456,14 +512,42 @@ final class DirectServe {
         return all;
     }
 
+    /** label / pin / star for one file (mine or my copy of the friend's); the key is "SENDER/NAME" on both sides. */
     @SuppressWarnings("unchecked")
     Map<String, Object> meta(Map<String, Object> c) throws Exception {
-        String path = direct(Json.str(c, "path"));
-        String[] p = path.split("/"); // "", sender, ROOT, other, month, name
-        String sender = p[1], month = p[4];
-        String friend = sender.equals(me) ? p[3] : sender;
-        String item = sender + "/" + p[5];
-        // My labels, pins and stars – also for my friend's files – live in my own folder for that month.
+        String[] p = direct(Json.str(c, "path")).split("/");
+        // "", owner, ROOT, other, month, name  |  "", me, ROOT, friend, month, "received", name (my copy of theirs)
+        boolean copy = p.length == 7;
+        String friend = p[1].equals(me) ? p[3] : p[1];
+        String sender = p[1].equals(me) && !copy ? me : friend;
+        String item = sender + "/" + p[p.length - 1];
+        long now = System.currentTimeMillis();
+        return (Map<String, Object>) updateMyMeta(friend, p[4], items -> {
+            Map<String, Object> it = items.get(item) instanceof Map ? new LinkedHashMap<>((Map<String, Object>) items.get(item)) : new LinkedHashMap<>();
+            if (c.containsKey("label")) { it.put("label", Json.str(c, "label")); it.put("labelAt", now); }
+            if (c.containsKey("pin")) { it.put("pin", Json.bool(c, "pin")); it.put("pinAt", now); }
+            if (c.containsKey("star")) it.put("star", Json.bool(c, "star"));
+            items.put(item, it);
+            return it;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> withEntry(Object existing, String key, Object value) {
+        Map<String, Object> m = existing instanceof Map ? new LinkedHashMap<>((Map<String, Object>) existing) : new LinkedHashMap<>();
+        m.put(key, value);
+        return m;
+    }
+
+    interface MetaChange { Object apply(Map<String, Object> items) throws Exception; }
+
+    /**
+     * Changes my meta file for one friend and month (in my own folder: labels, pins, stars – also for my copies of
+     * the friend's files – and which of their files I have copied, "got"). Shared read-only with the friend once, then
+     * overwritten in place so that share stays valid.
+     */
+    @SuppressWarnings("unchecked")
+    Object updateMyMeta(String friend, String month, MetaChange change) throws Exception {
         String dirPath = mine(friend) + "/" + month;
         FileWrapper dir = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend + "/" + month, net, crypto);
         String metaName = META_PREFIX + me + ".json";
@@ -479,17 +563,14 @@ final class DirectServe {
             }
         }
         Map<String, Object> items = (Map<String, Object>) doc.get("items");
-        Map<String, Object> it = items.get(item) instanceof Map ? new LinkedHashMap<>((Map<String, Object>) items.get(item)) : new LinkedHashMap<>();
-        long now = System.currentTimeMillis();
-        if (c.containsKey("label")) { it.put("label", Json.str(c, "label")); it.put("labelAt", now); }
-        if (c.containsKey("pin")) { it.put("pin", Json.bool(c, "pin")); it.put("pinAt", now); }
-        if (c.containsKey("star")) it.put("star", Json.bool(c, "star"));
-        if (c.containsKey("hide")) it.put("hide", Json.bool(c, "hide"));
-        items.put(item, it);
-        // Entries of files that are gone (on either side) are dropped, so the file stays small.
+        Object result = change.apply(items);
+        // Entries of files that exist nowhere any more are dropped, so the file stays small. "got" stays as long as
+        // the friend's original is still shared with me (so a copy I deleted is not copied again).
         Set<String> present = new HashSet<>();
         for (FileWrapper k : await(dir.getChildren(crypto.hasher, net)))
             present.add(me + "/" + k.getFileProperties().name);
+        for (FileWrapper k : files(dirPath + "/" + RECEIVED))
+            present.add(friend + "/" + k.getFileProperties().name);
         for (FileWrapper k : files(theirs(friend) + "/" + month))
             present.add(friend + "/" + k.getFileProperties().name);
         items.keySet().removeIf(k -> !present.contains(k));
@@ -503,7 +584,7 @@ final class DirectServe {
             await(ctx.shareReadAccessWith(PathUtil.get(dirPath + "/" + metaName), Set.of(friend)), WRITE);
         }
         metaCache.remove(dirPath + "/" + metaName);
-        return it;
+        return result;
     }
 
     /** Seconds to wait for Peergos: reads, and writes (uploads, shares, friend requests). */
@@ -608,9 +689,11 @@ final class DirectServe {
         if (path == null || path.contains("/../") || path.contains("\\") || path.endsWith("/.."))
             throw new IllegalArgumentException("Not a direct-sharing path: " + path);
         String[] p = path.split("/");
-        // "", owner, ROOT, other, month, name
-        boolean shape = p.length == 6 && p[0].isEmpty() && p[2].equals(ROOT) && p[4].matches("\\d{4}-\\d{2}") && !p[5].isEmpty();
-        if (!shape || !(p[1].equals(me) || p[3].equals(me)))
+        // "", owner, ROOT, other, month, name   or (my copies of what I received)   "", me, ROOT, friend, month, "received", name
+        boolean common = p.length >= 6 && p[0].isEmpty() && p[2].equals(ROOT) && p[4].matches("\\d{4}-\\d{2}") && !p[p.length - 1].isEmpty();
+        boolean file = common && p.length == 6 && (p[1].equals(me) || p[3].equals(me));
+        boolean copy = common && p.length == 7 && p[1].equals(me) && p[5].equals(RECEIVED);
+        if (!file && !copy)
             throw new IllegalArgumentException("Not a direct-sharing path: " + path);
         return path;
     }

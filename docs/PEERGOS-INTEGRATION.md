@@ -69,19 +69,23 @@ videos and other files without links:
 
 - Each user has `/<me>/PeergosSnap-Direct/<friend>/<yyyy-MM>/`. These folders are **not shared**. Sending = uploading
   into one's own month folder, then sharing **that one file read-only with that friend** (`shareReadAccessWith`).
-  The friend therefore sees exactly the files sent to them. Because every file gets its own new share, nothing needs
-  repairing when a friendship ends and starts again (2.2 development builds shared the whole folder for writing; after
-  an unfriend + re-friend Peergos kept the folder invisible to the friend).
+  The friend therefore sees exactly the files sent to them (2.2 development builds shared the whole folder for
+  writing).
 - The receiver lists `/<friend>/PeergosSnap-Direct/<me>/<month>`: Peergos shows the folders on the path to a file
-  shared with you, and in them only the shared files.
-- **Delete:** only the sender can delete a file (in their own Peergos, which also ends the share). The receiver's
-  *Delete* removes their downloaded copy and hides the file on their side: `"hide": true` in their own meta file, so
-  it stays hidden on every PC. The sender's original is untouched.
-- Labels, pins, stars and hides are kept by each user in **their own** month folder for that friend:
-  `.snapmeta-<user>.json` = `{"v":2,"items":{"<sender>/<name>":{"label","labelAt","pin","pinAt","star","hide"}}}`,
-  shared read-only with the friend once and afterwards **overwritten in place** (`overwriteFile`), so the friend's
-  share stays valid. Each side only writes its own file; on reading, the newest label and pin win, stars are the
-  union, and a hide only applies to the user who hid it. Neither side ever writes into the other's folders.
+  shared with you, and in them only the shared files. Each new file is **copied** into the receiver's own
+  `/<me>/PeergosSnap-Direct/<friend>/<month>/received/` (`FileWrapper.copyTo(dir, ctx)`), once: `"got": true` in the
+  receiver's meta file remembers it. From then on the receiver owns that copy; the sender cannot affect it.
+- **Delete** only ever deletes one's own copy (what I sent, or my copy of what I received) in my Peergos; the app also
+  deletes the PC copy. A deleted received copy is not copied again ("got" stays while the sender's original exists).
+- Labels, pins and stars are kept by each user in **their own** month folder for that friend:
+  `.snapmeta-<user>.json` = `{"v":2,"items":{"<sender>/<name>":{"label","labelAt","pin","pinAt","star","got"}}}`
+  (the same key for the sender's original and the receiver's copy), shared read-only with the friend once and
+  afterwards **overwritten in place** (`overwriteFile`), so the friend's share stays valid. Each side only writes its
+  own file; on reading, the newest label and pin win and stars are the union. Neither side ever writes into the
+  other's folders.
+- Received files are downloaded to the PC when they arrive only with *Also keep received files on this PC* (default on).
+- Peergos Snap does not manage friendships beyond checking them and offering a friend request / accept: it never
+  unfriends, and it does not repair sharing broken by unfriending elsewhere.
 - The app keeps one bridge process running (`serve`): it restores the session once and then answers JSON commands on
   stdin (`friends`, `discover`, `add`, `accept`, `decline`, `open`, `list`, `send`, `get`, `delete`, `meta`, `watch`,
   `quit`), one JSON answer per line on stdout. With `watch`, it lists the current month of both sides of each
