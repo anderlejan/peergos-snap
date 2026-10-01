@@ -194,12 +194,18 @@ public sealed class DirectHub : IDisposable
 
     async Task Receive(string friend, List<DirectItem> arrived)
     {
+        // The file is already copied into my Peergos (by the bridge); "Also keep received files on this PC" downloads it too.
         string? thumb = null;
-        foreach (var a in arrived.Where(a => a.IsImage))
-        {
-            try { thumb ??= await LocalFileAsync(friend, a); }
-            catch (DirectException e) { Log.Error($"direct: download {a.Path}: {e.Message}"); }
-        }
+        if (app.Settings.DirectKeepOnPc)
+            foreach (var a in arrived)
+            {
+                try
+                {
+                    var local = await LocalFileAsync(friend, a);
+                    if (a.IsImage) thumb ??= local;
+                }
+                catch (DirectException e) { Log.Error($"direct: download {a.Path}: {e.Message}"); }
+            }
         var newest = DirectLogic.Sort(arrived).First();
         var what = arrived.Count == 1 ? (newest.IsImage ? "a picture" : "a file")
             : $"{arrived.Count} {(arrived.All(a => a.IsImage) ? "pictures" : "files")}";

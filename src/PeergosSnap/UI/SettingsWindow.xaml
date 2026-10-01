@@ -205,7 +205,7 @@
             <TabItem Header="Direct">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Text="Pictures straight to a friend" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin or star it; you can delete what you sent for both of you, and what you received on your side. Each file is shared read-only with that friend only. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin or star it. Your friend gets their own copy in their Peergos, so it is theirs: Delete only ever removes your own copies. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <Button x:Name="OpenDirectBtn" Content="Open the direct window" Style="{DynamicResource AccentButtonStyle}"/>
                     </StackPanel>
@@ -214,10 +214,12 @@
                     <TextBlock Style="{StaticResource Hint}" Text="Keeps a connection to Peergos open in the background while you share with friends (it uses some memory). Off: pictures from friends only arrive while the direct window is open."/>
                     <CheckBox x:Name="DirectFront" Content="Show the direct window when a friend sends something"/>
                     <TextBlock Style="{StaticResource Hint}" Text="It comes to the front without taking the keyboard from the app you are typing in. Off: only a notification card."/>
+                    <CheckBox x:Name="DirectKeepOnPc" Content="Also keep received files on this PC"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Every file you receive is copied into your Peergos (PeergosSnap-Direct/(friend)/(month)/received). On: it is also downloaded to this PC when it arrives. Off: it stays only in your Peergos and is downloaded when you open it."/>
                     <TextBlock Text="Check for new pictures every (seconds, 2 to 60)"/>
                     <TextBox x:Name="DirectSeconds" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DirectSecondsErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 2 to 60"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Where the pictures are: in Peergos, in PeergosSnap-Direct/(friend)/(month) of each of you; on this PC, a copy of everything you open or receive in the Direct folder next to the captures folder."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Where the files are: in your Peergos, PeergosSnap-Direct/(friend)/(month) holds what you sent (each file shared read-only with that friend) and received/ your copies of what they sent; on this PC, the Direct folder next to the captures folder."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Hotkeys">

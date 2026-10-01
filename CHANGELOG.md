@@ -7,8 +7,9 @@
   *Direct to a friend*). It appears on their side within seconds, in a window where both of you can zoom, save, label,
   pin and star it – labels, pins and stars are seen by both. What you send stays in your Peergos
   (`PeergosSnap-Direct/<friend>/<month>`); each file is shared read-only with that friend only – the folder is not
-  shared and no link is created. *Delete* removes what you sent for both of you; what you received is deleted on your
-  side only (the sender's original stays theirs). Friends are
+  shared and no link is created. The receiver's Peergos Snap copies it into their own Peergos (`…/<month>/received`),
+  so each side has its own copy, and *Delete* only ever deletes your own. *Also keep received files on this PC*
+  (Settings → Direct, on by default) downloads what arrives. Friends are
   added in the window (*Friends…*: friend requests sent and accepted there). The receiving side needs nothing but
   Peergos Snap running and signed in. New Settings page *Direct*.
 - **Sound in videos.** Videos get the sound Windows plays while recording (on by default; tray menu → *Videos* →

@@ -80,6 +80,8 @@ public sealed class Settings
     public List<string> DirectFriends { get; set; } = [];
     /// <summary>Show the direct window (without taking the keyboard) when a friend sends something.</summary>
     public bool DirectBringToFront { get; set; } = true;
+    /// <summary>Received files are kept in your Peergos; this also downloads each one to this PC when it arrives.</summary>
+    public bool DirectKeepOnPc { get; set; } = true;
     /// <summary>How often the friends' folders are checked for new pictures.</summary>
     public int DirectCheckSeconds { get; set; } = 3;
     public string DirectLastFriend { get; set; } = "";

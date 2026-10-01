@@ -11,8 +11,8 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
   to stop. A short dialog then offers *Upload & copy link*, *Copy video*, *Save as…* or *Discard*.
 - **Direct to a friend.** Drop, paste or capture a picture (or send a video or any file) and it appears on your
   friend's screen within seconds, in a window where both of you can zoom, save, label, pin and star it. Each file is
-  shared read-only with that one friend; you can delete what you sent for both of you, and what you received on your
-  side.
+  shared read-only with that one friend, who gets their own copy in their Peergos; Delete only ever removes your own
+  copy.
 - **Discard** any capture from its notification card: gone from this PC, Peergos, the clipboard and the history.
 - **Two outputs, switched in the tray menu.** *Secret link* uploads the capture to Peergos and copies a link.
   *Media to clipboard* copies the picture or video file itself, ready for Ctrl+V.
