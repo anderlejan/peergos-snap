@@ -75,7 +75,8 @@ $Stage = "$Root\out\stage"
 if (Test-Path "$Root\out") { Remove-Item -Recurse -Force "$Root\out" }
 $Classes = "$Root\out\bridge-classes"
 New-Item -ItemType Directory -Force $Classes, "$Stage\bridge" | Out-Null
-Run "$Jdk\bin\javac.exe" @('-nowarn', '-XDsuppressNotes', '-encoding', 'UTF-8', '-cp', $PeergosJar, '-d', $Classes, "$Root\bridge\src\snap\bridge\PeergosBridge.java")
+$BridgeSources = Get-ChildItem "$Root\bridge\src\snap\bridge" -Filter *.java | ForEach-Object FullName
+Run "$Jdk\bin\javac.exe" (@('-nowarn', '-XDsuppressNotes', '-encoding', 'UTF-8', '-cp', $PeergosJar, '-d', $Classes) + $BridgeSources)
 Run "$Jdk\bin\jar.exe" @('--create', '--file', "$Stage\bridge\peergos-snap-bridge.jar", '--date', '2026-01-01T00:00:00Z', '-C', $Classes, '.')
 Copy-Item $PeergosJar "$Stage\bridge\Peergos.jar"
 
