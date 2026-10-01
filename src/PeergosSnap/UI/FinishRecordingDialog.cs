@@ -14,7 +14,7 @@ public sealed class FinishRecordingDialog : Window
 {
     public FinishChoice Choice { get; private set; } = FinishChoice.KeepLocal;
 
-    public FinishRecordingDialog(string file, TimeSpan length, Settings s, bool video = true)
+    public FinishRecordingDialog(string file, TimeSpan length, Settings s, bool video = true, string soundNote = "")
     {
         Title = video ? "Peergos Snap – recording finished" : "Peergos Snap – picture taken";
         SizeToContent = SizeToContent.WidthAndHeight;
@@ -27,7 +27,7 @@ public sealed class FinishRecordingDialog : Window
         var size = new FileInfo(file).Length;
         var info = new TextBlock
         {
-            Text = video ? $"{Path.GetFileName(file)}\n{length:mm\\:ss} · {size / 1024.0 / 1024.0:0.0} MB"
+            Text = video ? $"{Path.GetFileName(file)}\n{length:mm\\:ss} · {size / 1024.0 / 1024.0:0.0} MB" + (soundNote.Length > 0 ? " · " + soundNote : "")
                          : $"{Path.GetFileName(file)}\n{HistoryLogic.Size(size)}",
             Margin = new Thickness(0, 0, 0, 12),
         };

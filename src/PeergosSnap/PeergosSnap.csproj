@@ -32,6 +32,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
+    <!-- System sound for videos (WASAPI loopback). MIT licence, see THIRD-PARTY-NOTICES.md. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>

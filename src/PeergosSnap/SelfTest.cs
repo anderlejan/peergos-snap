@@ -30,7 +30,7 @@ public static class SelfTest
         AppPaths.Override(Path.Combine(tmp, "data"), Path.Combine(tmp, "local"));
         try
         {
-            var s = new Settings { FrameRate = 15 };
+            var s = new Settings { FrameRate = 15, RecordSound = false };
 
             Check("ffmpeg bundled", Recorder.FfmpegAvailable, AppPaths.FfmpegExe);
             Check("java runtime bundled", File.Exists(AppPaths.JavaExe), AppPaths.JavaExe);
@@ -71,9 +71,9 @@ public static class SelfTest
                 int cx = rect.X + 100, cy = rect.Y + 50;
                 Native.SetCursorPos(cx, cy);
                 Thread.Sleep(1200); // let hover effects under the pointer settle
-                var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true }, rect);
-                var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
-                var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false }, rect);
+                var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true, RecordSound = false }, rect);
+                var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
+                var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
                 Native.SetCursorPos(before.X, before.Y);
                 int w = Geometry.EvenSize(rect).Width;
                 int changed = Diff(withPointer, withoutPointer, w, 100, 50, 14, 20);
@@ -81,6 +81,36 @@ public static class SelfTest
                 // Compressed video differs a little between two recordings of the same screen; the pointer must stand far above that.
                 Check("mouse pointer shown / hidden in videos", changed >= 40 && changed >= 3 * Math.Max(noise, 1),
                     $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it");
+
+                // Sound: a tone played while recording (with a pause in between) must be in the video, in full length.
+                try
+                {
+                    var toned = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
+                    toned.Start();
+                    var tone = LoopbackRecorder.PlayToneAsync(TimeSpan.FromSeconds(3.2));
+                    Thread.Sleep(1500);
+                    toned.PauseAsync().Wait();
+                    Thread.Sleep(300);
+                    toned.Resume();
+                    Thread.Sleep(1300);
+                    var tv = toned.StopAsync().Result;
+                    tone.Wait();
+                    var tp = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", tv]);
+                    Check("video with sound (test tone, paused once)", toned.HasSound && tp.Contains("Audio:") && tp.Contains("Duration: 00:00:02"),
+                        $"{toned.SoundNote}; {FirstLine(tp, "Duration")}; {FirstLine(tp, "Audio:")} (if this fails: is the PC muted or without speakers?)");
+                    toned.Cleanup();
+
+                    // Silence: no sound track at all (only noted, because something else may be playing on this PC).
+                    var quiet = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
+                    quiet.Start();
+                    Thread.Sleep(1200);
+                    var qv = quiet.StopAsync().Result;
+                    var qp = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", qv]);
+                    if (!quiet.HasSound && !qp.Contains("Audio:")) Check("silent recording has no sound track", true, quiet.SoundNote);
+                    else report.Add("NOTE silent recording got sound – was something playing on this PC? " + quiet.SoundNote);
+                    quiet.Cleanup();
+                }
+                catch (Exception e) { Check("video with sound", false, e.Message); }
             }
 
             // Bridge

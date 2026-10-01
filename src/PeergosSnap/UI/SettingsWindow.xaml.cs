@@ -63,6 +63,7 @@ public partial class SettingsWindow : Window
         Quality.Value = S.VideoQuality;
         QualityLabel.Text = $"Video quality (CRF {S.VideoQuality})";
         RecordCursor.IsChecked = S.RecordCursor;
+        RecordSound.IsChecked = S.RecordSound;
         DelayBox.Text = S.DelaySeconds.ToString();
         foreach (ComboBoxItem i in SubfolderBox.Items)
             if ((string)i.Tag == S.Subfolders.ToString()) SubfolderBox.SelectedItem = i;
@@ -163,6 +164,7 @@ public partial class SettingsWindow : Window
         FrameRate.SelectionChanged += (_, _) => Change(s => s.FrameRate = int.Parse(Sel(FrameRate)));
         Quality.ValueChanged += (_, _) => { QualityLabel.Text = $"Video quality (CRF {(int)Quality.Value})"; Change(s => s.VideoQuality = (int)Quality.Value); };
         RecordCursor.Click += (_, _) => Change(s => s.RecordCursor = RecordCursor.IsChecked == true);
+        RecordSound.Click += (_, _) => Change(s => s.RecordSound = RecordSound.IsChecked == true);
         DelayBox.TextChanged += (_, _) =>
         {
             bool ok = int.TryParse(DelayBox.Text.Trim(), out var sec) && sec is >= 0 and <= 60;

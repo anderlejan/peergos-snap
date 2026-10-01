@@ -7,6 +7,8 @@ namespace PeergosSnap.Services;
 /// <summary>
 /// Records a screen region with the bundled FFmpeg (gdigrab). Pause stops the current segment; resume starts a
 /// new one; Stop joins the segments without re-encoding. Cancel throws everything away.
+/// With "Record sound" each segment also gets the sound Windows plays (<see cref="LoopbackRecorder"/>); on Stop it is
+/// added to the video – but only if there was any sound at all.
 /// </summary>
 public sealed class Recorder
 {
@@ -14,6 +16,10 @@ public sealed class Recorder
     readonly Settings s;
     readonly string workDir;
     readonly List<string> segments = [];
+    /// <summary>Per segment: its sound recorder (null = none) and when the video began on that recorder's clock.</summary>
+    readonly List<(LoopbackRecorder? Sound, double VideoStart)> sounds = [];
+    LoopbackRecorder? sound;
+    bool soundBroken;
     readonly Stopwatch clock = new();
     Process? ff;
     string lastError = "";
@@ -21,6 +27,9 @@ public sealed class Recorder
     public bool Paused { get; private set; }
     public TimeSpan Elapsed => clock.Elapsed;
     public PxRect Region => region;
+    /// <summary>After <see cref="StopAsync"/>: whether the video got a sound track, and why not.</summary>
+    public bool HasSound { get; private set; }
+    public string SoundNote { get; private set; } = "";
 
     public Recorder(PxRect region, Settings s)
     {
@@ -53,10 +62,39 @@ public sealed class Recorder
         foreach (var a in FfmpegArgs.Record(region, s.FrameRate, s.RecordCursor, s.VideoQuality, s.VideoFormat, seg))
             psi.ArgumentList.Add(a);
         var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        p.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) lastError = e.Data; };
+        // The sound starts just before FFmpeg; FFmpeg's start line tells how much sound came before the first frame.
+        LoopbackRecorder? snd = null;
+        if (s.RecordSound && !soundBroken)
+        {
+            try
+            {
+                snd = new LoopbackRecorder(Path.Combine(workDir, $"seg{segments.Count:000}.wav"));
+                snd.Start();
+            }
+            catch (Exception e)
+            {
+                Log.Error("sound capture", e);
+                snd?.Dispose();
+                snd = null;
+                soundBroken = true; // all segments or none: a video cannot have sound in some parts only
+                SoundNote = "No sound: Windows gave no access to its sound output (" + e.Message + ")";
+            }
+        }
+        int index = sounds.Count;
+        sounds.Add((snd, 0));
+        p.ErrorDataReceived += (_, e) =>
+        {
+            if (AudioMath.IsVideoStartLine(e.Data))
+            {
+                if (snd != null) lock (sounds) sounds[index] = (snd, snd.Elapsed.TotalSeconds);
+                return;
+            }
+            if (AudioMath.IsProblemLine(e.Data)) lastError = e.Data!;
+        };
         p.Start();
         p.BeginErrorReadLine();
         ff = p;
+        sound = snd;
         segments.Add(seg);
         Log.Info($"record: segment {segments.Count} {region}");
     }
@@ -64,8 +102,10 @@ public sealed class Recorder
     async Task StopSegmentAsync()
     {
         var p = ff;
+        var snd = sound;
         ff = null;
-        if (p == null) return;
+        sound = null;
+        if (p == null) { if (snd != null) await snd.StopAsync().ConfigureAwait(false); return; }
         try
         {
             if (!p.HasExited)
@@ -81,7 +121,11 @@ public sealed class Recorder
         {
             try { p.Kill(true); } catch { }
         }
-        finally { p.Dispose(); }
+        finally
+        {
+            p.Dispose();
+            if (snd != null) await snd.StopAsync().ConfigureAwait(false);
+        }
     }
 
     public bool HasFailed => ff is { HasExited: true } && ff.ExitCode != 0;
@@ -112,6 +156,7 @@ public sealed class Recorder
         if (done.Count == 0)
             throw new InvalidOperationException("Nothing was recorded" + (lastError.Length > 0 ? ": " + lastError : ""));
         var output = Path.Combine(workDir, FileNames.ForCapture(DateTime.Now, s.VideoFormat));
+        done = await AddSound(done).ConfigureAwait(false);
         if (done.Count == 1)
         {
             if (s.VideoFormat == "mp4" && await RunFfmpeg(FfmpegArgs.Remux(done[0], output)).ConfigureAwait(false)) return output;
@@ -123,6 +168,42 @@ public sealed class Recorder
         if (!await RunFfmpeg(FfmpegArgs.Concat(list, s.VideoFormat, output)).ConfigureAwait(false))
             throw new InvalidOperationException("Could not join the recorded parts: " + lastError);
         return output;
+    }
+
+    /// <summary>Adds each segment's sound to it – if the whole recording had any sound and every segment has its
+    /// sound file. Returns the segments to join (with sound, or the original ones).</summary>
+    async Task<List<string>> AddSound(List<string> done)
+    {
+        if (!s.RecordSound) return done;
+        List<(LoopbackRecorder? Sound, double VideoStart)> all;
+        lock (sounds) all = segments.Select((f, i) => i < sounds.Count ? sounds[i] : (null, 0)).ToList();
+        var parts = segments.Select((f, i) => (Video: f, all[i].Sound, all[i].VideoStart)).Where(x => done.Contains(x.Video)).ToList();
+        if (parts.Any(x => x.Sound == null || !File.Exists(x.Sound.File)))
+        {
+            if (SoundNote.Length == 0) SoundNote = "No sound: it could not be recorded";
+            return done;
+        }
+        float peak = parts.Max(x => x.Sound!.Peak);
+        Log.Info($"record: sound peak {peak:0.0000}");
+        if (peak < AudioMath.SilenceThreshold)
+        {
+            SoundNote = "No sound: Windows played nothing while recording";
+            return done;
+        }
+        var withSound = new List<string>();
+        foreach (var (video, snd, start) in parts)
+        {
+            var target = Path.Combine(workDir, Path.GetFileNameWithoutExtension(video) + "-a." + s.VideoFormat);
+            if (!await RunFfmpeg(AudioMath.MuxArgs(video, snd!.File, start, s.VideoFormat, target)).ConfigureAwait(false))
+            {
+                SoundNote = "No sound: it could not be added to the video";
+                return done;
+            }
+            withSound.Add(target);
+        }
+        HasSound = true;
+        SoundNote = "With sound";
+        return withSound;
     }
 
     public async Task CancelAsync()

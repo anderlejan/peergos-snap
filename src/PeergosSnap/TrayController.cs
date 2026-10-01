@@ -337,6 +337,7 @@ public sealed class TrayController : IDisposable
         m.Items.Add(Item("    Media to clipboard (no upload)", () => UpdateSettings(s => s.Output = OutputMode.DirectMedia), check: Settings.Output == OutputMode.DirectMedia));
         m.Items.Add(new WinForms.ToolStripLabel("Videos"));
         m.Items.Add(Item("    Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
+        m.Items.Add(Item("    Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
         m.Items.Add(new WinForms.ToolStripSeparator());
         if (lastLink != null) m.Items.Add(Item("Copy last link", () => ClipboardService.SetText(lastLink)));
         m.Items.Add(Item("History…", ShowHistory));
@@ -685,7 +686,8 @@ public sealed class TrayController : IDisposable
             stopping = false;
             UpdateTip();
 
-            var dlg = new FinishRecordingDialog(cached, rec.Elapsed, Settings);
+            Log.Info("video sound: " + rec.SoundNote);
+            var dlg = new FinishRecordingDialog(cached, rec.Elapsed, Settings, soundNote: Settings.RecordSound ? rec.SoundNote : "");
             dlg.ShowDialog();
             Log.Info("video " + cached + " -> " + dlg.Choice);
             await Finish(cached, record, dlg.Choice);
