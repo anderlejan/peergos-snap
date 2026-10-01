@@ -64,34 +64,49 @@ future folder feature.
 
 ## Direct mode (2.2): sharing with a friend
 
-Two users who are **friends in Peergos** (a follow request sent and accepted with reciprocation) share pictures
-without links:
+Two users who are **friends in Peergos** (a follow request sent and accepted with reciprocation) share pictures,
+videos and other files without links:
 
-- Each user has `/<me>/PeergosSnap-Direct/<friend>/`, shared **for writing with that friend only**
-  (`shareWriteAccessWith`). Pictures go into one subfolder per month (`2026-10`), created inside the shared folder,
-  so the friend can read and write them too. Sending = uploading into one's own folder.
+- Each user has `/<me>/PeergosSnap-Direct/<friend>/<yyyy-MM>/`. These folders are **not shared**. Sending = uploading
+  into one's own month folder, then sharing **that one file read-only with that friend** (`shareReadAccessWith`).
+  The friend therefore sees exactly the files sent to them. Because every file gets its own new share, nothing needs
+  repairing when a friendship ends and starts again (2.2 development builds shared the whole folder for writing; after
+  an unfriend + re-friend Peergos kept the folder invisible to the friend).
+- The receiver lists `/<friend>/PeergosSnap-Direct/<me>/<month>`: Peergos shows the folders on the path to a file
+  shared with you, and in them only the shared files.
+- **Delete:** only the sender can delete a file (in their own Peergos, which also ends the share). The receiver's
+  *Delete* removes their downloaded copy and hides the file on their side: `"hide": true` in their own meta file, so
+  it stays hidden on every PC. The sender's original is untouched.
+- Labels, pins, stars and hides are kept by each user in **their own** month folder for that friend:
+  `.snapmeta-<user>.json` = `{"v":2,"items":{"<sender>/<name>":{"label","labelAt","pin","pinAt","star","hide"}}}`,
+  shared read-only with the friend once and afterwards **overwritten in place** (`overwriteFile`), so the friend's
+  share stays valid. Each side only writes its own file; on reading, the newest label and pin win, stars are the
+  union, and a hide only applies to the user who hid it. Neither side ever writes into the other's folders.
 - The app keeps one bridge process running (`serve`): it restores the session once and then answers JSON commands on
   stdin (`friends`, `discover`, `add`, `accept`, `decline`, `open`, `list`, `send`, `get`, `delete`, `meta`, `watch`,
-  `quit`), one JSON answer per line on stdout. With `watch`, it lists the current month of both folders of each
+  `quit`), one JSON answer per line on stdout. With `watch`, it lists the current month of both sides of each
   watched friend every few seconds and prints a `changed` event whenever anything differs. "Instant" therefore means
   within the check interval (3 s by default) plus Peergos' own caching of folder versions.
-- Labels, pins and stars are stored next to the pictures, one file per user and folder:
-  `.snapmeta-<user>.json` = `{"v":1,"items":{"<name>":{"label","labelAt","pin","pinAt","star"}}}`. Each side only
-  writes its own file, so they never overwrite each other; on reading, the newest label and pin win and stars are
-  the union.
-- A long-running session caches folder versions. When the other side changed a folder, a write is refused
+- A long-running session caches folder versions. When the account changed a folder elsewhere, a write is refused
   ("concurrent modification") or fails on a missing parent; the session then signs in again from the session data
-  (`NetworkAccess.clear()` + `restoreContext`) and retries.
+  (`NetworkAccess.clear()` + `restoreContext`) and retries. `discover` (every 5 minutes) also starts from a fresh
+  session, so files shared since the last check are seen.
 - Some Peergos calls never complete – for example reading a friend's folder after that friend unfriended you
   (revoked access): the future simply never finishes. The session therefore waits at most 60 s for a read and
   5 minutes for a write. A friend whose folder times out is checked again only after 2 minutes, on a fresh session,
   and `discover` skips them, so one such friend never holds up the others or the user's commands.
-- `discover` lists friends who have a direct folder for this user, so the receiving side is set up without doing
+- `discover` lists friends who have shared something with this user, so the receiving side is set up without doing
   anything. The app only keeps the session running while there are friends to share with.
 - Only paths of the shape `/<owner>/PeergosSnap-Direct/<other>/<yyyy-MM>/<name>` with this user as owner or other
   are accepted by `get`, `delete` and `meta`.
 
-Tested end to end against a local Peergos 1.35.1 server with two accounts (friend request, sharing, sending, receiving
-without asking, identical download, labels/pins/stars both ways, newest label wins, non-ASCII and duplicate names,
-deleting in the friend's folder, refusing other paths).
+### Peergos social behaviour worth knowing (found while testing)
 
+- `UserContext.unfollow(user)` also **blocks** the user (appends to the blocked-usernames file); `unblock(user)` undoes
+  it. `removeFollower(user)` revokes everything ever shared with that user and deletes `/<me>/shared/<user>`.
+- If a follow request to someone is still pending when `removeFollower` deletes that folder, their later reply can
+  never be processed (`processFollowRequests` throws a NullPointerException on `ourDirForThem`) and every
+  `getSocialState()` fails until the pending entry is removed (private `removeFromPendingOutgoing`) or the reply is
+  discarded (`network.social.removeFollowRequest` with the signed request).
+- Two sessions of the same account changing social state at the same time (e.g. the web app and Peergos Snap) can
+  leave a friendship half done; sign in again (fresh session) before retrying.

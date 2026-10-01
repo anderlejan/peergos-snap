@@ -9,9 +9,10 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **Region video (MP4 or WebM) with sound** – the sound Windows plays, only when there is any – and a floating
   Stop · Pause · Cancel bar that never shows in the video. You can also click the tray icon once to start and again
   to stop. A short dialog then offers *Upload & copy link*, *Copy video*, *Save as…* or *Discard*.
-- **Direct to a friend.** Drop, paste or capture a picture and it appears on your friend's screen within seconds, in
-  a window where both of you can zoom, save, label, pin, star and delete it. Built on a Peergos folder per friend
-  that only the two of you can see.
+- **Direct to a friend.** Drop, paste or capture a picture (or send a video or any file) and it appears on your
+  friend's screen within seconds, in a window where both of you can zoom, save, label, pin and star it. Each file is
+  shared read-only with that one friend; you can delete what you sent for both of you, and what you received on your
+  side.
 - **Discard** any capture from its notification card: gone from this PC, Peergos, the clipboard and the history.
 - **Two outputs, switched in the tray menu.** *Secret link* uploads the capture to Peergos and copies a link.
   *Media to clipboard* copies the picture or video file itself, ready for Ctrl+V.

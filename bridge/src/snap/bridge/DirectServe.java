@@ -12,7 +12,6 @@ package snap.bridge;
 import peergos.shared.Crypto;
 import peergos.shared.NetworkAccess;
 import peergos.shared.social.FollowRequestWithCipherText;
-import peergos.shared.user.FileSharedWithState;
 import peergos.shared.user.SocialState;
 import peergos.shared.user.UserContext;
 import peergos.shared.user.fs.AsyncReader;
@@ -39,10 +38,13 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Long-running session for the direct mode. Each user keeps one folder per friend,
- * <code>/ME/PeergosSnap-Direct/FRIEND</code>, shared for writing with that friend only, with one subfolder per month
- * (<code>2026-10</code>). Pictures sent to a friend go into the sender's folder; both sides can label, pin, star and
- * delete in both folders. Labels, pins and stars live next to the pictures in one small file per user
- * (<code>.snapmeta-USER.json</code>), so the two sides never overwrite each other.
+ * <code>/ME/PeergosSnap-Direct/FRIEND</code>, with one subfolder per month (<code>2026-10</code>). The folders are not
+ * shared: every file sent to a friend is uploaded there and then that one file is shared read-only with that friend,
+ * so the friend sees exactly what was sent to them, and a new share is made for every file (a friendship that ended
+ * and started again needs nothing repaired). Only the sender can delete a file; deleting it ends the share.
+ * Labels, pins and stars of both sides' files are kept by each user in their own month folder
+ * (<code>.snapmeta-USER.json</code>, keyed "SENDER/NAME"), shared read-only with the friend, so the two sides never
+ * write into each other's folders.
  *
  * <pre>
  * stdin:  the session, then one JSON command per line: {"id":"1","cmd":"...", ...}
@@ -65,7 +67,8 @@ final class DirectServe {
     final Crypto crypto;
     final String session;
     final PrintStream out;
-    final Set<String> sharedWith = new HashSet<>();
+    /** Friends whose folder on my side exists (checked once per session). */
+    final Set<String> opened = new HashSet<>();
     final Map<String, String> lastSignature = new HashMap<>();
     final Map<String, Object[]> metaCache = new HashMap<>(); // path -> {modified, size, parsed}
     /** Friends whose folders did not answer: not checked again before this time (ms). */
@@ -169,10 +172,10 @@ final class DirectServe {
         switch (cmd) {
             case "friends": return friends();
             case "discover": {
-                // Friends who opened a direct folder for me: the app watches them without being asked.
-                // A fresh session, so folders shared with me since the last check (or shared again) are seen.
+                // Friends who have sent me something directly: the app watches them without being asked.
+                // A fresh session, so files shared with me since the last check are seen.
                 refresh();
-                sharedWith.clear();
+                opened.clear();
                 Map<String, Object> r = friends();
                 List<String> direct = new ArrayList<>();
                 for (Object f : (List<?>) r.get("friends"))
@@ -190,8 +193,6 @@ final class DirectServe {
                 if (user.equals(me))
                     throw new IllegalArgumentException("That is your own username");
                 boolean sent = await(ctx.sendInitialFollowRequest(user), WRITE);
-                // If we were friends before, my old folder for them must be shared again once they accept.
-                markReshare(user);
                 return map("sent", sent);
             }
             case "accept":
@@ -202,19 +203,11 @@ final class DirectServe {
                     if (user.equals(r.getEntry().ownerName)) {
                         boolean yes = cmd.equals("accept");
                         await(ctx.sendReplyFollowRequest(r, yes, yes), WRITE);
-                        if (yes) {
-                            // Friends (again): a folder for them from an earlier friendship is shared again – now if
-                            // Peergos already counts us as friends, otherwise (their side has not completed the
-                            // friendship yet) at the next "open", thanks to the mark.
-                            refresh();
-                            markReshare(user);
-                            try { reshare(user); } catch (Exception e) { System.err.println("direct: reshare " + user + ": " + message(e)); }
-                        }
                         return map("done", true);
                     }
                 throw new IllegalStateException("No friend request from " + user);
             }
-            case "open": return map("folder", ensureShared(name(Json.str(c, "friend"))));
+            case "open": return map("folder", ensureOpen(name(Json.str(c, "friend"))));
             case "list": {
                 String friend = name(Json.str(c, "friend"));
                 String month = month(Json.str(c, "month"));
@@ -224,6 +217,15 @@ final class DirectServe {
             case "get": return map("file", get(direct(Json.str(c, "path")), Path.of(Objects.requireNonNull(Json.str(c, "to"), "to"))).toString());
             case "delete": {
                 String path = direct(Json.str(c, "path"));
+                String owner = path.split("/")[1];
+                if (!owner.equals(me)) {
+                    // Their file is only shared with me: their original stays in their Peergos. On my side it is
+                    // hidden for good (in my meta file, so on every PC); the app deletes its downloaded copy.
+                    Map<String, Object> h = new HashMap<>(c);
+                    h.put("hide", true);
+                    retry(() -> meta(h));
+                    return map("deleted", false, "hidden", true);
+                }
                 return map("deleted", retry(() -> {
                     Optional<FileWrapper> f = await(ctx.getByPath(path));
                     if (f.isEmpty())
@@ -270,66 +272,17 @@ final class DirectServe {
         return l;
     }
 
-    /** The folder for this friend exists and is shared for writing with them (only friends can be shared with). */
-    String ensureShared(String friend) {
-        String path = "/" + me + "/" + ROOT + "/" + friend;
-        if (sharedWith.contains(friend))
+    /** My folder for this friend exists (files can only be shared with friends). */
+    String ensureOpen(String friend) {
+        String path = mine(friend);
+        if (opened.contains(friend))
             return path;
         if (!await(ctx.getSocialState()).getFriends().contains(friend))
             throw new IllegalStateException("Not friends with " + friend + " yet: send a friend request and wait until " + friend + " accepts it");
-        FileWrapper dir = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend, net, crypto);
-        if (await(dir.getChild(RESHARE_MARK, crypto.hasher, net)).isPresent()) {
-            reshare(friend); // asked for when the friend request was sent (see "add")
-            return path;
-        }
-        FileSharedWithState st = await(ctx.sharedWith(PathUtil.get(path)));
-        if (!st.writeAccess.contains(friend))
-            await(ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)), WRITE);
-        sharedWith.add(friend);
+        PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend, net, crypto);
+        opened.add(friend);
         return path;
     }
-
-    /** Marks my folder for this friend to be shared again (it exists from an earlier friendship). */
-    static final String RESHARE_MARK = ".snapreshare";
-
-    void markReshare(String friend) {
-        try {
-            Optional<FileWrapper> dir = await(ctx.getByPath(mine(friend)));
-            if (dir.isEmpty())
-                return; // never shared: nothing to repair
-            byte[] b = "{\"v\":1}".getBytes(StandardCharsets.UTF_8);
-            await(dir.get().uploadOrReplaceFile(RESHARE_MARK, AsyncReader.build(b), b.length, net, crypto, () -> false, x -> {}), WRITE);
-        } catch (Exception e) {
-            System.err.println("direct: mark " + friend + ": " + message(e));
-        }
-    }
-
-    /**
-     * Shares my existing folder for this friend again. Peergos drops a friend's access when the friendship ends, but
-     * still lists them as having write access, so after friending again the folder would stay invisible to them.
-     * Unsharing first gives the folder new keys; sharing then sends the friend a working capability.
-     */
-    void reshare(String friend) {
-        String path = mine(friend);
-        Optional<FileWrapper> dir = await(ctx.getByPath(path));
-        if (dir.isEmpty())
-            return; // created and shared when first needed
-        if (!await(ctx.getSocialState()).getFriends().contains(friend))
-            return; // not friends yet: the mark stays until they are
-        FileSharedWithState st = await(ctx.sharedWith(PathUtil.get(path)));
-        if (st.writeAccess.contains(friend)) {
-            await(ctx.unShareWriteAccess(PathUtil.get(path), friend), WRITE);
-            refresh();
-        }
-        await(ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)), WRITE);
-        refresh();
-        Optional<FileWrapper> mark = await(ctx.getByPath(path + "/" + RESHARE_MARK));
-        if (mark.isPresent())
-            await(mark.get().remove(folder(path), PathUtil.get(path + "/" + RESHARE_MARK), ctx), WRITE);
-        sharedWith.add(friend);
-        System.err.println("direct: shared " + path + " again with " + friend);
-    }
-
     // ---------- listing ----------
 
     String mine(String friend) { return "/" + me + "/" + ROOT + "/" + friend; }
@@ -350,44 +303,47 @@ final class DirectServe {
         return new ArrayList<>(ms);
     }
 
-    /** All pictures of one month between me and a friend (both folders), with labels, pins and stars merged. */
+    /** The files of one month folder: my own folder, or the files of the friend's folder that are shared with me
+     * (Peergos shows only those). Empty when the folder does not exist or nothing in it is shared with me. */
+    Set<FileWrapper> files(String dir) {
+        Optional<FileWrapper> d = await(ctx.getByPath(dir));
+        if (d.isEmpty() || !d.get().isDirectory())
+            return Set.of();
+        return await(d.get().getChildren(crypto.hasher, net));
+    }
+
+    /** All files of one month between me and a friend (sent by either), with labels, pins and stars merged. */
     List<Object> list(String friend, String month) {
         List<Object> items = new ArrayList<>();
+        Map<String, Map<String, Object>> meta = new HashMap<>();
+        List<Object[]> found = new ArrayList<>(); // {file, folder, sender}
         for (String[] side : new String[][]{{mine(friend) + "/" + month, me}, {theirs(friend) + "/" + month, friend}}) {
-            Optional<FileWrapper> d = await(ctx.getByPath(side[0]));
-            if (d.isEmpty() || !d.get().isDirectory())
-                continue;
-            Set<FileWrapper> kids = await(d.get().getChildren(crypto.hasher, net));
-            Map<String, Map<String, Object>> meta = new HashMap<>();
-            List<String[]> metaUsers = new ArrayList<>();
-            for (FileWrapper k : kids) {
+            for (FileWrapper k : files(side[0])) {
                 String n = k.getFileProperties().name;
-                if (!k.isDirectory() && n.startsWith(META_PREFIX) && n.endsWith(".json"))
-                    metaUsers.add(new String[]{n.substring(META_PREFIX.length(), n.length() - 5), side[0] + "/" + n});
-            }
-            for (String[] mu : metaUsers)
-                mergeMeta(meta, mu[0], readMeta(mu[1], kids));
-            for (FileWrapper k : kids) {
-                FileProperties fp = k.getFileProperties();
-                if (k.isDirectory() || fp.name.startsWith("."))
+                if (k.isDirectory())
                     continue;
-                Map<String, Object> m = meta.getOrDefault(fp.name, Map.of());
-                items.add(map("name", fp.name, "path", side[0] + "/" + fp.name, "from", side[1], "size", fp.size,
-                        "modified", fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000,
-                        "label", m.getOrDefault("label", ""), "pinned", m.getOrDefault("pinned", false),
-                        "stars", m.getOrDefault("stars", List.of())));
+                if (n.equals(META_PREFIX + side[1] + ".json"))
+                    mergeMeta(meta, side[1], readMeta(side[0] + "/" + n, k));
+                else if (!n.startsWith("."))
+                    found.add(new Object[]{k, side[0], side[1]});
             }
+        }
+        for (Object[] f : found) {
+            FileProperties fp = ((FileWrapper) f[0]).getFileProperties();
+            Map<String, Object> m = meta.getOrDefault(f[2] + "/" + fp.name, Map.of());
+            if (m.get("hiddenBy") instanceof List<?> hb && hb.contains(me))
+                continue; // I deleted it on my side (their original stays theirs)
+            items.add(map("name", fp.name, "path", f[1] + "/" + fp.name, "from", f[2], "size", fp.size,
+                    "modified", fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000,
+                    "label", m.getOrDefault("label", ""), "pinned", m.getOrDefault("pinned", false),
+                    "stars", m.getOrDefault("stars", List.of())));
         }
         return items;
     }
 
-    /** One user's meta file: {"v":1,"items":{"NAME":{"label":"…","labelAt":ms,"pin":true,"pinAt":ms,"star":true}}}. */
+    /** One user's meta file: {"v":2,"items":{"SENDER/NAME":{"label":"…","labelAt":ms,"pin":true,"pinAt":ms,"star":true}}}. */
     @SuppressWarnings("unchecked")
-    Map<String, Object> readMeta(String path, Set<FileWrapper> kids) {
-        String name = path.substring(path.lastIndexOf('/') + 1);
-        FileWrapper f = kids.stream().filter(k -> k.getFileProperties().name.equals(name)).findFirst().orElse(null);
-        if (f == null)
-            return Map.of();
+    Map<String, Object> readMeta(String path, FileWrapper f) {
         FileProperties fp = f.getFileProperties();
         long modified = fp.modified.toEpochSecond(ZoneOffset.UTC);
         Object[] cached = metaCache.get(path);
@@ -405,14 +361,14 @@ final class DirectServe {
         }
     }
 
-    /** Label and pin: the newest change of either side wins. Stars: everyone who starred. */
+    /** Label and pin: the newest change of either side wins. Stars: everyone who starred. Hidden: per user. */
     @SuppressWarnings("unchecked")
     static void mergeMeta(Map<String, Map<String, Object>> into, String user, Map<String, Object> items) {
         for (Map.Entry<String, Object> e : items.entrySet()) {
             if (!(e.getValue() instanceof Map))
                 continue;
             Map<String, Object> it = (Map<String, Object>) e.getValue();
-            Map<String, Object> m = into.computeIfAbsent(e.getKey(), k -> new HashMap<>(Map.of("labelAt", -1L, "pinAt", -1L, "stars", new ArrayList<String>())));
+            Map<String, Object> m = into.computeIfAbsent(e.getKey(), k -> new HashMap<>(Map.of("labelAt", -1L, "pinAt", -1L, "stars", new ArrayList<String>(), "hiddenBy", new ArrayList<String>())));
             long la = Json.num(it, "labelAt", -1), pa = Json.num(it, "pinAt", -1);
             if (it.containsKey("label") && la > (long) m.get("labelAt")) {
                 m.put("label", Json.str(it, "label"));
@@ -422,6 +378,8 @@ final class DirectServe {
                 m.put("pinned", Json.bool(it, "pin"));
                 m.put("pinAt", pa);
             }
+            if (Json.bool(it, "hide"))
+                ((List<String>) m.get("hiddenBy")).add(user);
             if (Json.bool(it, "star"))
                 ((List<String>) m.get("stars")).add(user);
         }
@@ -441,7 +399,7 @@ final class DirectServe {
         wanted = wanted.replace('/', '_').replace('\\', '_');
         if (wanted.startsWith("."))
             wanted = "_" + wanted.substring(1);
-        ensureShared(friend);
+        ensureOpen(friend);
         String rel = ROOT + "/" + friend + "/" + month;
         String finalWanted = wanted;
         String name = retry(() -> {
@@ -450,7 +408,10 @@ final class DirectServe {
             PeergosBridge.upload(dir, n, file, net, crypto);
             return n;
         });
-        return map("name", name, "path", "/" + me + "/" + rel + "/" + name, "from", me, "size", Files.size(file),
+        // Only this file, read-only, only with this friend.
+        String path = "/" + me + "/" + rel + "/" + name;
+        retry(() -> await(ctx.shareReadAccessWith(PathUtil.get(path), Set.of(friend)), WRITE));
+        return map("name", name, "path", path, "from", me, "size", Files.size(file),
                 "modified", System.currentTimeMillis(), "label", "", "pinned", false, "stars", List.of());
     }
 
@@ -495,10 +456,15 @@ final class DirectServe {
     @SuppressWarnings("unchecked")
     Map<String, Object> meta(Map<String, Object> c) throws Exception {
         String path = direct(Json.str(c, "path"));
-        String dirPath = parent(path), item = path.substring(path.lastIndexOf('/') + 1);
-        FileWrapper dir = folder(dirPath);
+        String[] p = path.split("/"); // "", sender, ROOT, other, month, name
+        String sender = p[1], month = p[4];
+        String friend = sender.equals(me) ? p[3] : sender;
+        String item = sender + "/" + p[5];
+        // My labels, pins and stars – also for my friend's files – live in my own folder for that month.
+        String dirPath = mine(friend) + "/" + month;
+        FileWrapper dir = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend + "/" + month, net, crypto);
         String metaName = META_PREFIX + me + ".json";
-        Map<String, Object> doc = new LinkedHashMap<>(Map.of("v", 1L, "items", new LinkedHashMap<String, Object>()));
+        Map<String, Object> doc = new LinkedHashMap<>(Map.of("v", 2L, "items", new LinkedHashMap<String, Object>()));
         Optional<FileWrapper> existing = await(dir.getChild(metaName, crypto.hasher, net));
         if (existing.isPresent()) {
             try {
@@ -515,14 +481,24 @@ final class DirectServe {
         if (c.containsKey("label")) { it.put("label", Json.str(c, "label")); it.put("labelAt", now); }
         if (c.containsKey("pin")) { it.put("pin", Json.bool(c, "pin")); it.put("pinAt", now); }
         if (c.containsKey("star")) it.put("star", Json.bool(c, "star"));
+        if (c.containsKey("hide")) it.put("hide", Json.bool(c, "hide"));
         items.put(item, it);
-        // Entries of pictures that are gone are dropped, so the file stays small.
+        // Entries of files that are gone (on either side) are dropped, so the file stays small.
         Set<String> present = new HashSet<>();
         for (FileWrapper k : await(dir.getChildren(crypto.hasher, net)))
-            present.add(k.getFileProperties().name);
+            present.add(me + "/" + k.getFileProperties().name);
+        for (FileWrapper k : files(theirs(friend) + "/" + month))
+            present.add(friend + "/" + k.getFileProperties().name);
         items.keySet().removeIf(k -> !present.contains(k));
         byte[] bytes = Json.write(doc).getBytes(StandardCharsets.UTF_8);
-        await(dir.uploadOrReplaceFile(metaName, AsyncReader.build(bytes), bytes.length, net, crypto, () -> false, x -> {}), WRITE);
+        if (existing.isPresent()) {
+            // Overwritten in place, so the read-only share my friend already has stays valid.
+            await(existing.get().overwriteFile(AsyncReader.build(bytes), bytes.length, net, crypto, x -> {}), WRITE);
+        } else {
+            await(dir.uploadOrReplaceFile(metaName, AsyncReader.build(bytes), bytes.length, net, crypto, () -> false, x -> {}), WRITE);
+            refresh();
+            await(ctx.shareReadAccessWith(PathUtil.get(dirPath + "/" + metaName), Set.of(friend)), WRITE);
+        }
         metaCache.remove(dirPath + "/" + metaName);
         return it;
     }
@@ -551,7 +527,7 @@ final class DirectServe {
 
     interface Step<T> { T run() throws Exception; }
 
-    /** Both sides write into the same folders. When the other side changed a folder since this session last saw it,
+    /** When the account changed a folder since this session last saw it (e.g. the web app or another PC),
      * Peergos refuses the write ("concurrent modification"): the session then reloads and writes on the newest version. */
     <T> T retry(Step<T> step) throws Exception {
         for (int attempt = 1; ; attempt++) {
