@@ -7,6 +7,10 @@ namespace PeergosSnap.Core;
 
 public enum CaptureKind { Picture, Video }
 public enum OutputMode { SecretLink, DirectMedia }
+/// <summary>What the Delete key (and the highlighted button) does in the history.</summary>
+public enum HistoryDelete { Both, Local, Peergos, Entry }
+/// <summary>Which captures keep their copy in the local captures folder.</summary>
+public enum LocalCopies { Always, OnlyIfUploadFails }
 
 /// <summary>All user settings. Saved as JSON; secrets are protected with Windows DPAPI (current user).</summary>
 public sealed class Settings
@@ -56,8 +60,16 @@ public sealed class Settings
     /// <summary>Set once the flat captures folder of 2.0 was sorted into subfolders.</summary>
     public bool CapturesTidied { get; set; }
 
+    /// <summary>Since 2.2: keep the copy in the captures folder always (default), or only when the upload failed.</summary>
+    public LocalCopies KeepLocalCopies { get; set; } = LocalCopies.Always;
+    /// <summary>Since 2.2: discarded captures are deleted at once (default) instead of going to the Recycle Bin.</summary>
+    public bool DiscardPermanently { get; set; } = true;
+
     // History
     public bool RememberApp { get; set; } = true;
+    public HistoryDelete HistoryDeleteAction { get; set; } = HistoryDelete.Both;
+    /// <summary>Deleting a capture from this PC and Peergos also removes its history entry (default); off keeps the entry.</summary>
+    public bool DeleteBothRemovesEntry { get; set; } = true;
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";

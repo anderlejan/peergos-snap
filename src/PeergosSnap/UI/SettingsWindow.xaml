@@ -124,7 +124,7 @@
                     <TextBox x:Name="DelayBox" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DelayBoxErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 0 to 60"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Pictures: after the countdown the screen freezes and you select the area – open a menu during the countdown and it stays in the picture. Videos: you select the area first; recording starts when the countdown ends. The tray menu offers 1–5 seconds quickly (Delay ▸)."/>
-                    <CheckBox x:Name="AskPicture" Content="Ask before uploading a picture"/>
+                    <CheckBox x:Name="AskPicture" Content="After a picture, ask what to do (upload, copy, save as or discard)"/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Overlay">
@@ -166,6 +166,14 @@
                         <ComboBoxItem Tag="None" Content="No subfolders"/>
                     </ComboBox>
                     <TextBlock Style="{StaticResource Hint}" Text="Used for the captures folder and for the mirror folder below. Captures already saved stay where they are."/>
+                    <TextBlock Text="Keep a copy on this PC" Margin="0,4,0,0"/>
+                    <ComboBox x:Name="KeepCopiesBox" Width="320" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="Always" Content="Always"/>
+                        <ComboBoxItem Tag="OnlyIfUploadFails" Content="Only if the upload fails"/>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource Hint}" Text="'Only if the upload fails' deletes the copy in the captures folder as soon as the capture is in Peergos; the history keeps its link. Captures that are only copied to the clipboard or kept on this PC stay. The mirror folder below is a separate choice."/>
+                    <CheckBox x:Name="DiscardPerm" Content="Discarded captures are deleted at once, never kept (no Recycle Bin)"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On by default: 'Discard' leaves nothing behind – on this PC, in the mirror folder, in Peergos or in the history. Off moves discarded files to the Recycle Bin instead."/>
                     <TextBlock Text="Delete local copies older than (days, 0 = keep forever)"/>
                     <TextBox x:Name="KeepDays" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Keep forever is the default. If you set a number, older copies go to the Recycle Bin, so nothing is lost by accident."/>
@@ -180,6 +188,16 @@
                     <TextBlock Style="{StaticResource Hint}" Text="Every capture is listed in the history with its preview, label, link and where it is (this PC, Peergos). There you can find old links again, add labels and delete what you no longer need – on this PC, in Peergos or both."/>
                     <Button x:Name="OpenHistoryBtn" Content="Open history" HorizontalAlignment="Left" Margin="0,0,0,8"/>
                     <CheckBox x:Name="RememberApp" Content="Remember which app each capture came from"/>
+                    <TextBlock Text="Delete key in the history" Margin="0,8,0,0"/>
+                    <ComboBox x:Name="HistoryDeleteBox" Width="320" HorizontalAlignment="Left">
+                        <ComboBoxItem Tag="Both" Content="Delete from this PC and Peergos"/>
+                        <ComboBoxItem Tag="Local" Content="Delete from this PC"/>
+                        <ComboBoxItem Tag="Peergos" Content="Delete from Peergos"/>
+                        <ComboBoxItem Tag="Entry" Content="Only remove the history entry"/>
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource Hint}" Text="The Delete key does this for the selected captures, always after a confirmation; its button is highlighted."/>
+                    <CheckBox x:Name="BothRemovesEntry" Content="Deleting from this PC and Peergos also removes the entry from the history"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On by default. Off keeps the entry, without files, so you still see what you deleted."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Hotkeys">
