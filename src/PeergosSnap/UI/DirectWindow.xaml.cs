@@ -514,7 +514,9 @@ public partial class DirectWindow : Window
     void AskDelete()
     {
         if (Current is not { } r) return;
-        ConfirmText.Text = $"Delete “{r.Item.Name}” for both of you? It is removed from Peergos; copies saved elsewhere stay.";
+        ConfirmText.Text = r.Item.From == Me
+            ? $"Delete “{r.Item.Name}” for both of you? It is removed from your Peergos, so {friend} no longer sees it; copies saved elsewhere stay."
+            : $"Delete “{r.Item.Name}” on your side? It is removed from this PC and no longer shown here. {r.Item.From}'s original stays in their Peergos – only they can delete it.";
         ConfirmBar.Visibility = Visibility.Visible;
     }
 
@@ -527,7 +529,7 @@ public partial class DirectWindow : Window
             await hub.DeleteAsync(friend, r.Item);
             if (otherMonth != null) otherMonth = otherMonth.Where(i => i.Path != r.Item.Path).ToList();
             Rebuild();
-            Status("Deleted");
+            Status(r.Item.From == Me ? "Deleted for both of you" : "Deleted on your side");
         }
         catch (DirectException e) { Status("Not deleted: " + e.Message); }
     }

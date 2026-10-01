@@ -205,7 +205,7 @@
             <TabItem Header="Direct">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Text="Pictures straight to a friend" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin, star or delete it. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="While you talk with someone in another app, send a picture by dropping or pasting it into the direct window (or tray menu → Direct to a friend → Send a picture). It appears on your friend's screen within seconds, in a window where both of you can zoom, save, label, pin or star it; you can delete what you sent for both of you, and what you received on your side. Each file is shared read-only with that friend only. You both need to be signed in to Peergos with Peergos Snap running, and be friends in Peergos (a friend request accepted once)."/>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
                         <Button x:Name="OpenDirectBtn" Content="Open the direct window" Style="{DynamicResource AccentButtonStyle}"/>
                     </StackPanel>

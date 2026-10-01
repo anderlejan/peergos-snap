@@ -201,7 +201,8 @@ public sealed class DirectHub : IDisposable
             catch (DirectException e) { Log.Error($"direct: download {a.Path}: {e.Message}"); }
         }
         var newest = DirectLogic.Sort(arrived).First();
-        var what = arrived.Count == 1 ? (newest.IsImage ? "a picture" : "a file") : $"{arrived.Count} pictures";
+        var what = arrived.Count == 1 ? (newest.IsImage ? "a picture" : "a file")
+            : $"{arrived.Count} {(arrived.All(a => a.IsImage) ? "pictures" : "files")}";
         app.Notify(ToastKind.Ok, $"{friend} sent {what}", arrived.Count == 1 ? newest.Name : string.Join(", ", arrived.Select(a => a.Name).Take(3)),
             null, thumb, extra: ("Open", () => ShowWindow(friend, newest.Path)));
         if (app.Settings.DirectBringToFront) ShowWindow(friend, newest.Path, activate: false);

@@ -2,11 +2,13 @@
 
 ## 2.2.0 – 2026-10-01
 
-- **Direct to a friend.** Send a picture straight to a friend's screen while you talk with them in another app: drop
-  it on the direct window, paste it (Ctrl+V), choose files, or take a picture for them (tray menu → *Direct to a
-  friend*). It appears on their side within seconds, in a window where both of you can zoom, save, label, pin, star
-  and delete it – labels, pins and stars are seen by both. Each of you has one Peergos folder per friend
-  (`PeergosSnap-Direct/<friend>/<month>`), shared for writing with that friend only; no link is created. Friends are
+- **Direct to a friend.** Send a picture, video or any file straight to a friend's screen while you talk with them in
+  another app: drop it on the direct window, paste it (Ctrl+V), choose files, or take a picture for them (tray menu →
+  *Direct to a friend*). It appears on their side within seconds, in a window where both of you can zoom, save, label,
+  pin and star it – labels, pins and stars are seen by both. What you send stays in your Peergos
+  (`PeergosSnap-Direct/<friend>/<month>`); each file is shared read-only with that friend only – the folder is not
+  shared and no link is created. *Delete* removes what you sent for both of you; what you received is deleted on your
+  side only (the sender's original stays theirs). Friends are
   added in the window (*Friends…*: friend requests sent and accepted there). The receiving side needs nothing but
   Peergos Snap running and signed in. New Settings page *Direct*.
 - **Sound in videos.** Videos get the sound Windows plays while recording (on by default; tray menu → *Videos* →
