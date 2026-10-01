@@ -144,7 +144,9 @@
                     <StackPanel x:Name="IncomingList"/>
                     <TextBlock Text="Sharing directly with" FontWeight="SemiBold" Margin="0,12,0,4"/>
                     <StackPanel x:Name="FriendList"/>
-                    <CheckBox x:Name="BringFront" Content="Show this window when a friend sends something" Margin="0,12,0,0"/>
+                    <CheckBox x:Name="BringFront" Margin="0,12,0,0">
+                        <TextBlock Text="Show this window when a friend sends something" TextWrapping="Wrap"/>
+                    </CheckBox>
                     <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,8,0,0"
                                Text="Only friends can share directly: a friend request has to be accepted once. Each of you then has a folder in Peergos (one per month) that only the two of you can see and change."/>
                 </StackPanel>
