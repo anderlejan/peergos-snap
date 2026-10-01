@@ -82,6 +82,10 @@ without links:
 - A long-running session caches folder versions. When the other side changed a folder, a write is refused
   ("concurrent modification") or fails on a missing parent; the session then signs in again from the session data
   (`NetworkAccess.clear()` + `restoreContext`) and retries.
+- Some Peergos calls never complete – for example reading a friend's folder after that friend unfriended you
+  (revoked access): the future simply never finishes. The session therefore waits at most 60 s for a read and
+  5 minutes for a write. A friend whose folder times out is checked again only after 2 minutes, on a fresh session,
+  and `discover` skips them, so one such friend never holds up the others or the user's commands.
 - `discover` lists friends who have a direct folder for this user, so the receiving side is set up without doing
   anything. The app only keeps the session running while there are friends to share with.
 - Only paths of the shape `/<owner>/PeergosSnap-Direct/<other>/<yyyy-MM>/<name>` with this user as owner or other
