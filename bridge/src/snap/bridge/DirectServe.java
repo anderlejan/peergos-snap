@@ -30,8 +30,12 @@ import java.nio.file.StandardCopyOption;
 import java.time.ZoneOffset;
 import java.util.*;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Long-running session for the direct mode. Each user keeps one folder per friend,
@@ -64,6 +68,9 @@ final class DirectServe {
     final Set<String> sharedWith = new HashSet<>();
     final Map<String, String> lastSignature = new HashMap<>();
     final Map<String, Object[]> metaCache = new HashMap<>(); // path -> {modified, size, parsed}
+    /** Friends whose folders did not answer: not checked again before this time (ms). */
+    final Map<String, Long> pausedUntil = new HashMap<>();
+    static final long PAUSE_MS = 120_000;
     List<String> watchFriends = new ArrayList<>();
     String watchMonth = "";
     long interval = 3000;
@@ -146,10 +153,15 @@ final class DirectServe {
         }
     }
 
-    static String message(Throwable t) {
+    static Throwable rootCause(Throwable t) {
         Throwable r = t;
         while (r.getCause() != null && r.getCause() != r)
             r = r.getCause();
+        return r;
+    }
+
+    static String message(Throwable t) {
+        Throwable r = rootCause(t);
         return r.getMessage() == null ? r.getClass().getSimpleName() : r.getMessage();
     }
 
@@ -161,8 +173,12 @@ final class DirectServe {
                 Map<String, Object> r = friends();
                 List<String> direct = new ArrayList<>();
                 for (Object f : (List<?>) r.get("friends"))
-                    if (ctx.getByPath(theirs((String) f)).join().isPresent())
-                        direct.add((String) f);
+                    try {
+                        if (await(ctx.getByPath(theirs((String) f))).isPresent())
+                            direct.add((String) f);
+                    } catch (CompletionException e) {
+                        System.err.println("direct: discover " + f + ": " + message(e)); // one friend does not stop the others
+                    }
                 r.put("direct", direct);
                 return r;
             }
@@ -170,17 +186,17 @@ final class DirectServe {
                 String user = name(Json.str(c, "user"));
                 if (user.equals(me))
                     throw new IllegalArgumentException("That is your own username");
-                boolean sent = ctx.sendInitialFollowRequest(user).join();
+                boolean sent = await(ctx.sendInitialFollowRequest(user), WRITE);
                 return map("sent", sent);
             }
             case "accept":
             case "decline": {
                 String user = name(Json.str(c, "user"));
-                SocialState st = ctx.getSocialState().join();
+                SocialState st = await(ctx.getSocialState());
                 for (FollowRequestWithCipherText r : st.pendingIncoming)
                     if (user.equals(r.getEntry().ownerName)) {
                         boolean yes = cmd.equals("accept");
-                        ctx.sendReplyFollowRequest(r, yes, yes).join();
+                        await(ctx.sendReplyFollowRequest(r, yes, yes), WRITE);
                         return map("done", true);
                     }
                 throw new IllegalStateException("No friend request from " + user);
@@ -196,11 +212,11 @@ final class DirectServe {
             case "delete": {
                 String path = direct(Json.str(c, "path"));
                 return map("deleted", retry(() -> {
-                    Optional<FileWrapper> f = ctx.getByPath(path).join();
+                    Optional<FileWrapper> f = await(ctx.getByPath(path));
                     if (f.isEmpty())
                         return false;
                     FileWrapper parent = folder(parent(path));
-                    f.get().remove(parent, PathUtil.get(path), ctx).join();
+                    await(f.get().remove(parent, PathUtil.get(path), ctx), WRITE);
                     return true;
                 }));
             }
@@ -216,6 +232,7 @@ final class DirectServe {
                 watchMonth = month(Json.str(c, "month"));
                 interval = Math.max(1000, Math.min(60000, Json.num(c, "interval", 3000)));
                 lastSignature.clear();
+                pausedUntil.clear();
                 return map("watching", fs, "month", watchMonth);
             }
             default:
@@ -226,7 +243,7 @@ final class DirectServe {
     // ---------- friends ----------
 
     Map<String, Object> friends() {
-        SocialState st = ctx.getSocialState().join();
+        SocialState st = await(ctx.getSocialState());
         List<String> incoming = new ArrayList<>();
         for (FollowRequestWithCipherText r : st.pendingIncoming)
             incoming.add(r.getEntry().ownerName);
@@ -245,12 +262,12 @@ final class DirectServe {
         String path = "/" + me + "/" + ROOT + "/" + friend;
         if (sharedWith.contains(friend))
             return path;
-        if (!ctx.getSocialState().join().getFriends().contains(friend))
+        if (!await(ctx.getSocialState()).getFriends().contains(friend))
             throw new IllegalStateException("Not friends with " + friend + " yet: send a friend request and wait until " + friend + " accepts it");
         PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend, net, crypto);
-        FileSharedWithState st = ctx.sharedWith(PathUtil.get(path)).join();
+        FileSharedWithState st = await(ctx.sharedWith(PathUtil.get(path)));
         if (!st.writeAccess.contains(friend))
-            ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)).join();
+            await(ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)), WRITE);
         sharedWith.add(friend);
         return path;
     }
@@ -263,10 +280,10 @@ final class DirectServe {
     List<String> months(String friend) {
         TreeSet<String> ms = new TreeSet<>(Comparator.reverseOrder());
         for (String dir : List.of(mine(friend), theirs(friend))) {
-            Optional<FileWrapper> d = ctx.getByPath(dir).join();
+            Optional<FileWrapper> d = await(ctx.getByPath(dir));
             if (d.isEmpty())
                 continue;
-            for (FileWrapper k : d.get().getChildren(crypto.hasher, net).join()) {
+            for (FileWrapper k : await(d.get().getChildren(crypto.hasher, net))) {
                 String n = k.getFileProperties().name;
                 if (k.isDirectory() && n.matches("\\d{4}-\\d{2}"))
                     ms.add(n);
@@ -279,10 +296,10 @@ final class DirectServe {
     List<Object> list(String friend, String month) {
         List<Object> items = new ArrayList<>();
         for (String[] side : new String[][]{{mine(friend) + "/" + month, me}, {theirs(friend) + "/" + month, friend}}) {
-            Optional<FileWrapper> d = ctx.getByPath(side[0]).join();
+            Optional<FileWrapper> d = await(ctx.getByPath(side[0]));
             if (d.isEmpty() || !d.get().isDirectory())
                 continue;
-            Set<FileWrapper> kids = d.get().getChildren(crypto.hasher, net).join();
+            Set<FileWrapper> kids = await(d.get().getChildren(crypto.hasher, net));
             Map<String, Map<String, Object>> meta = new HashMap<>();
             List<String[]> metaUsers = new ArrayList<>();
             for (FileWrapper k : kids) {
@@ -380,15 +397,15 @@ final class DirectServe {
     }
 
     Path get(String path, Path to) throws Exception {
-        FileWrapper f = ctx.getByPath(path).join().orElseThrow(() -> new IllegalStateException("Not found: " + path));
+        FileWrapper f = await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Not found: " + path));
         Files.createDirectories(to.toAbsolutePath().getParent());
         Path part = to.resolveSibling(to.getFileName() + ".part");
         try (OutputStream o = Files.newOutputStream(part)) {
-            AsyncReader in = f.getInputStream(net, crypto, x -> {}).join();
+            AsyncReader in = await(f.getInputStream(net, crypto, x -> {}));
             byte[] buf = new byte[1 << 20];
             long left = f.getSize();
             while (left > 0) {
-                int n = in.readIntoArray(buf, 0, (int) Math.min(buf.length, left)).join();
+                int n = await(in.readIntoArray(buf, 0, (int) Math.min(buf.length, left)));
                 if (n <= 0)
                     break;
                 o.write(buf, 0, n);
@@ -405,10 +422,10 @@ final class DirectServe {
         if (size > 4_000_000)
             throw new IllegalStateException("too large");
         byte[] all = new byte[(int) size];
-        AsyncReader in = f.getInputStream(net, crypto, x -> {}).join();
+        AsyncReader in = await(f.getInputStream(net, crypto, x -> {}));
         int off = 0;
         while (off < all.length) {
-            int n = in.readIntoArray(all, off, all.length - off).join();
+            int n = await(in.readIntoArray(all, off, all.length - off));
             if (n <= 0)
                 break;
             off += n;
@@ -424,7 +441,7 @@ final class DirectServe {
         FileWrapper dir = folder(dirPath);
         String metaName = META_PREFIX + me + ".json";
         Map<String, Object> doc = new LinkedHashMap<>(Map.of("v", 1L, "items", new LinkedHashMap<String, Object>()));
-        Optional<FileWrapper> existing = dir.getChild(metaName, crypto.hasher, net).join();
+        Optional<FileWrapper> existing = await(dir.getChild(metaName, crypto.hasher, net));
         if (existing.isPresent()) {
             try {
                 Map<String, Object> d = Json.parseObject(new String(read(existing.get()), StandardCharsets.UTF_8));
@@ -443,13 +460,35 @@ final class DirectServe {
         items.put(item, it);
         // Entries of pictures that are gone are dropped, so the file stays small.
         Set<String> present = new HashSet<>();
-        for (FileWrapper k : dir.getChildren(crypto.hasher, net).join())
+        for (FileWrapper k : await(dir.getChildren(crypto.hasher, net)))
             present.add(k.getFileProperties().name);
         items.keySet().removeIf(k -> !present.contains(k));
         byte[] bytes = Json.write(doc).getBytes(StandardCharsets.UTF_8);
-        dir.uploadOrReplaceFile(metaName, AsyncReader.build(bytes), bytes.length, net, crypto, () -> false, x -> {}).join();
+        await(dir.uploadOrReplaceFile(metaName, AsyncReader.build(bytes), bytes.length, net, crypto, () -> false, x -> {}), WRITE);
         metaCache.remove(dirPath + "/" + metaName);
         return it;
+    }
+
+    /** Seconds to wait for Peergos: reads, and writes (uploads, shares, friend requests). */
+    static final long READ = 60, WRITE = 300;
+
+    /**
+     * Waits for a Peergos result, but not forever: some calls never complete, e.g. reading a friend's folder after
+     * that friend has revoked access (unfriended). A plain join() would then block this whole session for good.
+     */
+    static <T> T await(CompletableFuture<T> f) { return await(f, READ); }
+
+    static <T> T await(CompletableFuture<T> f, long seconds) {
+        try {
+            return f.get(seconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            throw new CompletionException(new TimeoutException("Peergos did not answer within " + seconds + " s"));
+        } catch (ExecutionException e) {
+            throw new CompletionException(e.getCause());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CompletionException(e);
+        }
     }
 
     interface Step<T> { T run() throws Exception; }
@@ -472,7 +511,7 @@ final class DirectServe {
     }
 
     FileWrapper folder(String path) {
-        return ctx.getByPath(path).join().orElseThrow(() -> new IllegalStateException("Folder not found: " + path));
+        return await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Folder not found: " + path));
     }
 
     // ---------- watching ----------
@@ -482,6 +521,9 @@ final class DirectServe {
             return;
         polls++;
         for (String friend : watchFriends) {
+            Long until = pausedUntil.get(friend);
+            if (until != null && until > System.currentTimeMillis())
+                continue;
             try {
                 List<Object> items = list(friend, watchMonth);
                 String sig = Json.write(items);
@@ -490,8 +532,15 @@ final class DirectServe {
                     emit(map("event", "changed", "friend", friend, "month", watchMonth, "items", items));
                 }
                 lastProblem = "";
+                pausedUntil.remove(friend);
             } catch (Throwable t) {
                 String m = message(t);
+                if (rootCause(t) instanceof TimeoutException) {
+                    // Their folder does not answer (e.g. they unfriended): check it only now and then, on a fresh
+                    // session, so commands and the other friends are not held up.
+                    pausedUntil.put(friend, System.currentTimeMillis() + PAUSE_MS);
+                    try { refresh(); } catch (Throwable ignored) { }
+                }
                 if (!m.equals(lastProblem)) // say it once, not every few seconds
                     emit(map("event", "problem", "friend", friend, "error", m));
                 lastProblem = m;
