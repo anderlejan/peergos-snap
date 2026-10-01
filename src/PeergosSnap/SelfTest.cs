@@ -82,13 +82,15 @@ public static class SelfTest
                 Check("mouse pointer shown / hidden in videos", changed >= 40 && changed >= 3 * Math.Max(noise, 1),
                     $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it");
 
-                // Sound: a tone played while recording (with a pause in between) must be in the video, in full length.
+                // Sound: a tone played while recording (with a pause in between) must be in the video, in full length,
+                // and in step with the picture: it starts 1 s after the recording, so it must start about 1 s into the video.
                 try
                 {
                     var toned = new Recorder(rect, new Settings { FrameRate = 15, RecordSound = true });
                     toned.Start();
+                    Thread.Sleep(1000);
                     var tone = LoopbackRecorder.PlayToneAsync(TimeSpan.FromSeconds(3.2));
-                    Thread.Sleep(1500);
+                    Thread.Sleep(500);
                     toned.PauseAsync().Wait();
                     Thread.Sleep(300);
                     toned.Resume();
@@ -96,8 +98,16 @@ public static class SelfTest
                     var tv = toned.StopAsync().Result;
                     tone.Wait();
                     var tp = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", tv]);
-                    Check("video with sound (test tone, paused once)", toned.HasSound && tp.Contains("Audio:") && tp.Contains("Duration: 00:00:02"),
+                    Check("video with sound (test tone, paused once)", toned.HasSound && tp.Contains("Audio:") &&
+                                                                        (tp.Contains("Duration: 00:00:02") || tp.Contains("Duration: 00:00:03")),
                         $"{toned.SoundNote}; {FirstLine(tp, "Duration")}; {FirstLine(tp, "Audio:")} (if this fails: is the PC muted or without speakers?)");
+                    if (toned.HasSound)
+                    {
+                        var sd = Run(AppPaths.FfmpegExe, ["-hide_banner", "-i", tv, "-map", "0:a:0", "-af", "silencedetect=noise=-45dB:d=0.3", "-f", "null", "-"]);
+                        var onset = ToneOnset(sd);
+                        Check("sound in step with the picture", onset is >= 0.6 and <= 1.45,
+                            onset == null ? "the tone starts at the very beginning of the video (expected ≈ 1 s)" : $"the tone starts at {onset:0.00} s in the video (expected ≈ 1 s)");
+                    }
                     toned.Cleanup();
 
                     // Silence: no sound track at all (only noted, because something else may be playing on this PC).
@@ -183,6 +193,17 @@ public static class SelfTest
                 if (Math.Abs(a[i] - b[i]) + Math.Abs(a[i + 1] - b[i + 1]) + Math.Abs(a[i + 2] - b[i + 2]) > 60) n++;
             }
         return n;
+    }
+
+    /// <summary>From FFmpeg's silencedetect output: where the silence at the start of the sound ends (null = no silence at the start).</summary>
+    static double? ToneOnset(string silencedetect)
+    {
+        var start = System.Text.RegularExpressions.Regex.Match(silencedetect, @"silence_start: (-?[\d.]+)");
+        var end = System.Text.RegularExpressions.Regex.Match(silencedetect, @"silence_end: ([\d.]+)");
+        if (!start.Success || !end.Success) return null;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        if (double.Parse(start.Groups[1].Value, ci) > 0.05) return null;
+        return double.Parse(end.Groups[1].Value, ci);
     }
 
     static string FirstLine(string text, string needle) =>

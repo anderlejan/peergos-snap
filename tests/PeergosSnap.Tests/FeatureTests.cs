@@ -90,8 +90,10 @@ public class SoundTests
     }
 
     [Theory]
-    [InlineData("[info] Press [q] to stop, [?] for help", true)]
-    [InlineData("Press [q] to stop, [?] for help", true)]
+    [InlineData("[in#0 @ 00000292c6df5080] [info] Capturing whole desktop as 200x120x32 at (10,10)", true)]
+    [InlineData("[gdigrab @ 0000] [info] Found window Notepad, capturing 640x480x32 at (0,0)", true)]
+    [InlineData("[info] Press [q] to stop, [?] for help", false)] // comes ~1.4 s after the first frame
+    [InlineData("[info] Input #0, gdigrab, from 'desktop':", false)]
     [InlineData("[info] Output #0, mp4, to 'x.mp4':", false)]
     [InlineData(null, false)]
     public void Recognises_the_video_start(string? line, bool start) => Assert.Equal(start, AudioMath.IsVideoStartLine(line));
