@@ -320,7 +320,8 @@ public sealed class DirectHub : IDisposable
     /// <summary>Adds a friend: sends a Peergos friend request when they are not a friend yet.</summary>
     public async Task<string> AddFriendAsync(string user)
     {
-        var f = FriendsState ?? DirectLogic.ParseFriends(await service.CallAsync("friends"));
+        // Always the current state: the one from the last check can be minutes old (e.g. the friendship ended since).
+        var f = DirectLogic.ParseFriends(await service.CallAsync("friends"));
         string result;
         if (f.Friends.Contains(user)) result = $"{user} is your friend: pictures can go both ways now.";
         else if (f.Incoming.Contains(user)) { await service.CallAsync("accept", new() { ["user"] = user }); result = $"You accepted {user}'s friend request."; }
