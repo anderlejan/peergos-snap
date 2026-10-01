@@ -170,6 +170,9 @@ final class DirectServe {
             case "friends": return friends();
             case "discover": {
                 // Friends who opened a direct folder for me: the app watches them without being asked.
+                // A fresh session, so folders shared with me since the last check (or shared again) are seen.
+                refresh();
+                sharedWith.clear();
                 Map<String, Object> r = friends();
                 List<String> direct = new ArrayList<>();
                 for (Object f : (List<?>) r.get("friends"))
@@ -187,6 +190,8 @@ final class DirectServe {
                 if (user.equals(me))
                     throw new IllegalArgumentException("That is your own username");
                 boolean sent = await(ctx.sendInitialFollowRequest(user), WRITE);
+                // If we were friends before, my old folder for them must be shared again once they accept.
+                markReshare(user);
                 return map("sent", sent);
             }
             case "accept":
@@ -197,6 +202,11 @@ final class DirectServe {
                     if (user.equals(r.getEntry().ownerName)) {
                         boolean yes = cmd.equals("accept");
                         await(ctx.sendReplyFollowRequest(r, yes, yes), WRITE);
+                        if (yes) {
+                            // Friends (again): a folder for them from an earlier friendship is shared again now.
+                            refresh();
+                            reshare(user);
+                        }
                         return map("done", true);
                     }
                 throw new IllegalStateException("No friend request from " + user);
@@ -264,12 +274,57 @@ final class DirectServe {
             return path;
         if (!await(ctx.getSocialState()).getFriends().contains(friend))
             throw new IllegalStateException("Not friends with " + friend + " yet: send a friend request and wait until " + friend + " accepts it");
-        PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend, net, crypto);
+        FileWrapper dir = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend, net, crypto);
+        if (await(dir.getChild(RESHARE_MARK, crypto.hasher, net)).isPresent()) {
+            reshare(friend); // asked for when the friend request was sent (see "add")
+            return path;
+        }
         FileSharedWithState st = await(ctx.sharedWith(PathUtil.get(path)));
         if (!st.writeAccess.contains(friend))
             await(ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)), WRITE);
         sharedWith.add(friend);
         return path;
+    }
+
+    /** Marks my folder for this friend to be shared again (it exists from an earlier friendship). */
+    static final String RESHARE_MARK = ".snapreshare";
+
+    void markReshare(String friend) {
+        try {
+            Optional<FileWrapper> dir = await(ctx.getByPath(mine(friend)));
+            if (dir.isEmpty())
+                return; // never shared: nothing to repair
+            byte[] b = "{\"v\":1}".getBytes(StandardCharsets.UTF_8);
+            await(dir.get().uploadOrReplaceFile(RESHARE_MARK, AsyncReader.build(b), b.length, net, crypto, () -> false, x -> {}), WRITE);
+        } catch (Exception e) {
+            System.err.println("direct: mark " + friend + ": " + message(e));
+        }
+    }
+
+    /**
+     * Shares my existing folder for this friend again. Peergos drops a friend's access when the friendship ends, but
+     * still lists them as having write access, so after friending again the folder would stay invisible to them.
+     * Unsharing first gives the folder new keys; sharing then sends the friend a working capability.
+     */
+    void reshare(String friend) {
+        String path = mine(friend);
+        Optional<FileWrapper> dir = await(ctx.getByPath(path));
+        if (dir.isEmpty())
+            return; // created and shared when first needed
+        if (!await(ctx.getSocialState()).getFriends().contains(friend))
+            return; // not friends yet: the mark stays until they are
+        FileSharedWithState st = await(ctx.sharedWith(PathUtil.get(path)));
+        if (st.writeAccess.contains(friend)) {
+            await(ctx.unShareWriteAccess(PathUtil.get(path), friend), WRITE);
+            refresh();
+        }
+        await(ctx.shareWriteAccessWith(PathUtil.get(path), Set.of(friend)), WRITE);
+        refresh();
+        Optional<FileWrapper> mark = await(ctx.getByPath(path + "/" + RESHARE_MARK));
+        if (mark.isPresent())
+            await(mark.get().remove(folder(path), PathUtil.get(path + "/" + RESHARE_MARK), ctx), WRITE);
+        sharedWith.add(friend);
+        System.err.println("direct: shared " + path + " again with " + friend);
     }
 
     // ---------- listing ----------
