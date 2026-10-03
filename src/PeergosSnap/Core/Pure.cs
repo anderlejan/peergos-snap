@@ -188,6 +188,9 @@ public sealed record BridgeResult(bool Ok, string? Link, string? PeergosPath, st
     }
 }
 
+public sealed record PutFile(string Name, string Path, string Local, long Size, string? Link);
+public sealed record PutResult(List<PutFile> Files, string? Folder, string? FolderLink, List<string> Failed);
+
 public static class PeergosLinks
 {
     /// <summary>The files of a bridge "list" answer.</summary>
@@ -208,9 +211,42 @@ public static class PeergosLinks
                 f.GetProperty("path").GetString() ?? "",
                 f.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number ? sz.GetInt64() : 0,
                 DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime,
-                links));
+                links,
+                f.TryGetProperty("dir", out var d) && d.ValueKind == JsonValueKind.True));
         }
         return list;
+    }
+
+    /// <summary>A bridge "put" answer: the uploaded files, and the new folder with its link when a folder was uploaded.</summary>
+    public static PutResult ParsePut(string? raw)
+    {
+        var files = new List<PutFile>();
+        var failed = new List<string>();
+        if (string.IsNullOrEmpty(raw)) return new PutResult(files, null, null, failed);
+        using var doc = JsonDocument.Parse(raw);
+        var r = doc.RootElement;
+        string? S(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        if (r.TryGetProperty("files", out var fs) && fs.ValueKind == JsonValueKind.Array)
+            foreach (var f in fs.EnumerateArray())
+                files.Add(new PutFile(S(f, "name") ?? "", S(f, "path") ?? "", S(f, "local") ?? "",
+                    f.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number ? sz.GetInt64() : 0, S(f, "link")));
+        if (r.TryGetProperty("failed", out var fl) && fl.ValueKind == JsonValueKind.Array)
+            failed.AddRange(fl.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0));
+        return new PutResult(files, S(r, "folder"), S(r, "link"), failed);
+    }
+
+    /// <summary>A bridge "folders" answer: the folder's path and the names of its subfolders.</summary>
+    public static (string Path, bool Exists, List<string> Folders) ParseFolders(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return ("", false, []);
+        using var doc = JsonDocument.Parse(raw);
+        var r = doc.RootElement;
+        var path = r.TryGetProperty("path", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : "";
+        var exists = r.TryGetProperty("exists", out var e) && e.ValueKind == JsonValueKind.True;
+        var list = r.TryGetProperty("folders", out var f) && f.ValueKind == JsonValueKind.Array
+            ? f.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
+            : [];
+        return (path, exists, list);
     }
 
     /// <summary>The paths a bridge "delete" answer reports as deleted (or already gone).</summary>
@@ -242,5 +278,58 @@ public static class PeergosLinks
         var q = key.IndexOf('?');
         if (q >= 0) key = key[..q];
         return key.Length > 0 && key.All(char.IsLetterOrDigit);
+    }
+}
+
+public static class UploadLogic
+{
+    /// <summary>A large folder is uploaded only after a yes (it can take long and use much of the Peergos space).</summary>
+    public static bool NeedsConfirm(int files, long bytes) => files > 200 || bytes > 500L * 1024 * 1024;
+}
+
+/// <summary>The full-screen viewer's zoom (unit tested).</summary>
+public static class ViewerLogic
+{
+    /// <summary>
+    /// Where the picture goes on one axis so that the view follows the mouse: a picture smaller than the screen is
+    /// centred; a larger one is moved so that the mouse at x % of the screen shows the picture at x % of its size.
+    /// The picture pixel under the pointer therefore stays the same while zooming in or out.
+    /// </summary>
+    public static double Offset(double mouse, double screen, double pictureOnScreen)
+    {
+        if (pictureOnScreen <= screen || screen <= 0) return (screen - pictureOnScreen) / 2;
+        var f = Math.Clamp(mouse / screen, 0, 1);
+        return -(pictureOnScreen - screen) * f;
+    }
+
+    /// <summary>The scale that shows the whole picture (never enlarging a small one beyond its own size).</summary>
+    public static double Fit(double screenW, double screenH, int pictureW, int pictureH) =>
+        pictureW <= 0 || pictureH <= 0 ? 1 : Math.Min(1, Math.Min(screenW / pictureW, screenH / pictureH));
+
+    /// <summary>One click zooms in to this: the actual size, or twice the fitted size for pictures smaller than the screen.</summary>
+    public static double ClickZoom(double fit) => fit < 0.75 ? 1 : Math.Min(16, Math.Max(2, fit * 2));
+}
+
+/// <summary>Folder paths inside the Peergos home, relative and "/"-separated ("" = the home itself).</summary>
+public static class PeergosFolders
+{
+    public static string Parent(string rel)
+    {
+        var t = (rel ?? "").Trim('/');
+        var i = t.LastIndexOf('/');
+        return i < 0 ? "" : t[..i];
+    }
+
+    public static string Join(string rel, string name)
+    {
+        var r = (rel ?? "").Trim('/');
+        return r.Length == 0 ? name : r + "/" + name;
+    }
+
+    /// <summary>A new folder name, or null when it is empty or would leave the folder.</summary>
+    public static string? CleanName(string? name)
+    {
+        var n = (name ?? "").Trim();
+        return n.Length == 0 || n is "." or ".." || n.IndexOfAny(['/', '\\']) >= 0 || n.StartsWith('.') ? null : n;
     }
 }

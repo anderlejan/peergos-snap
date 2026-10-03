@@ -12,7 +12,8 @@ namespace PeergosSnap.UI;
 /// <summary>
 /// The history manager: every capture with its preview, label, origin and link, where it is (this PC, Peergos),
 /// and deleting on either side or both. Deleting on this PC uses the Recycle Bin; deleting in Peergos removes the
-/// file together with its links. Every delete is confirmed first.
+/// file together with its links. Deletes are confirmed first (unless switched off), locked entries are never deleted, and
+/// a delete that cannot be done in Peergos (not signed in) says so and lets the user choose.
 /// </summary>
 public partial class HistoryWindow : Window
 {
@@ -23,6 +24,7 @@ public partial class HistoryWindow : Window
     readonly DispatcherTimer labelSave = new() { Interval = TimeSpan.FromMilliseconds(700) };
     bool showingDetails;
     Func<Task>? pending;
+    bool askedDelete; // the confirmation shown is for a delete (its "Don't ask again" applies)
     bool refreshing;
 
     HistoryStore Store => app.History;
@@ -38,7 +40,8 @@ public partial class HistoryWindow : Window
         rebuildSoon.Tick += (_, _) => { rebuildSoon.Stop(); Rebuild(); };
         labelSave.Tick += (_, _) => { labelSave.Stop(); Store.Save(); };
         Store.Changed += StoreChanged;
-        Closed += (_, _) => Store.Changed -= StoreChanged;
+        app.SettingsChanged += SettingsChanged;
+        Closed += (_, _) => { Store.Changed -= StoreChanged; app.SettingsChanged -= SettingsChanged; };
 
         SearchBox.TextChanged += (_, _) =>
         {
@@ -48,16 +51,22 @@ public partial class HistoryWindow : Window
         ShowBox.SelectionChanged += (_, _) => RebuildSoon();
         SortBox.SelectionChanged += (_, _) => RebuildSoon();
         RefreshBtn.Click += async (_, _) => await Refresh();
+        SelectAllBtn.Click += (_, _) => { List.SelectAll(); List.Focus(); };
+        SelectNoneBtn.Click += (_, _) => List.UnselectAll();
         CleanBtn.Click += (_, _) => { CleanBtn.ContextMenu.PlacementTarget = CleanBtn; CleanBtn.ContextMenu.IsOpen = true; };
         RemoveGoneItem.Click += (_, _) => AskRemoveGone();
         ClearItem.Click += (_, _) => AskClear();
         List.SelectionChanged += (_, _) => ShowDetails();
         List.MouseDoubleClick += (_, e) => { if (Selected().FirstOrDefault() is { } it && e.OriginalSource is FrameworkElement { DataContext: HistoryItem }) OpenItem(it); };
+        List.ContextMenu = new ContextMenu();
+        List.ContextMenuOpening += (_, e) => { if (!FillRowMenu(List.ContextMenu)) e.Handled = true; };
         List.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter && Selected().FirstOrDefault() is { } it) { OpenItem(it); e.Handled = true; }
             if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.Control && Selected().FirstOrDefault() is { Record.Link: { } l }) { CopyText(l, "Link copied"); e.Handled = true; }
             if (e.Key == Key.Delete && Keyboard.Modifiers == ModifierKeys.None && Selected().Count > 0) { DefaultDelete(); e.Handled = true; }
+            if (e.Key == Key.L && Keyboard.Modifiers == ModifierKeys.None && Selected().Count > 0) { ToggleLock(); e.Handled = true; }
+            if (e.Key == Key.Space && Keyboard.Modifiers == ModifierKeys.None && One() is { } v) { ShowFull(v); e.Handled = true; }
         };
         LabelBox.TextChanged += (_, _) =>
         {
@@ -65,39 +74,47 @@ public partial class HistoryWindow : Window
             var it = Selected()[0];
             it.Record.Label = LabelBox.Text;
             it.Update(it.Local, it.InPeergos);
-            SelectionTitle.Text = it.Title;
+            SelectionTitle.Text = (it.Record.Locked ? "🔒 " : "") + it.Title;
             labelSave.Stop();
             labelSave.Start();
         };
         CopyLinkBtn.Click += (_, _) => { if (One()?.Record.Link is { } l) CopyText(l, "Link copied to the clipboard"); };
         OpenLinkBtn.Click += (_, _) => { if (One()?.Record.Link is { } l) Shell(l); };
-        OpenFileBtn.Click += (_, _) => { if (One()?.Record.File is { } f) Shell(f); };
-        ShowFileBtn.Click += (_, _) => { if (One()?.Record.File is { } f) Process.Start("explorer.exe", "/select,\"" + f + "\""); };
+        OpenFileBtn.Click += (_, _) => { if (One() is { } it && FileOf(it) is { } f) Shell(f); };
+        ShowFileBtn.Click += (_, _) => { if (One() is { } it && FileOf(it) is { } f) Process.Start("explorer.exe", "/select,\"" + f + "\""); };
         CopyMediaBtn.Click += (_, _) =>
         {
             if (One()?.Record.File is not { } f) return;
             try { ClipboardService.MediaToClipboard(f); Result((One()!.Record.IsVideo ? "Video" : "Picture") + " copied to the clipboard"); }
-            catch (Exception ex) { Result("Could not copy: " + ex.Message); }
+            catch (Exception ex) { Result("Could not copy: " + ex.Message, error: true); }
         };
         UploadBtn.Click += async (_, _) =>
         {
             if (One() is not { } it) return;
+            if (!app.Settings.PeergosConfigured) { AskSignIn("Uploading needs your Peergos account."); return; }
             UploadBtn.IsEnabled = false;
             Result("Uploading…");
             var r = await app.UploadRecordAsync(it.Record);
             if (r.Ok && it.Record.PeergosPath != null) (remotePaths ??= []).Add(it.Record.PeergosPath);
-            Result(r.Ok ? "Uploaded – the link is on the clipboard" : "Upload failed: " + r.Error);
+            Result(r.Ok ? "Uploaded – the link is on the clipboard" : "Upload failed: " + r.Error, error: !r.Ok);
             Rebuild();
         };
-        DelLocalBtn.Click += (_, _) => AskDelete(local: true, remote: false);
-        DelRemoteBtn.Click += (_, _) => AskDelete(local: false, remote: true);
-        DelBothBtn.Click += (_, _) => AskDelete(local: true, remote: true);
-        RemoveBtn.Click += (_, _) => AskRemove();
+        DrawBtn.Click += async (_, _) => { if (One() is { } it) await Draw(it); };
+        FullBtn.Click += (_, _) => { if (One() is { } it) ShowFull(it); };
+        PreviewBox.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2 && One() is { } it) { ShowFull(it); e.Handled = true; } };
+        LockBtn.Click += (_, _) => ToggleLock();
+        DeleteBtn.Click += (_, _) => DefaultDelete();
+        DeleteMore.Click += (_, _) => { MarkDeleteMenu(); DeleteMore.ContextMenu.PlacementTarget = DeleteMore; DeleteMore.ContextMenu.IsOpen = true; };
+        DelBothItem.Click += (_, _) => AskDelete(local: true, remote: true);
+        DelLocalItem.Click += (_, _) => AskDelete(local: true, remote: false);
+        DelRemoteItem.Click += (_, _) => AskDelete(local: false, remote: true);
+        RemoveItem.Click += (_, _) => AskRemove();
         ConfirmNo.Click += (_, _) => HideConfirm();
-        MarkDefaultDelete();
+        ConfirmSignIn.Click += (_, _) => { HideConfirm(); app.ShowSettings(0); };
         ConfirmYes.Click += async (_, _) =>
         {
             var action = pending;
+            if (ConfirmNever.IsChecked == true && askedDelete) app.UpdateSettings(s => s.ConfirmHistoryDelete = false);
             HideConfirm();
             if (action != null) await action();
         };
@@ -107,6 +124,20 @@ public partial class HistoryWindow : Window
             Rebuild();
             await Refresh();
         };
+    }
+
+    /// <summary>Signing in or out (or another account) while the window is open: look at Peergos again, so what can be
+    /// deleted where shows what is really there.</summary>
+    void SettingsChanged(Settings before)
+    {
+        var s = app.Settings;
+        if (before.PeergosConfigured == s.PeergosConfigured && before.Username == s.Username && before.AccountFolder == s.AccountFolder
+            && before.SessionProtected == s.SessionProtected)
+        {
+            if (before.HistoryDeleteAction != s.HistoryDeleteAction || before.DeleteBothRemovesEntry != s.DeleteBothRemovesEntry) ShowDetails();
+            return;
+        }
+        Dispatcher.BeginInvoke(async () => await Refresh());
     }
 
     void StoreChanged() => Dispatcher.BeginInvoke(RebuildSoon);
@@ -170,15 +201,17 @@ public partial class HistoryWindow : Window
             var (r, files) = await Uploader.ListAsync(app.Settings.Clone());
             if (!r.Ok)
             {
+                remotePaths = null;
                 RemoteState.Text = "Peergos: " + r.Error;
+                if (Uploader.NeedsSignIn(r.Error)) app.UpdateSettings(s => s.Session = "");
                 Rebuild();
                 return;
             }
             remotePaths = files.Select(f => f.Path).ToHashSet();
-            var added = HistoryLogic.Discover(Store.Records, CaptureFiles.Scan(AppPaths.CacheDir), files, File.GetLastWriteTime, Store.Dismissed);
+            var added = HistoryLogic.Discover(Store.Records, CaptureFiles.Scan(AppPaths.CacheDir), files.Where(f => !f.Folder).ToList(), File.GetLastWriteTime, Store.Dismissed);
             if (added.Count > 0) Store.AddRange(added);
             else Store.Save(); // links found for known records
-            RemoteState.Text = $"Peergos: {files.Count} files in {r.PeergosPath}, checked {DateTime.Now:HH:mm}";
+            RemoteState.Text = $"Peergos: {files.Count(f => !f.Folder)} files in {r.PeergosPath}, checked {DateTime.Now:HH:mm}";
             Rebuild();
         }
         catch (Exception e)
@@ -202,52 +235,80 @@ public partial class HistoryWindow : Window
         HideConfirm();
         NothingSelected.Visibility = sel.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Details.Visibility = sel.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var b in Actions.Children.OfType<UIElement>()) b.IsEnabled = sel.Count > 0;
         if (sel.Count == 0) return;
         MarkDefaultDelete(); // the default may have changed in Settings meanwhile
         bool signedIn = app.Settings.PeergosConfigured;
-        DelLocalBtn.IsEnabled = sel.Any(i => i.Local);
-        DelRemoteBtn.IsEnabled = signedIn && sel.Any(i => i.Record.PeergosPath != null && i.InPeergos != false);
-        // From both: whatever exists of the capture, on either side.
-        DelBothBtn.IsEnabled = DelLocalBtn.IsEnabled || DelRemoteBtn.IsEnabled;
+        bool anyLocal = sel.Any(i => i.Local && !i.Record.Locked);
+        bool anyRemote = sel.Any(i => i.Record.PeergosPath != null && i.InPeergos != false && !i.Record.Locked);
+        bool allLocked = sel.All(i => i.Record.Locked);
+        LockBtn.IsChecked = allLocked;
+        LockText.Text = allLocked ? "Locked" : "Lock";
+        LockGlyph.Text = allLocked ? "\uE72E" : "\uE785";
+        DeleteBtn.IsEnabled = !allLocked;
+        DeleteBtn.ToolTip = allLocked ? "Locked – unlock first" : DeleteBtn.ToolTip;
+        DelLocalItem.IsEnabled = anyLocal;
+        DelRemoteItem.IsEnabled = anyRemote;
+        DelBothItem.IsEnabled = anyLocal || anyRemote;
+        RemoveItem.IsEnabled = !allLocked;
+        DelRemoteItem.Header = "From Peergos" + (anyRemote && !signedIn ? " (sign in first)" : "");
+        DelBothItem.Header = "From this PC and Peergos" + (anyRemote && !signedIn ? " (Peergos: sign in first)" : "");
         if (sel.Count > 1)
         {
             SinglePanel.Visibility = Visibility.Collapsed;
             PreviewBox.Visibility = Visibility.Collapsed;
-            SelectionTitle.Text = $"{sel.Count} captures selected";
+            int locked = sel.Count(i => i.Record.Locked);
+            SelectionTitle.Text = $"{sel.Count} captures selected" + (locked > 0 ? $" ({locked} locked)" : "");
+            CopyLinkBtn.IsEnabled = OpenLinkBtn.IsEnabled = OpenFileBtn.IsEnabled = ShowFileBtn.IsEnabled = CopyMediaBtn.IsEnabled = false;
+            UploadBtn.IsEnabled = DrawBtn.IsEnabled = FullBtn.IsEnabled = false;
             return;
         }
         var it = sel[0];
         var r = it.Record;
         SinglePanel.Visibility = Visibility.Visible;
         PreviewBox.Visibility = Visibility.Visible;
-        SelectionTitle.Text = it.Title;
+        SelectionTitle.Text = (r.Locked ? "🔒 " : "") + it.Title;
         LabelBox.Text = r.Label;
         InfoTaken.Text = r.Created.ToString("dddd d MMMM yyyy, HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
-        InfoApp.Text = string.IsNullOrEmpty(r.App) ? "–" : r.App + (string.IsNullOrEmpty(r.WindowTitle) ? "" : " – " + r.WindowTitle);
+        InfoAppLabel.Text = r.IsUpload ? "Uploaded from" : "From";
+        InfoApp.Text = r.IsUpload ? r.Source ?? "–"
+            : string.IsNullOrEmpty(r.App) ? "–" : r.App + (string.IsNullOrEmpty(r.WindowTitle) ? "" : " – " + r.WindowTitle);
         var size = new List<string>();
         if (r.Width > 0) size.Add($"{r.Width} × {r.Height}");
         if (r.IsVideo && r.Seconds > 0) size.Add(it.Duration);
         if (r.Bytes > 0) size.Add(HistoryLogic.Size(r.Bytes));
         InfoSize.Text = size.Count > 0 ? string.Join(" · ", size) : "–";
-        InfoLocal.Text = it.Local ? r.File : r.File != null ? "No longer on this PC" : "Not on this PC";
-        InfoRemote.Text = it.PeergosTip;
+        InfoLocal.Text = it.Local ? r.File : r.IsUpload ? "No copy kept by Peergos Snap" : r.File != null ? "No longer on this PC" : "Not on this PC";
+        InfoRemote.Text = it.PeergosTip + (r.PeergosPath != null && !signedIn ? " – sign in to Peergos to see or delete it" : "");
         InfoLink.Text = r.Link ?? "–";
         CopyLinkBtn.IsEnabled = OpenLinkBtn.IsEnabled = r.Link != null && it.InPeergos != false;
-        OpenFileBtn.IsEnabled = ShowFileBtn.IsEnabled = CopyMediaBtn.IsEnabled = it.Local;
-        CopyMediaBtn.Content = r.IsVideo ? "Copy video" : "Copy picture";
-        UploadBtn.IsEnabled = it.Local && signedIn && it.InPeergos != true;
-        UploadBtn.Visibility = it.InPeergos == true ? Visibility.Collapsed : Visibility.Visible;
+        OpenFileBtn.IsEnabled = ShowFileBtn.IsEnabled = FileOf(it) != null;
+        CopyMediaBtn.IsEnabled = it.Local;
+        CopyMediaText.Text = r.IsVideo ? "Copy video" : "Copy picture";
+        UploadBtn.IsEnabled = it.Local && it.InPeergos != true;
+        UploadBtn.Visibility = it.InPeergos == true || r.IsUpload ? Visibility.Collapsed : Visibility.Visible;
+        DrawBtn.IsEnabled = it.Local && it.IsViewablePicture;
+        DrawBtn.Visibility = r.IsVideo || r.IsUpload ? Visibility.Collapsed : Visibility.Visible;
+        FullBtn.IsEnabled = it.PreviewFile != null;
         _ = ShowPreview(it);
         showingDetails = true;
     }
+
+    /// <summary>The file on this PC an entry opens: the capture, or the original of an uploaded file (only opened).</summary>
+    static string? FileOf(HistoryItem it) =>
+        it.Local ? it.Record.File : it.Record.IsUpload && it.Record.Source is { } s && (File.Exists(s) || Directory.Exists(s)) ? s : null;
 
     async Task ShowPreview(HistoryItem it)
     {
         Preview.Source = null;
         var r = it.Record;
-        PreviewNote.Text = !it.Local ? "No preview: the file is not on this PC." + (r.Link != null ? " Open the link to see it." : "") : "";
-        if (!it.Local) return;
-        string? source = r.IsVideo ? await ThumbFiles.VideoThumb(r) : r.File;
+        var file = it.PreviewFile;
+        PreviewNote.Text = file != null ? ""
+            : r.IsFolder ? "A folder uploaded to Peergos – open its link to see it."
+            : r.IsUpload ? "No preview for this file." + (r.Link != null ? " Open the link to see it." : "")
+            : "No preview: the file is not on this PC." + (r.Link != null ? " Open the link to see it." : "");
+        if (file == null) return;
+        string? source = r.IsVideo ? await ThumbFiles.VideoThumb(r) : file;
         if (source == null) { PreviewNote.Text = "No preview"; return; }
         var img = await Task.Run(() => ThumbFiles.Load(source, 900));
         if (One() == it) Preview.Source = img;
@@ -255,11 +316,17 @@ public partial class HistoryWindow : Window
 
     // ---------- actions ----------
 
-    void Confirm(string text, string yes, Func<Task> action)
+    /// <summary>The question above the preview. <paramref name="yes"/> null = only Cancel (and Sign in when offered).</summary>
+    void Confirm(string text, string? yes, Func<Task>? action, bool isDelete = false, bool offerSignIn = false)
     {
         pending = action;
+        askedDelete = isDelete;
         ConfirmText.Text = text;
-        ConfirmYes.Content = yes;
+        ConfirmYes.Content = yes ?? "";
+        ConfirmYes.Visibility = yes == null ? Visibility.Collapsed : Visibility.Visible;
+        ConfirmSignIn.Visibility = offerSignIn ? Visibility.Visible : Visibility.Collapsed;
+        ConfirmNever.IsChecked = false;
+        ConfirmNever.Visibility = isDelete ? Visibility.Visible : Visibility.Collapsed;
         ConfirmBar.Visibility = Visibility.Visible;
         ConfirmBar.BringIntoView();
     }
@@ -270,120 +337,259 @@ public partial class HistoryWindow : Window
         ConfirmBar.Visibility = Visibility.Collapsed;
     }
 
-    void Result(string text) => ActionResult.Text = text;
+    void Result(string text, bool error = false)
+    {
+        ActionResult.Text = text;
+        if (error) ActionResult.Foreground = System.Windows.Media.Brushes.Firebrick;
+        else ActionResult.SetResourceReference(TextBlock.ForegroundProperty, "Fg2");
+    }
 
     static string Count(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
 
-    void AskDelete(bool local, bool remote)
+    /// <summary>Asks before a delete – or does it at once when Settings → Files &amp; history says not to ask.</summary>
+    async Task ConfirmDelete(string text, string yes, Func<Task> action)
     {
-        var sel = Selected();
-        var localItems = local ? sel.Where(i => i.Local).ToList() : [];
-        var remoteItems = remote ? sel.Where(i => i.Record.PeergosPath != null && i.InPeergos != false).ToList() : [];
-        if (localItems.Count + remoteItems.Count == 0) return;
-        var parts = new List<string>();
-        if (localItems.Count > 0) parts.Add($"{localItems.Count} file{(localItems.Count == 1 ? "" : "s")} on this PC go{(localItems.Count == 1 ? "es" : "")} to the Recycle Bin");
-        if (remoteItems.Count > 0) parts.Add($"{Count(remoteItems.Count, "file", "files")} will be deleted from your Peergos folder – "
-                                             + (remoteItems.Count == 1 ? "its link stops" : "their links stop") + " working, and this cannot be undone");
-        var mirrorNote = localItems.Any(i => i.Record.MirrorFile != null) ? " Copies in your mirror folder are kept." : "";
-        // Deleting from both places also removes the entries (Settings → Files & history can keep them instead).
-        bool removeEntries = local && remote && app.Settings.DeleteBothRemovesEntry;
-        var touched = localItems.Concat(remoteItems).Distinct().ToList();
-        var entries = touched.Count == 1 ? "the entry" : "the entries";
-        var entryNote = removeEntries ? $" {char.ToUpper(entries[0])}{entries[1..]} leave{(touched.Count == 1 ? "s" : "")} the history." : $" The history keeps {entries}.";
-        Confirm(string.Join("; ", parts) + "." + mirrorNote + entryNote, "Yes, delete", async () =>
-        {
-            var messages = new List<string>();
-            var localGone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var it in sel.Where(i => i.Record.File != null && !i.Local)) localGone.Add(it.Record.File!);
-            if (localItems.Count > 0)
-            {
-                var failed = Recycle.Delete(localItems.Select(i => i.Record.File!));
-                foreach (var it in localItems.Where(i => !failed.Contains(i.Record.File!))) localGone.Add(it.Record.File!);
-                messages.Add(failed.Count == 0 ? $"{localItems.Count} moved to the Recycle Bin" : $"{failed.Count} could not be moved to the Recycle Bin");
-            }
-            var remoteGone = new HashSet<string>(StringComparer.Ordinal);
-            if (remoteItems.Count > 0)
-            {
-                Result("Deleting in Peergos…");
-                var (r, deleted, missing, failed) = await Uploader.DeleteAsync(app.Settings.Clone(), remoteItems.Select(i => i.Record.PeergosPath!));
-                foreach (var it in remoteItems.Where(i => deleted.Contains(i.Record.PeergosPath!) || missing.Contains(i.Record.PeergosPath!)))
-                {
-                    remoteGone.Add(it.Record.PeergosPath!);
-                    remotePaths?.Remove(it.Record.PeergosPath!);
-                    it.Record.PeergosPath = null;
-                    it.Record.Link = null;
-                }
-                Store.Save();
-                messages.Add(r.Raw == null && !r.Ok ? "Peergos: " + r.Error
-                    : $"{deleted.Count + missing.Count} deleted from Peergos" + (failed.Count > 0 ? $", {failed.Count} failed: {failed[0]}" : ""));
-            }
-            if (removeEntries)
-            {
-                // PeergosPath was cleared above for the files deleted there; a null path counts as gone.
-                var ids = HistoryLogic.RemovableAfterDelete(touched.Select(i => i.Record), localGone, remoteGone);
-                // Not dismissed: a file restored from the Recycle Bin comes back into the history.
-                if (ids.Count > 0) Store.Remove(ids, dismiss: false);
-                if (ids.Count > 0) messages.Add($"{Count(ids.Count, "entry", "entries")} removed from the history");
-                if (ids.Count < touched.Count) messages.Add($"{Count(touched.Count - ids.Count, "entry stays", "entries stay")} (not deleted everywhere)");
-            }
-            Result(string.Join(" · ", messages));
-            Rebuild();
-        });
+        if (!app.Settings.ConfirmHistoryDelete) { await action(); return; }
+        Confirm(text, yes, action, isDelete: true);
     }
 
-    /// <summary>The Delete key: the action chosen in Settings → Files & history (from both places by default).</summary>
+    void AskSignIn(string why)
+    {
+        SelectFirstIfNone();
+        Confirm(why + " You are not signed in to Peergos.", null, null, offerSignIn: true);
+    }
+
+    async void AskDelete(bool local, bool remote)
+    {
+        var sel = Selected();
+        if (sel.Count == 0) return;
+        var byRecord = sel.ToDictionary(i => i.Record);
+        var plan = HistoryLogic.PlanDelete(sel.Select(i => i.Record).ToList(), local, remote, app.Settings.PeergosConfigured, File.Exists, remotePaths);
+        var lockedNote = plan.Locked.Count > 0 ? $" {Count(plan.Locked.Count, "locked entry is", "locked entries are")} left out." : "";
+        if (plan.NeedSignIn.Count > 0)
+        {
+            // Never fail silently: say what cannot be done now, and let the user choose.
+            var text = $"{Count(plan.NeedSignIn.Count, "file", "files")} in Peergos cannot be deleted now: you are not signed in to Peergos.";
+            if (plan.Local.Count > 0)
+            {
+                Confirm(text + $" Delete only the {Count(plan.Local.Count, "file", "files")} on this PC now? The entries stay, so you can delete in Peergos after signing in." + lockedNote,
+                    "Delete on this PC only", () => RunDelete(plan with { NeedSignIn = [] }, byRecord, removeEntries: false), offerSignIn: true);
+            }
+            else Confirm(text + " Sign in, then delete again." + lockedNote, null, null, offerSignIn: true);
+            return;
+        }
+        if (plan.Nothing)
+        {
+            Result(plan.Locked.Count > 0 && plan.Locked.Count == sel.Count ? "Locked – unlock it first (Lock button or L)." : "Nothing to delete there." + lockedNote);
+            return;
+        }
+        var parts = new List<string>();
+        if (plan.Local.Count > 0) parts.Add($"{plan.Local.Count} file{(plan.Local.Count == 1 ? "" : "s")} on this PC go{(plan.Local.Count == 1 ? "es" : "")} to the Recycle Bin");
+        if (plan.Remote.Count > 0) parts.Add($"{Count(plan.Remote.Count, "file", "files")} will be deleted from your Peergos – "
+                                             + (plan.Remote.Count == 1 ? "its link stops" : "their links stop") + " working, and this cannot be undone");
+        var mirrorNote = plan.Local.Any(r => r.MirrorFile != null) ? " Copies in your mirror folder are kept." : "";
+        // Deleting from both places also removes the entries (Settings → Files & history can keep them instead).
+        bool removeEntries = local && remote && app.Settings.DeleteBothRemovesEntry;
+        var touched = plan.Local.Concat(plan.Remote).Distinct().Count();
+        var entries = touched == 1 ? "the entry" : "the entries";
+        var entryNote = removeEntries ? $" {char.ToUpper(entries[0])}{entries[1..]} leave{(touched == 1 ? "s" : "")} the history." : $" The history keeps {entries}.";
+        await ConfirmDelete(string.Join("; ", parts) + "." + mirrorNote + entryNote + lockedNote, "Yes, delete",
+            () => RunDelete(plan, byRecord, removeEntries));
+    }
+
+    async Task RunDelete(DeletePlan plan, Dictionary<HistoryRecord, HistoryItem> byRecord, bool removeEntries)
+    {
+        try { await RunDeleteSteps(plan, byRecord, removeEntries); }
+        catch (Exception e)
+        {
+            // Never silently: what failed is said, and the entries stay for another try.
+            Log.Error("history delete", e);
+            Result("The delete stopped: " + e.Message + " – the entries stay, try again.", error: true);
+            Rebuild();
+        }
+    }
+
+    async Task RunDeleteSteps(DeletePlan plan, Dictionary<HistoryRecord, HistoryItem> byRecord, bool removeEntries)
+    {
+        var messages = new List<string>();
+        bool problem = false;
+        bool needSignIn = false;
+        var localGone = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in byRecord.Keys.Where(r => r.File != null && !File.Exists(r.File))) localGone.Add(r.File!);
+        if (plan.Local.Count > 0)
+        {
+            var failed = Recycle.Delete(plan.Local.Select(r => r.File!));
+            foreach (var r in plan.Local.Where(r => !failed.Contains(r.File!))) localGone.Add(r.File!);
+            if (failed.Count == 0) messages.Add($"{plan.Local.Count} moved to the Recycle Bin");
+            else { messages.Add($"{failed.Count} could not be moved to the Recycle Bin"); problem = true; }
+        }
+        var remoteGone = new HashSet<string>(StringComparer.Ordinal);
+        if (plan.Remote.Count > 0)
+        {
+            Result("Deleting in Peergos…");
+            var (r, deleted, missing, failed) = await Uploader.DeleteAsync(app.Settings.Clone(), plan.Remote.Select(x => x.PeergosPath!));
+            foreach (var rec in plan.Remote.Where(x => deleted.Contains(x.PeergosPath!) || missing.Contains(x.PeergosPath!)))
+            {
+                remoteGone.Add(rec.PeergosPath!);
+                remotePaths?.Remove(rec.PeergosPath!);
+                rec.PeergosPath = null;
+                rec.Link = null;
+            }
+            Store.Save();
+            int gone = deleted.Count + missing.Count;
+            if (gone < plan.Remote.Count)
+            {
+                problem = true;
+                var why = failed.FirstOrDefault() ?? r.Error ?? "unknown error";
+                needSignIn = Uploader.NeedsSignIn(r.Error) || Uploader.NeedsSignIn(why);
+                messages.Add($"{(gone > 0 ? $"{gone} deleted from Peergos, " : "")}{plan.Remote.Count - gone} NOT deleted in Peergos ({why}) – the entr{(plan.Remote.Count - gone == 1 ? "y stays" : "ies stay")}, try again");
+                if (needSignIn) app.UpdateSettings(s => s.Session = ""); // the sign-in ended: show it everywhere
+            }
+            else messages.Add($"{gone} deleted from Peergos");
+        }
+        if (removeEntries)
+        {
+            // PeergosPath was cleared above for the files deleted there; a null path counts as gone.
+            var touched = plan.Local.Concat(plan.Remote).Distinct().ToList();
+            var ids = HistoryLogic.RemovableAfterDelete(touched, localGone, remoteGone);
+            // Not dismissed: a file restored from the Recycle Bin comes back into the history.
+            if (ids.Count > 0) Store.Remove(ids, dismiss: false);
+            if (ids.Count > 0) messages.Add($"{Count(ids.Count, "entry", "entries")} removed from the history");
+            if (ids.Count < touched.Count && !problem) messages.Add($"{Count(touched.Count - ids.Count, "entry stays", "entries stay")} (not deleted everywhere)");
+        }
+        Result(string.Join(" · ", messages), error: problem);
+        Rebuild();
+        if (needSignIn) AskSignIn("Peergos refused the delete because your sign-in has ended.");
+    }
+
+    /// <summary>The Delete key and the Delete button: the action chosen in Settings → Files & history (from both places by default).</summary>
     void DefaultDelete()
     {
         switch (app.Settings.HistoryDeleteAction)
         {
-            case HistoryDelete.Local: if (DelLocalBtn.IsEnabled) AskDelete(local: true, remote: false); break;
-            case HistoryDelete.Peergos: if (DelRemoteBtn.IsEnabled) AskDelete(local: false, remote: true); break;
+            case HistoryDelete.Local: AskDelete(local: true, remote: false); break;
+            case HistoryDelete.Peergos: AskDelete(local: false, remote: true); break;
             case HistoryDelete.Entry: AskRemove(); break;
             default:
-                // "From both" also works when the capture is only on one side.
-                if (DelLocalBtn.IsEnabled || DelRemoteBtn.IsEnabled) AskDelete(local: true, remote: true);
+                // "From both" also works when the capture is only on one side; with nothing left anywhere it removes the entry.
+                if (DelLocalItem.IsEnabled || DelRemoteItem.IsEnabled) AskDelete(local: true, remote: true);
                 else AskRemove();
                 break;
         }
     }
 
-    /// <summary>Highlights the default delete button and names the Delete key in its tooltip.</summary>
+    static readonly Dictionary<HistoryDelete, string> DeleteNames = new()
+    {
+        [HistoryDelete.Both] = "Delete", [HistoryDelete.Local] = "Delete on PC", [HistoryDelete.Peergos] = "Delete in Peergos", [HistoryDelete.Entry] = "Remove entry",
+    };
+
+    /// <summary>The Delete button does the default delete; its text and tooltip say which.</summary>
     void MarkDefaultDelete()
     {
-        var buttons = new Dictionary<HistoryDelete, Button>
+        var d = app.Settings.HistoryDeleteAction;
+        DeleteText.Text = DeleteNames[d];
+        DeleteBtn.ToolTip = d switch
         {
-            [HistoryDelete.Both] = DelBothBtn, [HistoryDelete.Local] = DelLocalBtn,
-            [HistoryDelete.Peergos] = DelRemoteBtn, [HistoryDelete.Entry] = RemoveBtn,
-        };
-        var tips = new Dictionary<HistoryDelete, string>
-        {
-            [HistoryDelete.Both] = app.Settings.DeleteBothRemovesEntry
+            HistoryDelete.Both => app.Settings.DeleteBothRemovesEntry
                 ? "Deletes the file on this PC (Recycle Bin) and in Peergos, and removes the entry from the history"
                 : "Deletes the file on this PC (Recycle Bin) and in Peergos; the history keeps the entry",
-            [HistoryDelete.Local] = "Moves the file on this PC to the Recycle Bin",
-            [HistoryDelete.Peergos] = "Deletes the file from your Peergos folder; its link stops working",
-            [HistoryDelete.Entry] = "Only the history entry; the files stay",
-        };
-        foreach (var (kind, b) in buttons)
-        {
-            bool isDefault = kind == app.Settings.HistoryDeleteAction;
-            b.ToolTip = tips[kind] + (isDefault ? "  (Delete key)" : "");
-            if (isDefault) b.SetResourceReference(StyleProperty, "AccentButtonStyle");
-            else b.ClearValue(StyleProperty);
-        }
+            HistoryDelete.Local => "Moves the file on this PC to the Recycle Bin",
+            HistoryDelete.Peergos => "Deletes the file from your Peergos; its link stops working",
+            _ => "Only the history entry; the files stay",
+        } + "  (Delete key; ▾ for the other ways)" + (app.Settings.ConfirmHistoryDelete ? "" : " – without asking");
+        MarkDeleteMenu();
     }
 
-    void AskRemove()
+    void MarkDeleteMenu()
+    {
+        var d = app.Settings.HistoryDeleteAction;
+        DelBothItem.FontWeight = d == HistoryDelete.Both ? FontWeights.SemiBold : FontWeights.Normal;
+        DelLocalItem.FontWeight = d == HistoryDelete.Local ? FontWeights.SemiBold : FontWeights.Normal;
+        DelRemoteItem.FontWeight = d == HistoryDelete.Peergos ? FontWeights.SemiBold : FontWeights.Normal;
+        RemoveItem.FontWeight = d == HistoryDelete.Entry ? FontWeights.SemiBold : FontWeights.Normal;
+    }
+
+    async void AskRemove()
+    {
+        var sel = Selected();
+        var open = sel.Where(i => !i.Record.Locked).ToList();
+        if (open.Count == 0) { if (sel.Count > 0) Result("Locked – unlock it first (Lock button or L)."); return; }
+        var lockedNote = open.Count < sel.Count ? $" {Count(sel.Count - open.Count, "locked entry stays", "locked entries stay")}." : "";
+        await ConfirmDelete($"Remove {open.Count} entr{(open.Count == 1 ? "y" : "ies")} from the history? The files stay where they are (this PC, Peergos) and are not added back later." + lockedNote,
+            "Yes, remove", () =>
+            {
+                Store.Remove(open.Select(i => i.Record.Id));
+                Result($"{open.Count} removed from the history" + lockedNote);
+                return Task.CompletedTask;
+            });
+    }
+
+    /// <summary>Locks the selected entries (or unlocks them when all are locked already).</summary>
+    void ToggleLock()
     {
         var sel = Selected();
         if (sel.Count == 0) return;
-        Confirm($"Remove {sel.Count} entr{(sel.Count == 1 ? "y" : "ies")} from the history? The files stay where they are (this PC, Peergos) and are not added back later.",
-            "Yes, remove", () =>
-            {
-                Store.Remove(sel.Select(i => i.Record.Id));
-                Result($"{sel.Count} removed from the history");
-                return Task.CompletedTask;
-            });
+        bool lockThem = !sel.All(i => i.Record.Locked);
+        foreach (var it in sel) it.Record.Locked = lockThem;
+        Store.Save();
+        Result(lockThem ? $"{Count(sel.Count, "entry", "entries")} locked: never deleted or removed until unlocked"
+                        : $"{Count(sel.Count, "entry", "entries")} unlocked");
+    }
+
+    async Task Draw(HistoryItem it)
+    {
+        try
+        {
+            var made = await app.DrawOnRecordAsync(it.Record);
+            if (made == null) return;
+            Rebuild();
+            if (items.TryGetValue(made.Id, out var fresh)) { List.SelectedItems.Clear(); List.SelectedItem = fresh; List.ScrollIntoView(fresh); }
+        }
+        catch (Exception e)
+        {
+            Log.Error("draw", e);
+            Result("The drawing editor failed: " + e.Message, error: true);
+        }
+    }
+
+    /// <summary>Full screen, with ← → through the captures as listed.</summary>
+    void ShowFull(HistoryItem it)
+    {
+        var shown = List.Items.Cast<HistoryItem>().ToList();
+        var v = new ImageViewerWindow(shown, Math.Max(0, shown.IndexOf(it)), x => _ = Draw(x)) { Owner = this };
+        v.Show();
+    }
+
+    /// <summary>Right click on the list: everything for the selected captures in one menu.</summary>
+    bool FillRowMenu(ContextMenu m)
+    {
+        var sel = Selected();
+        if (sel.Count == 0) return false;
+        m.Items.Clear();
+        void Add(string text, bool enabled, Action a)
+        {
+            var i = new MenuItem { Header = text, IsEnabled = enabled };
+            i.Click += (_, _) => a();
+            m.Items.Add(i);
+        }
+        var one = sel.Count == 1 ? sel[0] : null;
+        if (one != null)
+        {
+            Add("Copy link", one.Record.Link != null && one.InPeergos != false, () => CopyText(one.Record.Link!, "Link copied to the clipboard"));
+            Add("View full screen", one.PreviewFile != null, () => ShowFull(one));
+            Add("Open", FileOf(one) != null || one.Record.Link != null, () => OpenItem(one));
+            Add("Draw on a copy…", one.Local && one.IsViewablePicture && !one.Record.IsVideo, () => _ = Draw(one));
+            m.Items.Add(new Separator());
+        }
+        bool allLocked = sel.All(i => i.Record.Locked);
+        Add(allLocked ? "Unlock" : "Lock", true, ToggleLock);
+        m.Items.Add(new Separator());
+        MarkDefaultDelete();
+        Add(DelBothItem.Header as string ?? "", DelBothItem.IsEnabled, () => AskDelete(true, true));
+        Add(DelLocalItem.Header as string ?? "", DelLocalItem.IsEnabled, () => AskDelete(true, false));
+        Add(DelRemoteItem.Header as string ?? "", DelRemoteItem.IsEnabled, () => AskDelete(false, true));
+        Add("Only the history entry", RemoveItem.IsEnabled, AskRemove);
+        return true;
     }
 
     void AskRemoveGone()
@@ -398,7 +604,7 @@ public partial class HistoryWindow : Window
             return;
         }
         SelectFirstIfNone();
-        Confirm($"Remove {gone.Count} entr{(gone.Count == 1 ? "y" : "ies")} whose files are neither on this PC nor in Peergos?", "Yes, remove", () =>
+        Confirm($"Remove {gone.Count} entr{(gone.Count == 1 ? "y" : "ies")} whose files are neither on this PC nor in Peergos? Locked entries stay.", "Yes, remove", () =>
         {
             Store.Remove(gone.Select(g => g.Id));
             Result($"{Count(gone.Count, "entry", "entries")} removed");
@@ -410,10 +616,12 @@ public partial class HistoryWindow : Window
     {
         if (Store.Records.Count == 0) return;
         SelectFirstIfNone();
-        Confirm($"Clear the whole history ({Count(Store.Records.Count, "entry", "entries")})? No file is deleted – only the list is emptied.", "Yes, clear", () =>
+        int locked = Store.Records.Count(r => r.Locked);
+        Confirm($"Clear the whole history ({Count(Store.Records.Count - locked, "entry", "entries")})? No file is deleted – only the list is emptied."
+                + (locked > 0 ? $" {Count(locked, "locked entry stays", "locked entries stay")}." : ""), "Yes, clear", () =>
         {
             Store.Clear();
-            Result("The history is empty");
+            Result(locked > 0 ? $"The history is cleared; {Count(locked, "locked entry stays", "locked entries stay")}" : "The history is empty");
             return Task.CompletedTask;
         });
     }
@@ -428,14 +636,14 @@ public partial class HistoryWindow : Window
 
     void OpenItem(HistoryItem it)
     {
-        if (it.Local && it.Record.File != null) Shell(it.Record.File);
+        if (FileOf(it) is { } f) Shell(f);
         else if (it.Record.Link != null) Shell(it.Record.Link);
     }
 
     void CopyText(string text, string done)
     {
         try { ClipboardService.SetText(text); Result(done); }
-        catch (Exception e) { Result("Could not copy: " + e.Message); }
+        catch (Exception e) { Result("Could not copy: " + e.Message, error: true); }
     }
 
     static void Shell(string target)

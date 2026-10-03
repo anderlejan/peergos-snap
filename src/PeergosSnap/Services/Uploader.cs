@@ -41,6 +41,38 @@ public sealed class Uploader
         finally { OneAtATime.Release(); }
     }
 
+    /// <summary>Uploads several files with one sign-in (from the tray menu). Without <paramref name="folderName"/> each
+    /// file goes into the capture folder with its own link; with it, a new folder of that name gets the files at their
+    /// relative paths and one link. <paramref name="files"/>: (file on this PC, relative path).</summary>
+    public static async Task<(BridgeResult Result, PutResult Put)> PutAsync(Settings s, IReadOnlyList<(string Local, string Relative)> files,
+        string? folderName, Action<int>? progress)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            var args = new List<string> { "put", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder };
+            if (!string.IsNullOrWhiteSpace(folderName)) { args.Add("--dir"); args.Add(folderName); }
+            var input = s.Session + "\n" + string.Join("\n", files.Select(f => f.Local + "\t" + f.Relative.Replace('\\', '/'))) + "\n";
+            var r = await RunAsync([.. args], input, progress, null, TimeSpan.FromHours(6), default);
+            return (r, PeergosLinks.ParsePut(r.Raw));
+        }
+        finally { OneAtATime.Release(); }
+    }
+
+    /// <summary>The folders inside a folder of the Peergos home ("" = the home itself), to choose the capture folder.</summary>
+    public static async Task<(BridgeResult Result, string Path, bool Exists, List<string> Folders)> FoldersAsync(Settings s, string relative)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            var r = await RunAsync(["folders", "--server", s.Server, "--user", s.Username.Trim(), "--path", relative.Length == 0 ? "/" : relative],
+                s.Session, null, null, TimeSpan.FromMinutes(2), default);
+            var (p, e, f) = r.Ok ? PeergosLinks.ParseFolders(r.Raw) : ("", false, new List<string>());
+            return (r, p, e, f);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
     /// <summary>The files in the Peergos capture folder with their secret links.</summary>
     public static async Task<(BridgeResult Result, List<RemoteFile> Files)> ListAsync(Settings s)
     {
@@ -93,6 +125,8 @@ public sealed class Uploader
             RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
+            // The bridge reads stdin as UTF-8: file and folder names with accents must arrive unchanged (no BOM).
+            StandardInputEncoding = new UTF8Encoding(false),
             WorkingDirectory = AppPaths.BridgeDir,
         };
         foreach (var a in new[] { "-Xmx1g", "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true", "-cp", cp, "snap.bridge.PeergosBridge" }.Concat(args))

@@ -72,6 +72,15 @@ public sealed class Settings
     public HistoryDelete HistoryDeleteAction { get; set; } = HistoryDelete.Both;
     /// <summary>Deleting a capture from this PC and Peergos also removes its history entry (default); off keeps the entry.</summary>
     public bool DeleteBothRemovesEntry { get; set; } = true;
+    /// <summary>Since 2.3: deletes in the history wait for a confirmation (default); off deletes at once.</summary>
+    public bool ConfirmHistoryDelete { get; set; } = true;
+
+    // Drawing on pictures (since 2.3)
+    /// <summary>Open the drawing editor after every picture, before it is shared.</summary>
+    public bool AnnotateAfterPicture { get; set; }
+    public string AnnotateColor { get; set; } = "#E53935";
+    /// <summary>Line width / text size step of the editor: 0 small, 1 medium, 2 large.</summary>
+    public int AnnotateSize { get; set; } = 1;
 
     // Direct sharing with friends (since 2.2)
     /// <summary>Receive pictures that friends send directly (keeps a connection to Peergos open while friends are set up).</summary>
@@ -197,5 +206,7 @@ public sealed class Settings
         DirectCheckSeconds = Math.Clamp(DirectCheckSeconds, 2, 60);
         DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
         DirectLastFriend ??= "";
+        AnnotateSize = Math.Clamp(AnnotateSize, 0, 2);
+        if (string.IsNullOrWhiteSpace(AnnotateColor) || !AnnotateColor.StartsWith('#')) AnnotateColor = "#E53935";
     }
 }
