@@ -23,14 +23,30 @@ public sealed class HistoryRecord
     public string? Link { get; set; }
     public string? PeergosPath { get; set; }
     public DateTime? Uploaded { get; set; }
+    /// <summary>Since 2.3: a locked entry is never deleted or removed (not by any delete, clean-up or "clear").</summary>
+    public bool Locked { get; set; }
+    /// <summary>Since 2.3, for files and folders uploaded from the tray menu: where they came from on this PC. Only
+    /// shown – Peergos Snap never deletes or changes it (it is the user's own file, not a copy).</summary>
+    public string? Source { get; set; }
 
     [JsonIgnore] public bool IsVideo => Kind == "video";
-    [JsonIgnore] public string Name => System.IO.Path.GetFileName(File ?? PeergosPath ?? "");
+    [JsonIgnore] public bool IsPicture => Kind == "picture";
+    /// <summary>A file or folder uploaded from the tray menu (not a capture).</summary>
+    [JsonIgnore] public bool IsUpload => Kind is "file" or "folder";
+    [JsonIgnore] public bool IsFolder => Kind == "folder";
+    [JsonIgnore] public string Name => System.IO.Path.GetFileName(File ?? PeergosPath ?? Source ?? "");
     [JsonIgnore] public string Title => Label.Trim().Length > 0 ? Label.Trim() : Name;
 }
 
+/// <summary>The outcome of <see cref="HistoryLogic.PlanDelete"/>.</summary>
+public sealed record DeletePlan(List<HistoryRecord> Local, List<HistoryRecord> Remote, List<HistoryRecord> Locked,
+    List<HistoryRecord> NeedSignIn)
+{
+    public bool Nothing => Local.Count + Remote.Count == 0;
+}
+
 /// <summary>A file found in the Peergos capture folder.</summary>
-public sealed record RemoteFile(string Name, string Path, long Size, DateTime Modified, IReadOnlyList<string> Links);
+public sealed record RemoteFile(string Name, string Path, long Size, DateTime Modified, IReadOnlyList<string> Links, bool Folder = false);
 
 /// <summary>The history file: history.json with rotating backups.</summary>
 public sealed class HistoryStore
@@ -122,16 +138,17 @@ public sealed class HistoryStore
     public void Remove(IEnumerable<string> ids, bool dismiss = true)
     {
         var set = ids.ToHashSet();
+        set.RemoveWhere(id => records.Any(r => r.Id == id && r.Locked)); // locked entries always stay
         if (dismiss) foreach (var r in records.Where(r => set.Contains(r.Id))) Dismiss(r);
         records.RemoveAll(r => set.Contains(r.Id));
         Save();
     }
 
-    /// <summary>Empties the history (the files stay where they are).</summary>
+    /// <summary>Empties the history (the files stay where they are); locked entries stay.</summary>
     public void Clear()
     {
-        foreach (var r in records) Dismiss(r);
-        records.Clear();
+        foreach (var r in records.Where(r => !r.Locked)) Dismiss(r);
+        records.RemoveAll(r => !r.Locked);
         Save();
     }
 
@@ -220,9 +237,23 @@ public static class HistoryLogic
         {
             bool goneHere = r.File == null || localGone.Contains(r.File);
             bool peergosGone = r.PeergosPath == null || remoteGone.Contains(r.PeergosPath);
-            if (goneHere && peergosGone && (r.File != null || r.PeergosPath != null)) ids.Add(r.Id);
+            if (!r.Locked && goneHere && peergosGone && (r.File != null || r.PeergosPath != null)) ids.Add(r.Id);
         }
         return ids;
+    }
+
+    /// <summary>
+    /// What a delete in the history will really do, so nothing fails silently: the files on this PC to delete, the
+    /// files in Peergos to delete, the locked entries that are skipped, and the Peergos files that cannot be deleted
+    /// now because the user is not signed in (they are named, and the user decides).
+    /// </summary>
+    public static DeletePlan PlanDelete(IReadOnlyList<HistoryRecord> selected, bool local, bool remote, bool signedIn,
+        Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths)
+    {
+        var open = selected.Where(r => !r.Locked).ToList();
+        var localItems = local ? open.Where(r => r.File != null && localExists(r.File)).ToList() : [];
+        var inPeergos = remote ? open.Where(r => r.PeergosPath != null && InPeergos(r, remotePaths) != false).ToList() : [];
+        return new DeletePlan(localItems, signedIn ? inPeergos : [], selected.Where(r => r.Locked).ToList(), signedIn ? [] : inPeergos);
     }
 
     /// <summary>Is the file in Peergos? null = unknown (not signed in, not looked yet).</summary>
@@ -231,7 +262,7 @@ public static class HistoryLogic
 
     /// <summary>Records that no longer lead to any file: not on this PC and not (or no longer) in Peergos.</summary>
     public static List<HistoryRecord> Gone(IEnumerable<HistoryRecord> records, Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths) =>
-        records.Where(r => (r.File == null || !localExists(r.File)) && InPeergos(r, remotePaths) != true
+        records.Where(r => !r.Locked && (r.File == null || !localExists(r.File)) && InPeergos(r, remotePaths) != true
                            && !(remotePaths == null && r.PeergosPath != null)).ToList();
 
     public static IEnumerable<HistoryRecord> Filter(IEnumerable<HistoryRecord> records, string show, string search,
@@ -244,8 +275,10 @@ public static class HistoryLogic
             bool? peer = InPeergos(r, remotePaths);
             bool keep = show switch
             {
-                "pictures" => !r.IsVideo,
+                "pictures" => r.IsPicture,
                 "videos" => r.IsVideo,
+                "uploads" => r.IsUpload,
+                "locked" => r.Locked,
                 "labelled" => r.Label.Trim().Length > 0,
                 "pc" => local,
                 "peergos" => peer == true || (peer == null && r.PeergosPath != null),
@@ -257,7 +290,7 @@ public static class HistoryLogic
             if (!keep) continue;
             if (words.Length > 0)
             {
-                var hay = $"{r.Label} {r.Name} {r.App} {r.WindowTitle} {r.Created:yyyy-MM-dd} {r.Link}".ToLowerInvariant();
+                var hay = $"{r.Label} {r.Name} {r.App} {r.WindowTitle} {r.Created:yyyy-MM-dd} {r.Link} {r.Source}".ToLowerInvariant();
                 if (!words.All(hay.Contains)) continue;
             }
             yield return r;

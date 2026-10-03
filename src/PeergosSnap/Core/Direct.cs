@@ -8,7 +8,8 @@ public sealed record DirectItem(string Name, string Path, string From, long Size
     IReadOnlyList<string> Stars)
 {
     public bool IsImage => System.IO.Path.GetExtension(Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
-    public string Month => Path.Split('/') is { Length: >= 6 } p ? p[4] : "";
+    /// <summary>The month folder: …/MONTH/NAME or …/MONTH/received/NAME (in the folders of 2.3 and of 2.2).</summary>
+    public string Month => DirectLogic.MonthOf(Path);
 }
 
 /// <summary>Who the user can share directly with, from the bridge's "friends" / "discover" answers.</summary>
@@ -20,6 +21,26 @@ public static class DirectLogic
 {
     public static string MonthOf(DateTime t) => t.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
+    /// <summary>The month folder of a direct path, counted from its end (the folders moved in 2.3, the end stays):
+    /// …/MONTH/NAME or …/MONTH/received/NAME. "" when there is none.</summary>
+    public static string MonthOf(string path)
+    {
+        var p = (path ?? "").Split('/');
+        if (p.Length < 3) return "";
+        var m = p.Length >= 4 && p[^2] == "received" ? p[^3] : p[^2];
+        return m.Length == 7 && m[4] == '-' && m.Remove(4, 1).All(char.IsAsciiDigit) ? m : "";
+    }
+
+    /// <summary>Who the other side of a direct path is: /OWNER/…/OTHER/MONTH/[received/]NAME.</summary>
+    public static string FriendOf(string path, string me)
+    {
+        var p = (path ?? "").Split('/');
+        if (p.Length < 5) return "";
+        int monthAt = p.Length >= 4 && p[^2] == "received" ? p.Length - 3 : p.Length - 2;
+        var owner = p[1];
+        var other = monthAt >= 1 ? p[monthAt - 1] : "";
+        return string.Equals(owner, me, StringComparison.OrdinalIgnoreCase) ? other : owner;
+    }
     /// <summary>A Peergos username as the bridge accepts it (lower case letters, digits, '-' and '_').</summary>
     public static string? NormaliseUser(string? text)
     {

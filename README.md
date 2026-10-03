@@ -13,6 +13,9 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
   friend's screen within seconds, in a window where both of you can zoom, save, label, pin and star it. Each file is
   shared read-only with that one friend, who gets their own copy in their Peergos; Delete only ever removes your own
   copy.
+- **Draw on pictures:** arrows, numbered steps, labels, frames, highlights and blur, right after the capture or later
+  from the history – for tutorials and pointing things out.
+- **Upload any file or folder** from the tray menu: each file gets its own secret link, a folder gets one.
 - **Discard** any capture from its notification card: gone from this PC, Peergos, the clipboard and the history.
 - **Two outputs, switched in the tray menu.** *Secret link* uploads the capture to Peergos and copies a link.
   *Media to clipboard* copies the picture or video file itself, ready for Ctrl+V.
@@ -22,7 +25,8 @@ end-to-end-encrypted storage or pasted straight from the clipboard. It works lik
 - **Delay with a frozen screen.** Choose 1–5 s in the tray menu (or up to 60 s in Settings); menus opened during
   the countdown stay in the picture, because the screen freezes when it ends.
 - **History manager.** Every capture with a preview, the app it came from, a label and its link, shown on this PC
-  and in Peergos side by side. Find old links, and delete on this PC (Recycle Bin), in Peergos or both.
+  and in Peergos side by side. Find old links, view full screen (zoom follows the mouse), lock what you want to
+  keep, and delete on this PC (Recycle Bin), in Peergos or both.
 - **Safe fallback.** If an upload fails, the capture goes to the clipboard instead. Every capture is also kept on
   this PC (forever by default, in one folder per month, or only when the upload failed), and you can mirror all
   captures to a folder of your choice.

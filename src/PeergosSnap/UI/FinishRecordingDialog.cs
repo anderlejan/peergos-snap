@@ -6,7 +6,7 @@ using PeergosSnap.Core;
 
 namespace PeergosSnap.UI;
 
-public enum FinishChoice { Upload, Clipboard, SaveAs, Discard, KeepLocal }
+public enum FinishChoice { Upload, Clipboard, SaveAs, Discard, KeepLocal, Annotate }
 
 /// <summary>Short confirmation after a recording (or, when asked for, after a picture): upload, copy the file, save
 /// it elsewhere, or throw it away.</summary>
@@ -40,6 +40,7 @@ public sealed class FinishRecordingDialog : Window
                 var bi = new System.Windows.Media.Imaging.BitmapImage();
                 bi.BeginInit();
                 bi.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                bi.CreateOptions = System.Windows.Media.Imaging.BitmapCreateOptions.IgnoreImageCache; // drawn on since: show the new picture
                 bi.DecodePixelWidth = 640;
                 bi.UriSource = new Uri(file);
                 bi.EndInit();
@@ -65,6 +66,7 @@ public sealed class FinishRecordingDialog : Window
         buttons.Children.Add(B("Upload & copy link", FinishChoice.Upload, linkMode, "Upload to Peergos and copy the secret link"));
         buttons.Children.Add(B(video ? "Copy video" : "Copy picture", FinishChoice.Clipboard, !linkMode, $"Copy the {what} to the clipboard (no upload)"));
         buttons.Children.Add(B("Save as…", FinishChoice.SaveAs, false, "Save a copy somewhere (no upload)"));
+        if (!video) buttons.Children.Add(B("Draw on it…", FinishChoice.Annotate, false, "Arrows, numbers, labels, highlights, blur – then choose again"));
         buttons.Children.Add(B("Discard", FinishChoice.Discard, false,
             s.DiscardPermanently ? $"Delete this {what} at once; nothing is kept" : $"Move this {what} to the Recycle Bin"));
 

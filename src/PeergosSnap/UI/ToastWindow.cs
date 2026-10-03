@@ -158,6 +158,7 @@ public sealed class ToastWindow : Window
             var bi = new BitmapImage();
             bi.BeginInit();
             bi.CacheOption = BitmapCacheOption.OnLoad;
+            bi.CreateOptions = BitmapCreateOptions.IgnoreImageCache; // the capture may have been drawn on since
             bi.DecodePixelWidth = 160;
             bi.UriSource = new Uri(file);
             bi.EndInit();

@@ -60,8 +60,11 @@
 <table>
   <tr><th>Menu item</th><th>What it does</th></tr>
   <tr><td>Take picture</td><td>Starts selecting an area for a picture.</td></tr>
+  <tr><td>Take picture and draw on it</td><td>The same, then the drawing editor opens before the picture is shared (see <a href="#drawing">Drawing on pictures</a>). Not shown when every picture opens the editor anyway.</td></tr>
   <tr><td>Record video / Stop recording</td><td>Starts selecting an area to record, or stops the running recording.</td></tr>
   <tr><td>Pause / Resume recording, Cancel recording</td><td>Shown while recording.</td></tr>
+  <tr><td>Upload files…</td><td>Choose one or more files on your PC: each is uploaded to your Peergos folder and gets its own secret link; the links are copied (one per line). See <a href="#uploads">Uploading files and folders</a>.</td></tr>
+  <tr><td>Upload a folder…</td><td>Choose a folder: it is uploaded with everything in it and gets one secret link, which is copied.</td></tr>
   <tr><td>Delay ▸</td><td>No delay, or 1–5 seconds before a picture is taken or a recording starts (see <a href="#pictures-delay">Capturing a menu</a>). Other lengths: Settings → Capture.</td></tr>
   <tr><td>Cancel the countdown</td><td>Shown while a delay is counting down.</td></tr>
   <tr><td>Tray click takes: Picture / Video</td><td>What a left click on the icon does.</td></tr>
@@ -194,17 +197,50 @@
 <p>Everything you upload is in the capture folder of your Peergos account, where you can open, rename or delete it in Peergos as usual. To stop sharing a file, delete it in Peergos.</p>
 </section>
 
+<section id="drawing" data-keywords="draw annotate arrow number label text highlight blur pixelate pen box ellipse tutorial mark edit editor">
+<h2>Drawing on pictures</h2>
+<p>Point things out before you share a picture: arrows, numbered steps, labels, frames, highlights – and blur anything private.</p>
+<ul>
+  <li><strong>Right after taking it:</strong> menu → <em>Take picture and draw on it</em>, or <em>Draw on it…</em> when Peergos Snap asks what to do after a picture, or for every picture: Settings → Capture → <em>Draw on every picture before it is shared</em>. <em>Done ✓</em> puts the drawing into the picture, and it is shared as usual; <em>Skip</em> uses the picture as it was taken.</li>
+  <li><strong>Later, from the history:</strong> select a picture → <em>Draw</em> (or right click → <em>Draw on a copy…</em>, or <kbd>D</kbd> in the full-screen view). The drawing is saved as a <strong>new</strong> capture – the original stays as it is. <em>Save &amp; upload</em> also uploads it and copies its link, <em>Save &amp; copy picture</em> puts it on the clipboard.</li>
+</ul>
+<table>
+  <tr><th>Tool</th><th>Key</th><th>How</th></tr>
+  <tr><td>Select</td><td><kbd>V</kbd></td><td>Click a mark to select it; drag to move it; <kbd>Delete</kbd> removes it; a colour click recolours it; double-click a label to change its text.</td></tr>
+  <tr><td>Arrow, Line</td><td><kbd>A</kbd>, <kbd>L</kbd></td><td>Drag from the start to the end (the arrow points at where you let go). <kbd>Shift</kbd>: steps of 45°.</td></tr>
+  <tr><td>Box, Ellipse</td><td><kbd>R</kbd>, <kbd>E</kbd></td><td>Drag a frame or a circle around something. <kbd>Shift</kbd>: square / round.</td></tr>
+  <tr><td>Highlight</td><td><kbd>H</kbd></td><td>Drag over an area to mark it like with a highlighter pen.</td></tr>
+  <tr><td>Pen</td><td><kbd>P</kbd></td><td>Draw freely.</td></tr>
+  <tr><td>Text</td><td><kbd>T</kbd></td><td>Click where the label goes and type. <kbd>Enter</kbd> finishes, <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line, <kbd>Esc</kbd> cancels.</td></tr>
+  <tr><td>Number</td><td><kbd>N</kbd></td><td>Each click places the next number: 1, 2, 3 … – for step-by-step instructions.</td></tr>
+  <tr><td>Blur</td><td><kbd>B</kbd></td><td>Drag over passwords, names or faces: they are turned into large blocks of colour. The saved picture no longer contains what was there.</td></tr>
+</table>
+<p>Colours and three sizes (<kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>) are in the toolbar and remembered. <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes, <kbd>Ctrl</kbd>+<kbd>Y</kbd> redoes, <kbd>Ctrl</kbd>+<kbd>C</kbd> copies the picture with the drawing, <kbd>Ctrl</kbd>+<kbd>S</kbd> is the main button, <kbd>Ctrl</kbd> + mouse wheel zooms, <kbd>F</kbd> shows the whole picture. Closing with marks drawn asks first; <kbd>Esc</kbd> twice closes.</p>
+</section>
+
+<section id="uploads" data-keywords="upload file files folder directory share link any file document">
+<h2>Uploading files and folders</h2>
+<p>Any file from your PC can be shared through Peergos the same way as a capture: right-click the icon → <em>Upload files…</em> and choose one or more files. Each goes into your Peergos folder for captures and gets its own secret link; the links are copied to the clipboard, one per line.</p>
+<p><em>Upload a folder…</em> uploads a whole folder with its subfolders, as a new folder inside your Peergos folder (numbered when the name is taken), and copies <strong>one</strong> link for the whole folder. A folder with more than 200 files or more than 500 MB asks first.</p>
+<p>Uploaded files and folders appear in the <a href="#history">history</a> (filter <em>Uploaded files and folders</em>) with their links. Peergos Snap keeps no copy of them: the files on your PC are only read and are never changed or deleted – <em>Delete</em> in the history only deletes the uploaded copy in Peergos.</p>
+</section>
+
 <section id="history" data-keywords="history manager previous old links label delete clean up remote local files list sort search app">
 <h2>History</h2>
 <p>Right-click the icon → <em>History…</em> lists every capture: a preview, when it was taken, the app it came from, its label and link, and where it is: on <em>This PC</em>, in <em>Peergos</em>, or both (the coloured tags).</p>
 <ul>
   <li><strong>Find a capture:</strong> type in the search box (label, file name, app or date), choose what to show (pictures, videos, only on this PC, only in Peergos, …) and how to sort (newest, oldest, name, size, app). With newest or oldest first, captures are grouped by day.</li>
-  <li><strong>Details:</strong> click a capture to see a larger preview and everything about it. Double-click opens the file (or the link if the file is only in Peergos).</li>
+  <li><strong>Details:</strong> click a capture to see a larger preview and everything about it. Double-click in the list opens the file (or the link if the file is only in Peergos).</li>
+  <li><strong>The buttons</strong> are at the top of the details, always in reach: <em>Copy link</em>, <em>Link</em> (open it), <em>View</em> (full screen), <em>Open</em>, <em>Folder</em> (show it in its folder), <em>Copy picture</em>, <em>Draw</em>, <em>Upload</em>, <em>Lock</em> and <em>Delete</em> with ▾ for the other ways to delete. A right click on the list offers the same.</li>
+  <li><strong>Full screen:</strong> double-click the preview (or <em>View</em>, or <kbd>Space</kbd>). The mouse wheel zooms in where the pointer is, and when the picture is bigger than the screen the view follows the mouse – no dragging. A click zooms in or back to the whole picture; <kbd>←</kbd> <kbd>→</kbd> go to the previous / next capture; <kbd>Esc</kbd> or a right click closes.</li>
+  <li><strong>Select several with the mouse:</strong> tick the box in front of each capture (the others stay selected), or <em>☑ All</em> / <em>☐ None</em> at the top. <kbd>Ctrl</kbd> or <kbd>Shift</kbd> + click work too.</li>
+  <li><strong>Lock</strong> (<kbd>L</kbd>) what you want to keep: a locked entry (🔒) is never deleted or removed – not by Delete, not by <em>Clean up</em>, not by clearing the history, and its file is not removed by <em>Delete local copies older than</em>. Unlock it to delete it. The filter <em>Locked</em> lists them.</li>
   <li><strong>Old links:</strong> <em>Copy link</em> or <em>Open link</em> gives you the link again. Links of files uploaded before the history existed are found in your Peergos folder when the history opens.</li>
   <li><strong>Labels:</strong> type your own name or note into <em>Label</em>; it is saved as you type and shown in the list.</li>
   <li><strong>Upload later:</strong> a capture that is only on this PC can be uploaded with <em>Upload &amp; copy link</em>.</li>
-  <li><strong>Delete:</strong> <em>From both</em> deletes the capture on this PC (Recycle Bin) and in Peergos (its link stops working – this can't be undone) and removes the entry from the history; <em>From this PC</em> and <em>From Peergos</em> delete on one side only; <em>Remove from history</em> only removes the entry. Every delete asks first. Select several captures (<kbd>Ctrl</kbd> or <kbd>Shift</kbd> + click) to delete them together.</li>
-  <li><strong>Delete key:</strong> <kbd>Delete</kbd> does the default action, which is highlighted: <em>From both</em>, unless you choose another one in Settings → Files &amp; history. There you can also keep entries in the history after deleting from both places.</li>
+  <li><strong>Delete:</strong> the <em>Delete</em> button (and <kbd>Delete</kbd>) deletes the capture on this PC (Recycle Bin) and in Peergos (its link stops working – this can't be undone) and removes the entry from the history. ▾ next to it: <em>From this PC</em> or <em>From Peergos</em> only, or <em>Only the history entry</em>. Settings → Files &amp; history chooses what the button and the key do, and whether entries stay after deleting from both places.</li>
+  <li><strong>Asking first:</strong> every delete asks, unless you tick <em>Don't ask again</em> in the question (or untick <em>Ask before deleting in the history</em> in Settings → Files &amp; history, which also brings the question back).</li>
+  <li><strong>Not signed in?</strong> A capture in Peergos cannot be deleted there while you are signed out. Peergos Snap then says so and lets you choose: <em>Sign in to Peergos…</em>, delete only the copy on this PC (the entry stays, so you can delete in Peergos later), or cancel. When you sign in, the open history looks at Peergos again by itself. If Peergos refuses a delete, the entry stays and the message says why, so you can try again. In the list, <em>Peergos ?</em> means it is not known yet whether the file is still in Peergos.</li>
   <li><strong>Tidy up:</strong> <em>Clean up</em> → <em>Remove records whose files are gone</em> removes entries that lead to no file any more; <em>Clear the whole history</em> empties the list. Neither deletes files, and removed entries are not added back.</li>
   <li><em>Refresh</em> looks at the captures folder and your Peergos folder again. The bottom line counts your captures and says when Peergos was last checked.</li>
 </ul>
@@ -221,14 +257,14 @@
 </ol>
 <h3 id="direct-window">The direct window</h3>
 <ul>
-  <li><strong>Choose the friend</strong> at the top, and the <strong>month</strong>: what you send is kept in one folder per month.</li>
+  <li><strong>What you see:</strong> everything you share with all your friends, of all months, newest first (pinned on top) – until you choose one friend or one month at the top. <em>All friends</em> and <em>All months</em> bring everything back. With several friends, <em>Send to</em> in the drop area chooses who gets what you drop, paste or choose (when one friend is shown, it is them).</li>
   <li><strong>Zoom:</strong> <em>+</em> and <em>−</em>, <kbd>Ctrl</kbd> + mouse wheel, <em>Fit</em> (<kbd>F</kbd>) or <em>100 %</em> (<kbd>0</kbd>). Drag the picture to move around in it.</li>
   <li><strong>Label</strong> a picture by typing under it; <strong>Star</strong> it; <strong>Pin</strong> it so it stays at the top. Your friend sees your labels, stars and pins, and you see theirs.</li>
   <li><em>Save as…</em> keeps a copy wherever you like, <em>Copy</em> puts it on the clipboard, <em>Open</em> opens it in its app.</li>
   <li><em>Delete</em> (or <kbd>Delete</kbd>), after a question, deletes <strong>your own copy</strong> – from your Peergos and this PC. Whether you sent it or received it, your friend's copy stays theirs.</li>
 </ul>
 <h3 id="direct-privacy">Who can see it</h3>
-<p>What you send stays in <strong>your</strong> Peergos, in a folder for that friend (<em>PeergosSnap-Direct</em> → the friend's name → one folder per month). The folder itself is not shared: each file you send is shared, read-only, with that one friend only, so they see exactly what you sent them and nothing else. No link is created. When it arrives, your friend's Peergos Snap copies it into <strong>their</strong> Peergos (the month's <em>received</em> folder) – from then on it is their copy. What you receive is copied into yours the same way, and with <em>Also keep received files on this PC</em> (Settings → Direct, on by default) also downloaded to the <em>Direct</em> folder next to the captures folder.</p>
+<p>What you send stays in <strong>your</strong> Peergos, in a folder for that friend (<em>PeergosSnap</em> → <em>Direct</em> → the friend's name → one folder per month; files from version 2.2 stay in <em>PeergosSnap-Direct</em> and are shown as before). The folder itself is not shared: each file you send is shared, read-only, with that one friend only, so they see exactly what you sent them and nothing else. No link is created. When it arrives, your friend's Peergos Snap copies it into <strong>their</strong> Peergos (the month's <em>received</em> folder) – from then on it is their copy. What you receive is copied into yours the same way, and with <em>Also keep received files on this PC</em> (Settings → Direct, on by default) also downloaded to the <em>Direct</em> folder next to the captures folder.</p>
 <p>Both of you need Peergos Snap running and signed in to Peergos. To receive pictures at once, Peergos Snap keeps a connection to Peergos open while you have friends to share with; you can turn this off in Settings → Direct (pictures then arrive while the direct window is open).</p>
 </section>
 
@@ -254,7 +290,7 @@
   <tr><th>Option</th><th>Meaning</th></tr>
   <tr><td>Server, Username, Password, Sign in</td><td>Sign in to your Peergos account (see <a href="#peergos">Your Peergos account</a>).</td></tr>
   <tr><td>Test connection, Sign out</td><td>Shown when you are signed in.</td></tr>
-  <tr><td>Folder for captures</td><td>The folder in your Peergos home for uploads. Default: PeergosSnap.</td></tr>
+  <tr><td>Folder for captures</td><td>The folder in your Peergos home for captures and uploaded files. Default: PeergosSnap. <em>Browse…</em> shows the folders in your Peergos (when signed in) to pick one or make a new one. Direct sharing always uses PeergosSnap/Direct, so friends find it.</td></tr>
 </table>
 
 <h3 id="settings-capture">Capture</h3>
@@ -267,7 +303,8 @@
   <tr><td>Video quality</td><td>Left gives smaller files, right gives sharper videos.</td><td>Middle</td></tr>
   <tr><td>Show the mouse pointer in videos</td><td>Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
   <tr><td>Record the sound Windows plays</td><td>Videos get the sound of your PC; no sound track when nothing played. Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
-  <tr><td>After a picture, ask what to do</td><td>Shows the picture with <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em> and <em>Discard</em>.</td><td>Off</td></tr>
+  <tr><td>After a picture, ask what to do</td><td>Shows the picture with <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em>, <em>Draw on it…</em> and <em>Discard</em>.</td><td>Off</td></tr>
+  <tr><td>Draw on every picture before it is shared</td><td>Opens the <a href="#drawing">drawing editor</a> after each picture.</td><td>Off</td></tr>
   <tr><td>Delay before capturing</td><td>Seconds of countdown before the screen freezes for a picture, or before a recording starts; 0 = none. The menu offers 1–5 seconds quickly.</td><td>0</td></tr>
 </table>
 
@@ -302,6 +339,7 @@
   <tr><td>Remember which app each capture came from</td><td>Shown and searchable in the history.</td><td>On</td></tr>
   <tr><td>Delete key in the history</td><td>What <kbd>Delete</kbd> does: delete from this PC and Peergos, from one of them, or only remove the entry.</td><td>From this PC and Peergos</td></tr>
   <tr><td>Deleting from this PC and Peergos also removes the entry</td><td>Off keeps the entry (without files) in the history.</td><td>On</td></tr>
+  <tr><td>Ask before deleting in the history</td><td>Off deletes at once. Locked entries are never deleted, and clearing the whole history always asks.</td><td>On</td></tr>
 </table>
 
 <h3 id="settings-direct">Direct</h3>

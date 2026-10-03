@@ -38,7 +38,8 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * Long-running session for the direct mode. Each user keeps one folder per friend,
- * <code>/ME/PeergosSnap-Direct/FRIEND</code>, with one subfolder per month (<code>2026-10</code>). The folders are not
+ * <code>/ME/PeergosSnap/Direct/FRIEND</code> (inside the app's main folder since 2.3; 2.2 used
+ * <code>/ME/PeergosSnap-Direct/FRIEND</code>, which is still read), with one subfolder per month (<code>2026-10</code>). The folders are not
  * shared: every file sent to a friend is uploaded there and then that one file is shared read-only with that friend.
  * The friend's session copies it into their own <code>MONTH/received</code> folder: from then on each side has its own
  * copy and can only ever delete its own (deleting what you sent does not touch the copy your friend already has).
@@ -58,7 +59,10 @@ import java.util.concurrent.TimeoutException;
  * list is printed whenever something in them changed (a new picture, a delete, a label …).
  */
 final class DirectServe {
-    static final String ROOT = "PeergosSnap-Direct";
+    /** Where new direct files go: inside the app's main folder. */
+    static final String ROOT = "PeergosSnap/Direct";
+    /** Where 2.2 kept them: still read (and deletable), never written to. */
+    static final String LEGACY = "PeergosSnap-Direct";
     static final String META_PREFIX = ".snapmeta-";
 
     UserContext ctx;
@@ -180,7 +184,8 @@ final class DirectServe {
                 List<String> direct = new ArrayList<>();
                 for (Object f : (List<?>) r.get("friends"))
                     try {
-                        if (await(ctx.getByPath(theirs((String) f))).isPresent())
+                        if (await(ctx.getByPath(theirs((String) f))).isPresent()
+                                || await(ctx.getByPath(theirsLegacy((String) f))).isPresent())
                             direct.add((String) f);
                     } catch (CompletionException e) {
                         System.err.println("direct: discover " + f + ": " + message(e)); // one friend does not stop the others
@@ -218,7 +223,7 @@ final class DirectServe {
             case "delete": {
                 String path = direct(Json.str(c, "path"));
                 // Only my own copies: what I sent, or my copy of what I received. The friend's copy is theirs.
-                if (!path.split("/")[1].equals(me))
+                if (!parse(path)[0].equals(me))
                     throw new IllegalArgumentException("That is your friend's copy: only they can delete it");
                 return map("deleted", retry(() -> {
                     Optional<FileWrapper> f = await(ctx.getByPath(path));
@@ -281,10 +286,12 @@ final class DirectServe {
 
     String mine(String friend) { return "/" + me + "/" + ROOT + "/" + friend; }
     String theirs(String friend) { return "/" + friend + "/" + ROOT + "/" + me; }
+    String mineLegacy(String friend) { return "/" + me + "/" + LEGACY + "/" + friend; }
+    String theirsLegacy(String friend) { return "/" + friend + "/" + LEGACY + "/" + me; }
 
     List<String> months(String friend) {
         TreeSet<String> ms = new TreeSet<>(Comparator.reverseOrder());
-        for (String dir : List.of(mine(friend), theirs(friend))) {
+        for (String dir : List.of(mine(friend), theirs(friend), mineLegacy(friend), theirsLegacy(friend))) {
             Optional<FileWrapper> d = await(ctx.getByPath(dir));
             if (d.isEmpty())
                 continue;
@@ -320,62 +327,71 @@ final class DirectServe {
     }
 
     List<Object> list(String friend, String month, boolean copyNew) {
-        String myDir = mine(friend) + "/" + month, theirDir = theirs(friend) + "/" + month, inDir = myDir + "/" + RECEIVED;
+        // The current folders first, then those of 2.2 (still read, so nothing sent before the move is lost).
+        List<String> myDirs = List.of(mine(friend) + "/" + month, mineLegacy(friend) + "/" + month);
+        List<String> theirDirs = List.of(theirs(friend) + "/" + month, theirsLegacy(friend) + "/" + month);
         Map<String, Map<String, Object>> meta = new HashMap<>();
-        Map<String, Object> myMeta = Map.of();
+        Set<String> got = new HashSet<>(); // "SENDER/NAME" of the friend's files I copied before (in either folder)
         List<Object[]> found = new ArrayList<>(); // {file, folder, sender}
-        for (FileWrapper k : files(myDir)) {
-            String n = k.getFileProperties().name;
-            if (k.isDirectory())
-                continue;
-            if (n.equals(META_PREFIX + me + ".json")) {
-                myMeta = readMeta(myDir + "/" + n, k);
-                mergeMeta(meta, me, myMeta);
-            } else if (!n.startsWith("."))
-                found.add(new Object[]{k, myDir, me});
-        }
-        Map<String, FileWrapper> shared = new HashMap<>(); // the friend's originals shared with me
-        for (FileWrapper k : files(theirDir)) {
-            String n = k.getFileProperties().name;
-            if (k.isDirectory())
-                continue;
-            if (n.equals(META_PREFIX + friend + ".json"))
-                mergeMeta(meta, friend, readMeta(theirDir + "/" + n, k));
-            else if (!n.startsWith("."))
-                shared.put(n, k);
-        }
         Set<String> have = new HashSet<>();
-        for (FileWrapper k : files(inDir)) {
-            String n = k.getFileProperties().name;
-            if (!k.isDirectory() && !n.startsWith(".")) {
-                found.add(new Object[]{k, inDir, friend});
-                have.add(n);
+        for (String myDir : myDirs) {
+            for (FileWrapper k : files(myDir)) {
+                String n = k.getFileProperties().name;
+                if (k.isDirectory())
+                    continue;
+                if (n.equals(META_PREFIX + me + ".json")) {
+                    Map<String, Object> m = readMeta(myDir + "/" + n, k);
+                    for (Map.Entry<String, Object> e : m.entrySet())
+                        if (e.getValue() instanceof Map<?, ?> it && Boolean.TRUE.equals(it.get("got")))
+                            got.add(e.getKey());
+                    mergeMeta(meta, me, m);
+                } else if (!n.startsWith("."))
+                    found.add(new Object[]{k, myDir, me});
+            }
+            String inDir = myDir + "/" + RECEIVED;
+            for (FileWrapper k : files(inDir)) {
+                String n = k.getFileProperties().name;
+                if (!k.isDirectory() && !n.startsWith(".")) {
+                    found.add(new Object[]{k, inDir, friend});
+                    have.add(n);
+                }
             }
         }
+        Map<String, FileWrapper> shared = new HashMap<>(); // the friend's originals shared with me
+        for (String theirDir : theirDirs)
+            for (FileWrapper k : files(theirDir)) {
+                String n = k.getFileProperties().name;
+                if (k.isDirectory())
+                    continue;
+                if (n.equals(META_PREFIX + friend + ".json"))
+                    mergeMeta(meta, friend, readMeta(theirDir + "/" + n, k));
+                else if (!n.startsWith("."))
+                    shared.putIfAbsent(n, k);
+            }
         if (copyNew) {
             List<String> fresh = new ArrayList<>();
             for (String n : shared.keySet())
-                if (!have.contains(n) && !(myMeta.get(friend + "/" + n) instanceof Map<?, ?> it && Boolean.TRUE.equals(it.get("got"))))
+                if (!have.contains(n) && !got.contains(friend + "/" + n))
                     fresh.add(n);
             if (!fresh.isEmpty()) {
                 Collections.sort(fresh);
-                List<String> got = new ArrayList<>();
+                List<String> copied = new ArrayList<>();
                 for (String n : fresh) {
                     try {
                         retry(() -> {
                             FileWrapper in = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend + "/" + month + "/" + RECEIVED, net, crypto);
                             return await(shared.get(n).copyTo(in, ctx), WRITE);
                         });
-                        got.add(friend + "/" + n);
+                        copied.add(friend + "/" + n);
                     } catch (Exception e) {
-                        System.err.println("direct: copy " + theirDir + "/" + n + ": " + message(e)); // tried again at the next check
+                        System.err.println("direct: copy " + friend + "/" + month + "/" + n + ": " + message(e)); // tried again at the next check
                     }
                 }
-                if (!got.isEmpty()) {
+                if (!copied.isEmpty()) {
                     refresh();
                     try {
                         retry(() -> updateMyMeta(friend, month, items -> {
-                            for (String key : got)
+                            for (String key : copied)
                                 items.put(key, withEntry(items.get(key), "got", true));
                             return null;
                         }));
@@ -439,7 +455,7 @@ final class DirectServe {
                 m.put("pinned", Json.bool(it, "pin"));
                 m.put("pinAt", pa);
             }
-            if (Json.bool(it, "star"))
+            if (Json.bool(it, "star") && !((List<String>) m.get("stars")).contains(user))
                 ((List<String>) m.get("stars")).add(user);
         }
         for (Map<String, Object> m : into.values())
@@ -515,14 +531,13 @@ final class DirectServe {
     /** label / pin / star for one file (mine or my copy of the friend's); the key is "SENDER/NAME" on both sides. */
     @SuppressWarnings("unchecked")
     Map<String, Object> meta(Map<String, Object> c) throws Exception {
-        String[] p = direct(Json.str(c, "path")).split("/");
-        // "", owner, ROOT, other, month, name  |  "", me, ROOT, friend, month, "received", name (my copy of theirs)
-        boolean copy = p.length == 7;
-        String friend = p[1].equals(me) ? p[3] : p[1];
-        String sender = p[1].equals(me) && !copy ? me : friend;
-        String item = sender + "/" + p[p.length - 1];
+        String[] p = parse(direct(Json.str(c, "path"))); // owner, other, month, received|null, name
+        boolean copy = p[3] != null;
+        String friend = p[0].equals(me) ? p[1] : p[0];
+        String sender = p[0].equals(me) && !copy ? me : friend;
+        String item = sender + "/" + p[4];
         long now = System.currentTimeMillis();
-        return (Map<String, Object>) updateMyMeta(friend, p[4], items -> {
+        return (Map<String, Object>) updateMyMeta(friend, p[2], items -> {
             Map<String, Object> it = items.get(item) instanceof Map ? new LinkedHashMap<>((Map<String, Object>) items.get(item)) : new LinkedHashMap<>();
             if (c.containsKey("label")) { it.put("label", Json.str(c, "label")); it.put("labelAt", now); }
             if (c.containsKey("pin")) { it.put("pin", Json.bool(c, "pin")); it.put("pinAt", now); }
@@ -572,6 +587,14 @@ final class DirectServe {
         for (FileWrapper k : files(dirPath + "/" + RECEIVED))
             present.add(friend + "/" + k.getFileProperties().name);
         for (FileWrapper k : files(theirs(friend) + "/" + month))
+            present.add(friend + "/" + k.getFileProperties().name);
+        // Files still in the folders of 2.2 keep their labels, pins and stars (kept in this file from now on).
+        String old = mineLegacy(friend) + "/" + month;
+        for (FileWrapper k : files(old))
+            present.add(me + "/" + k.getFileProperties().name);
+        for (FileWrapper k : files(old + "/" + RECEIVED))
+            present.add(friend + "/" + k.getFileProperties().name);
+        for (FileWrapper k : files(theirsLegacy(friend) + "/" + month))
             present.add(friend + "/" + k.getFileProperties().name);
         items.keySet().removeIf(k -> !present.contains(k));
         byte[] bytes = Json.write(doc).getBytes(StandardCharsets.UTF_8);
@@ -688,14 +711,41 @@ final class DirectServe {
     String direct(String path) {
         if (path == null || path.contains("/../") || path.contains("\\") || path.endsWith("/.."))
             throw new IllegalArgumentException("Not a direct-sharing path: " + path);
-        String[] p = path.split("/");
-        // "", owner, ROOT, other, month, name   or (my copies of what I received)   "", me, ROOT, friend, month, "received", name
-        boolean common = p.length >= 6 && p[0].isEmpty() && p[2].equals(ROOT) && p[4].matches("\\d{4}-\\d{2}") && !p[p.length - 1].isEmpty();
-        boolean file = common && p.length == 6 && (p[1].equals(me) || p[3].equals(me));
-        boolean copy = common && p.length == 7 && p[1].equals(me) && p[5].equals(RECEIVED);
+        String[] p = parse(path);
+        boolean common = p != null && p[2].matches("\\d{4}-\\d{2}") && !p[4].isEmpty() && !p[4].equals("..");
+        boolean file = common && p[3] == null && (p[0].equals(me) || p[1].equals(me));
+        boolean copy = common && p[3] != null && p[0].equals(me);
         if (!file && !copy)
             throw new IllegalArgumentException("Not a direct-sharing path: " + path);
         return path;
+    }
+
+    /**
+     * The parts of a direct path: {owner, other, month, "received" or null, name}, or null when it is not one.
+     * <pre>
+     * /OWNER/PeergosSnap/Direct/OTHER/MONTH/[received/]NAME    (since 2.3)
+     * /OWNER/PeergosSnap-Direct/OTHER/MONTH/[received/]NAME    (2.2)
+     * </pre>
+     */
+    static String[] parse(String path) {
+        if (path == null)
+            return null;
+        String[] p = path.split("/", -1);
+        if (p.length < 6 || !p[0].isEmpty())
+            return null;
+        int i;
+        if (p[2].equals(LEGACY))
+            i = 3;
+        else if (p.length >= 7 && (p[2] + "/" + p[3]).equals(ROOT))
+            i = 4;
+        else
+            return null;
+        int rest = p.length - i; // other, month, [received], name
+        if (rest == 3)
+            return new String[]{p[1], p[i], p[i + 1], null, p[i + 2]};
+        if (rest == 4 && p[i + 2].equals(RECEIVED))
+            return new String[]{p[1], p[i], p[i + 1], RECEIVED, p[i + 3]};
+        return null;
     }
 
     static String parent(String path) {
