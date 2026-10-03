@@ -42,6 +42,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -66,8 +67,15 @@ import java.util.concurrent.CompletableFuture;
  *        Uploads into /NAME/F (created when missing) and creates a read-only secret link to the file,
  *        in the same short form as the web app: https://HOST/secret/OWNER/ID#KEY?open=true
  * list   --server URL --user NAME [--folder F]                           stdin: session
- *        {"ok":true,"folder":"/NAME/F","files":[{"name","path","size","modified","links":[...]}]}: the files in the
- *        capture folder with their existing secret links (so older links can be shown again).
+ *        {"ok":true,"folder":"/NAME/F","files":[{"name","path","size","modified","links":[...],"dir":false}]}: the files
+ *        (and folders, "dir":true) in the capture folder with their existing secret links (so older links can be shown again).
+ * put    --server URL --user NAME [--folder F] [--dir D]                 stdin: session, then "LOCAL\tREL" lines, an empty line ends
+ *        Uploads several files with one sign-in. Without --dir every file goes into /NAME/F and gets its own secret
+ *        link; with --dir a new folder F/D (numbered when D exists) receives the files at their relative paths
+ *        (REL, "/"-separated) and gets one secret link for the whole folder.
+ *        {"ok":true,"files":[{"name","path","size","link"}],"folder":"/NAME/F/D"|null,"link":"..."|null,"failed":[...]}
+ * folders --server URL --user NAME [--path REL]                          stdin: session
+ *        The folders in /NAME/REL (to choose the capture folder): {"ok":true,"path":"/NAME/REL","exists":true,"folders":[...]}
  * delete --server URL --user NAME                                        stdin: session, then one path per line
  *        Deletes each file (Peergos removes its secret links with it): {"ok":true,"deleted":[...],"missing":[...],"failed":[...]}
  * serve  --server URL --user NAME                                        stdin: session, then JSON commands
@@ -120,7 +128,7 @@ public class PeergosBridge {
         if (args.length == 0)
             throw new IllegalArgumentException("usage: signin|check|upload ...");
         String cmd = args[0];
-        if (!java.util.Set.of("signin", "check", "upload", "list", "delete", "serve").contains(cmd))
+        if (!java.util.Set.of("signin", "check", "upload", "put", "folders", "list", "delete", "serve").contains(cmd))
             throw new IllegalArgumentException("unknown command " + cmd);
         Map<String, String> a = parse(args);
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -178,7 +186,7 @@ public class PeergosBridge {
                     boolean first = true;
                     for (FileWrapper f : kids) {
                         FileProperties fp = f.getFileProperties();
-                        if (f.isDirectory() || fp.isHidden)
+                        if (fp.isHidden || fp.name.startsWith("."))
                             continue;
                         String path = dirPath + "/" + fp.name;
                         StringBuilder links = new StringBuilder("[");
@@ -200,11 +208,44 @@ public class PeergosBridge {
                                 .append(",\"size\":").append(fp.size)
                                 .append(",\"modified\":").append(fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000)
                                 .append(",\"links\":").append(links)
+                                .append(",\"dir\":").append(f.isDirectory())
                                 .append("}");
                         first = false;
                     }
                 }
                 return out.append("]}").toString();
+            }
+            case "put": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                String folder = cleanFolder(a.getOrDefault("folder", "PeergosSnap"));
+                List<String[]> items = new ArrayList<>(); // {local, relative}
+                for (String l; !(l = line(stdin)).isEmpty(); ) {
+                    int t = l.indexOf('\t');
+                    String local = t < 0 ? l : l.substring(0, t);
+                    String rel = t < 0 ? Path.of(local).getFileName().toString() : l.substring(t + 1);
+                    items.add(new String[]{local, rel});
+                }
+                if (items.isEmpty())
+                    throw new IllegalArgumentException("Nothing to upload");
+                return put(ctx, user, folder, a.get("dir"), items, server, base, crypto);
+            }
+            case "folders": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                String rel = cleanFolder(a.getOrDefault("path", ""));
+                if (Arrays.asList(rel.split("/")).contains(".."))
+                    throw new IllegalArgumentException("Not a folder in your home: " + rel);
+                String dirPath = "/" + user + (rel.isEmpty() ? "" : "/" + rel);
+                Optional<FileWrapper> dir = ctx.getByPath(dirPath).join();
+                List<String> names = new ArrayList<>();
+                if (dir.isPresent() && dir.get().isDirectory())
+                    for (FileWrapper k : dir.get().getChildren(crypto.hasher, base).join()) {
+                        FileProperties fp = k.getFileProperties();
+                        if (k.isDirectory() && !fp.isHidden && !fp.name.startsWith("."))
+                            names.add(fp.name);
+                    }
+                names.sort(String.CASE_INSENSITIVE_ORDER);
+                return "{\"ok\":true,\"path\":" + json(dirPath) + ",\"exists\":" + (dir.isPresent() && dir.get().isDirectory())
+                        + ",\"folders\":" + jsonList(names) + "}";
             }
             case "delete": {
                 UserContext ctx = restore(user, line(stdin), base, crypto);
@@ -245,6 +286,94 @@ public class PeergosBridge {
             default:
                 throw new IllegalArgumentException("unknown command " + cmd);
         }
+    }
+
+    static String cleanFolder(String f) {
+        return f.replace('\\', '/').replaceAll("^/+|/+$", "").replaceAll("/{2,}", "/");
+    }
+
+    /** A file or folder name Peergos accepts (no path separators, not hidden). */
+    static String safeName(String n) {
+        String s = n.replace('/', '_').replace('\\', '_').trim();
+        if (s.isEmpty() || s.equals(".") || s.equals(".."))
+            s = "_";
+        return s.startsWith(".") ? "_" + s.substring(1) : s;
+    }
+
+    /** Several files in one session: each with its own link, or all in a new folder with one link to it. */
+    static String put(UserContext ctx, String user, String folder, String dirName, List<String[]> items, String server,
+                      NetworkAccess network, Crypto crypto) throws Exception {
+        String home = "/" + user;
+        String base = folder.isEmpty() ? "" : folder;
+        String top = null;
+        if (dirName != null && !dirName.isBlank()) {
+            FileWrapper parent = ensureFolder(ctx, home, base, network, crypto);
+            String d = uniqueName(parent, safeName(dirName), network, crypto);
+            base = base.isEmpty() ? d : base + "/" + d;
+            ensureFolder(ctx, home, base, network, crypto);
+            top = home + "/" + base;
+        }
+        long total = 0;
+        for (String[] it : items)
+            total += Files.size(Path.of(it[0]));
+        long[] done = {0};
+        long[] lastPct = {-1};
+        long all = total;
+        String host = linkBase(ctx, server);
+        StringBuilder files = new StringBuilder("[");
+        List<String> failed = new ArrayList<>();
+        boolean first = true;
+        for (String[] it : items) {
+            Path file = Path.of(it[0]);
+            try {
+                // The relative path inside the new folder; without a folder only the file name counts.
+                List<String> parts = new ArrayList<>();
+                for (String p : it[1].replace('\\', '/').split("/"))
+                    if (!p.isBlank() && !p.equals(".") && !p.equals(".."))
+                        parts.add(safeName(p));
+                if (parts.isEmpty())
+                    parts.add(safeName(file.getFileName().toString()));
+                String sub = top == null ? base : base + (parts.size() > 1 ? "/" + String.join("/", parts.subList(0, parts.size() - 1)) : "");
+                FileWrapper dir = ensureFolder(ctx, home, sub, network, crypto);
+                String name = uniqueName(dir, parts.get(parts.size() - 1), network, crypto);
+                long before = done[0];
+                upload(dir, name, file, network, crypto, x -> {
+                    done[0] += x;
+                    long pct = all == 0 ? 100 : Math.min(100, done[0] * 100 / all);
+                    if (pct != lastPct[0]) {
+                        lastPct[0] = pct;
+                        PROGRESS.println("@progress " + pct);
+                        PROGRESS.flush();
+                    }
+                });
+                done[0] = before + Files.size(file);
+                String path = home + (sub.isEmpty() ? "" : "/" + sub) + "/" + name;
+                String link = null;
+                if (top == null) {
+                    LinkProperties props = ctx.createSecretLink(path, false, Optional.empty(), Optional.empty(), "", true).join();
+                    link = host + "/" + ctx.getLinkString(props) + "?open=true";
+                }
+                files.append(first ? "" : ",").append("{\"name\":").append(json(name)).append(",\"path\":").append(json(path))
+                        .append(",\"size\":").append(Files.size(file)).append(",\"local\":").append(json(it[0]))
+                        .append(",\"link\":").append(link == null ? "null" : json(link)).append("}");
+                first = false;
+            } catch (Exception e) {
+                Throwable r = e;
+                while (r.getCause() != null && r.getCause() != r)
+                    r = r.getCause();
+                failed.add(it[0] + ": " + r.getMessage());
+            }
+        }
+        files.append("]");
+        String folderLink = null;
+        if (top != null && failed.size() < items.size()) {
+            LinkProperties props = ctx.createSecretLink(top, false, Optional.empty(), Optional.empty(), "", false).join();
+            folderLink = host + "/" + ctx.getLinkString(props);
+        }
+        boolean ok = failed.size() < items.size();
+        return "{\"ok\":" + ok + ",\"files\":" + files + ",\"folder\":" + (top == null ? "null" : json(top))
+                + ",\"link\":" + (folderLink == null ? "null" : json(folderLink)) + ",\"failed\":" + jsonList(failed)
+                + (failed.isEmpty() ? "" : ",\"error\":" + json(failed.size() + " of " + items.size() + " not uploaded: " + failed.get(0))) + "}";
     }
 
     static String jsonList(List<String> items) {
@@ -328,16 +457,22 @@ public class PeergosBridge {
         long size = Files.size(file);
         long[] done = {0};
         long[] lastPct = {-1};
+        return upload(dir, name, file, network, crypto, x -> {
+            done[0] += x;
+            long pct = size == 0 ? 100 : Math.min(100, done[0] * 100 / size);
+            if (pct != lastPct[0]) {
+                lastPct[0] = pct;
+                PROGRESS.println("@progress " + pct);
+                PROGRESS.flush();
+            }
+        });
+    }
+
+    static FileWrapper upload(FileWrapper dir, String name, Path file, NetworkAccess network, Crypto crypto,
+                              java.util.function.LongConsumer onBytes) throws Exception {
+        long size = Files.size(file);
         FileWrapper updated = dir.uploadOrReplaceFile(name, new FileAsyncReader(file.toFile()), size,
-                network, crypto, () -> false, x -> {
-                    done[0] += x;
-                    long pct = size == 0 ? 100 : Math.min(100, done[0] * 100 / size);
-                    if (pct != lastPct[0]) {
-                        lastPct[0] = pct;
-                        PROGRESS.println("@progress " + pct);
-                        PROGRESS.flush();
-                    }
-                }).join();
+                network, crypto, () -> false, onBytes::accept).join();
         return updated.getChild(name, crypto.hasher, network).join()
                 .orElseThrow(() -> new IllegalStateException("Upload finished but the file is missing"));
     }

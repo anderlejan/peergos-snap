@@ -9,13 +9,19 @@
             <Setter Property="CornerRadius" Value="9"/><Setter Property="Padding" Value="7,1"/><Setter Property="Margin" Value="0,0,6,0"/>
             <Setter Property="BorderThickness" Value="1"/><Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
         </Style>
-        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="10,4"/></Style>
+        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="9,4"/></Style>
+        <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}"><Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="9,4"/></Style>
+        <Style x:Key="Glyph" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets"/><Setter Property="Margin" Value="0,1,6,0"/><Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
     </Window.Resources>
     <DockPanel>
         <!-- toolbar -->
         <Border DockPanel.Dock="Top" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,10">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="SelectAllBtn" Content="☑ All" ToolTip="Select every capture shown (Ctrl+A)" Margin="6,0,0,0"/>
+                    <Button x:Name="SelectNoneBtn" Content="☐ None" ToolTip="Select nothing" Margin="6,0,0,0"/>
                     <Button x:Name="RefreshBtn" Content="Refresh" ToolTip="Look at the captures folder and your Peergos folder again" Margin="6,0,0,0"/>
                     <Button x:Name="CleanBtn" Content="Clean up ▾" Margin="6,0,0,0">
                         <Button.ContextMenu>
@@ -34,7 +40,9 @@
                     <ComboBoxItem Tag="all" Content="All captures"/>
                     <ComboBoxItem Tag="pictures" Content="Pictures"/>
                     <ComboBoxItem Tag="videos" Content="Videos"/>
+                    <ComboBoxItem Tag="uploads" Content="Uploaded files and folders"/>
                     <ComboBoxItem Tag="labelled" Content="With a label"/>
+                    <ComboBoxItem Tag="locked" Content="Locked"/>
                     <ComboBoxItem Tag="pc" Content="On this PC"/>
                     <ComboBoxItem Tag="peergos" Content="In Peergos"/>
                     <ComboBoxItem Tag="pc-only" Content="Only on this PC"/>
@@ -80,8 +88,11 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <Grid Margin="2,4">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                <Border Width="100" Height="64" CornerRadius="6" Background="{DynamicResource Bg3}" ClipToBounds="True" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                <!-- a click on the box adds or removes this capture without Ctrl: selecting several with the mouse only -->
+                                <CheckBox VerticalAlignment="Center" Margin="2,0,8,0" Focusable="False" ToolTip="Select (keeps the others selected)"
+                                          IsChecked="{Binding IsSelected, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"/>
+                                <Border Grid.Column="1" Width="100" Height="64" CornerRadius="6" Background="{DynamicResource Bg3}" ClipToBounds="True" HorizontalAlignment="Left">
                                     <Grid>
                                         <TextBlock Text="{Binding Glyph}" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="22"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource Fg3}"/>
@@ -92,7 +103,7 @@
                                         </Border>
                                     </Grid>
                                 </Border>
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                     <TextBlock Text="{Binding Line2}" Style="{StaticResource Dim}" Margin="0,2,0,4"/>
                                     <StackPanel Orientation="Horizontal">
@@ -100,8 +111,9 @@
                                             <TextBlock Text="This PC" FontSize="11" Foreground="{Binding PcText}"/>
                                         </Border>
                                         <Border Style="{StaticResource Badge}" Background="{Binding PeergosBrush}" ToolTip="{Binding PeergosTip}">
-                                            <TextBlock Text="Peergos" FontSize="11" Foreground="{Binding PeergosText}"/>
+                                            <TextBlock Text="{Binding PeergosLabel}" FontSize="11" Foreground="{Binding PeergosText}"/>
                                         </Border>
+                                        <TextBlock Text="🔒" FontSize="11" Margin="0,0,6,0" Visibility="{Binding LockBadge}" VerticalAlignment="Center" ToolTip="Locked: never deleted or removed"/>
                                         <TextBlock Text="🔗 link" FontSize="11" Foreground="{DynamicResource Acc}" Visibility="{Binding LinkBadge}" VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </StackPanel>
@@ -113,70 +125,108 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}" TextWrapping="Wrap" MaxWidth="340" TextAlignment="Center"/>
             </Grid>
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource Line}" ResizeBehavior="PreviousAndNext"/>
-            <!-- details -->
-            <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="16,14,16,16">
-                    <TextBlock x:Name="NothingSelected" Text="Select a capture to see it here." Style="{StaticResource Dim}" TextWrapping="Wrap"/>
-                    <StackPanel x:Name="Details" Visibility="Collapsed">
-                        <Border x:Name="PreviewBox" CornerRadius="8" Background="{DynamicResource Bg3}" MinHeight="120" Margin="0,0,0,12" ClipToBounds="True">
-                            <Grid>
-                                <TextBlock x:Name="PreviewNote" TextWrapping="Wrap" Margin="12" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}"/>
-                                <Image x:Name="Preview" MaxHeight="300" Stretch="Uniform"/>
-                            </Grid>
-                        </Border>
-                        <TextBlock x:Name="SelectionTitle" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                        <StackPanel x:Name="SinglePanel">
-                            <TextBlock Text="Label" Style="{StaticResource Dim}"/>
-                            <TextBox x:Name="LabelBox" Margin="0,2,0,10" ToolTip="Your own name or note for this capture"/>
-                            <Grid x:Name="InfoGrid" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Text="Taken" Style="{StaticResource Dim}"/>
-                                <TextBlock x:Name="InfoTaken" Grid.Column="1" TextWrapping="Wrap"/>
-                                <TextBlock Grid.Row="1" Text="From" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
-                                <TextBlock x:Name="InfoApp" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                <TextBlock Grid.Row="2" Text="Size" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
-                                <TextBlock x:Name="InfoSize" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                <TextBlock Grid.Row="3" Text="This PC" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
-                                <TextBlock x:Name="InfoLocal" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                <TextBlock Grid.Row="4" Text="Peergos" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
-                                <TextBlock x:Name="InfoRemote" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
-                                <TextBlock Grid.Row="5" Text="Link" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
-                                <TextBox x:Name="InfoLink" Grid.Row="5" Grid.Column="1" IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent" Padding="0"/>
-                            </Grid>
-                            <WrapPanel>
-                                <Button x:Name="CopyLinkBtn" Content="Copy link" Style="{DynamicResource AccentButtonStyle}"/>
-                                <Button x:Name="OpenLinkBtn" Content="Open link"/>
-                                <Button x:Name="OpenFileBtn" Content="Open file"/>
-                                <Button x:Name="ShowFileBtn" Content="Show in folder"/>
-                                <Button x:Name="CopyMediaBtn" Content="Copy picture"/>
-                                <Button x:Name="UploadBtn" Content="Upload &amp; copy link"/>
-                            </WrapPanel>
+            <!-- details: the actions on top (always in reach), then the preview and the information -->
+            <DockPanel Grid.Column="2">
+                <Border DockPanel.Dock="Top" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="10,8,4,2">
+                    <WrapPanel x:Name="Actions">
+                        <Button x:Name="CopyLinkBtn" Style="{DynamicResource AccentButtonStyle}" ToolTip="Copy the secret link (Ctrl+C)">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE71B;"/><TextBlock Text="Copy link"/></StackPanel>
+                        </Button>
+                        <Button x:Name="OpenLinkBtn" ToolTip="Open the link in the browser">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE774;"/><TextBlock Text="Link"/></StackPanel>
+                        </Button>
+                        <Button x:Name="FullBtn" ToolTip="Full screen: the mouse wheel zooms where the pointer is, the view follows the mouse (double-click the preview)">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/><TextBlock Text="View"/></StackPanel>
+                        </Button>
+                        <Button x:Name="OpenFileBtn" ToolTip="Open the file in its app (Enter)">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8E5;"/><TextBlock Text="Open"/></StackPanel>
+                        </Button>
+                        <Button x:Name="ShowFileBtn" ToolTip="Show the file in its folder">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE838;"/><TextBlock Text="Folder"/></StackPanel>
+                        </Button>
+                        <Button x:Name="CopyMediaBtn" ToolTip="Copy the picture or video to the clipboard">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/><TextBlock x:Name="CopyMediaText" Text="Copy"/></StackPanel>
+                        </Button>
+                        <Button x:Name="DrawBtn" ToolTip="Draw on a copy: arrows, numbers, labels, highlights, blur (the original stays)">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE70F;"/><TextBlock Text="Draw"/></StackPanel>
+                        </Button>
+                        <Button x:Name="UploadBtn" ToolTip="Upload to Peergos and copy the link">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE898;"/><TextBlock Text="Upload"/></StackPanel>
+                        </Button>
+                        <ToggleButton x:Name="LockBtn" ToolTip="Locked entries are never deleted or removed – not by Delete, clean-up or clearing the history (L)">
+                            <StackPanel Orientation="Horizontal"><TextBlock x:Name="LockGlyph" Style="{StaticResource Glyph}" Text="&#xE785;"/><TextBlock x:Name="LockText" Text="Lock"/></StackPanel>
+                        </ToggleButton>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,6,6">
+                            <Button x:Name="DeleteBtn" Margin="0" ToolTip="The default delete (Delete key)">
+                                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE74D;"/><TextBlock x:Name="DeleteText" Text="Delete"/></StackPanel>
+                            </Button>
+                            <Button x:Name="DeleteMore" Margin="1,0,0,0" Padding="6,4" Content="▾" ToolTip="Other ways to delete">
+                                <Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem x:Name="DelBothItem" Header="From this PC and Peergos"/>
+                                        <MenuItem x:Name="DelLocalItem" Header="From this PC"/>
+                                        <MenuItem x:Name="DelRemoteItem" Header="From Peergos"/>
+                                        <MenuItem x:Name="RemoveItem" Header="Only the history entry"/>
+                                    </ContextMenu>
+                                </Button.ContextMenu>
+                            </Button>
                         </StackPanel>
-                        <TextBlock Text="Delete" FontWeight="SemiBold" Margin="0,12,0,6"/>
-                        <WrapPanel>
-                            <Button x:Name="DelBothBtn" Content="From both"/>
-                            <Button x:Name="DelLocalBtn" Content="From this PC"/>
-                            <Button x:Name="DelRemoteBtn" Content="From Peergos"/>
-                            <Button x:Name="RemoveBtn" Content="Remove from history"/>
-                        </WrapPanel>
-                        <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
-                                Background="{DynamicResource Bg2}" Padding="12" Margin="0,8,0,0">
-                            <StackPanel>
-                                <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" Margin="0,0,0,10"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}"/>
-                                    <Button x:Name="ConfirmNo" Content="Cancel"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                        <TextBlock x:Name="ActionResult" TextWrapping="Wrap" Margin="0,10,0,0" Foreground="{DynamicResource Fg2}"/>
-                    </StackPanel>
+                    </WrapPanel>
+                </Border>
+                <StackPanel DockPanel.Dock="Top" Margin="12,8,12,0">
+                    <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
+                            Background="{DynamicResource Bg2}" Padding="12" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                            <WrapPanel>
+                                <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}"/>
+                                <Button x:Name="ConfirmSignIn" Content="Sign in to Peergos…" Visibility="Collapsed"/>
+                                <Button x:Name="ConfirmNo" Content="Cancel"/>
+                            </WrapPanel>
+                            <CheckBox x:Name="ConfirmNever" Content="Don't ask again (Settings → Files &amp; history brings the question back)" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="ActionResult" TextWrapping="Wrap" Foreground="{DynamicResource Fg2}"/>
                 </StackPanel>
-            </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,10,16,16">
+                        <TextBlock x:Name="NothingSelected" Text="Select a capture to see it here. Tick the boxes in the list to select several with the mouse." Style="{StaticResource Dim}" TextWrapping="Wrap"/>
+                        <StackPanel x:Name="Details" Visibility="Collapsed">
+                            <Border x:Name="PreviewBox" CornerRadius="8" Background="{DynamicResource Bg3}" MinHeight="120" Margin="0,0,0,12" ClipToBounds="True"
+                                    Cursor="Hand" ToolTip="Double-click: full screen">
+                                <Grid>
+                                    <TextBlock x:Name="PreviewNote" TextWrapping="Wrap" Margin="12" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource Dim}"/>
+                                    <Image x:Name="Preview" MaxHeight="300" Stretch="Uniform"/>
+                                </Grid>
+                            </Border>
+                            <TextBlock x:Name="SelectionTitle" FontWeight="SemiBold" FontSize="16" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <StackPanel x:Name="SinglePanel">
+                                <TextBlock Text="Label" Style="{StaticResource Dim}"/>
+                                <TextBox x:Name="LabelBox" Margin="0,2,0,10" ToolTip="Your own name or note for this capture"/>
+                                <Grid x:Name="InfoGrid" Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Taken" Style="{StaticResource Dim}"/>
+                                    <TextBlock x:Name="InfoTaken" Grid.Column="1" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="InfoAppLabel" Grid.Row="1" Text="From" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="InfoApp" Grid.Row="1" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock Grid.Row="2" Text="Size" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="InfoSize" Grid.Row="2" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock Grid.Row="3" Text="This PC" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="InfoLocal" Grid.Row="3" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock Grid.Row="4" Text="Peergos" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                    <TextBlock x:Name="InfoRemote" Grid.Row="4" Grid.Column="1" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    <TextBlock Grid.Row="5" Text="Link" Style="{StaticResource Dim}" Margin="0,4,0,0"/>
+                                    <TextBox x:Name="InfoLink" Grid.Row="5" Grid.Column="1" IsReadOnly="True" TextWrapping="Wrap" Margin="0,4,0,0" BorderThickness="0" Background="Transparent" Padding="0"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </DockPanel>
         </Grid>
     </DockPanel>
 </Window>

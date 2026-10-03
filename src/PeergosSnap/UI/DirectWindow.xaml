@@ -16,10 +16,10 @@
                     <Button x:Name="RefreshBtn" Content="Refresh" Margin="6,0,0,0" ToolTip="Look at the shared folders again"/>
                     <Button x:Name="FriendsBtn" Content="Friends…" Margin="6,0,0,0" ToolTip="Add friends, accept friend requests"/>
                 </StackPanel>
-                <TextBlock Text="Share with" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <ComboBox x:Name="FriendBox" Width="200" ToolTip="The friend you share pictures with"/>
+                <TextBlock Text="Show" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox x:Name="FriendBox" Width="200" ToolTip="Whose files to show: all friends, or one"/>
                 <TextBlock Text="Month" VerticalAlignment="Center" Margin="16,0,8,0"/>
-                <ComboBox x:Name="MonthBox" Width="130" HorizontalAlignment="Left" ToolTip="Each month has its own shared folder"/>
+                <ComboBox x:Name="MonthBox" Width="130" HorizontalAlignment="Left" ToolTip="All months, or one"/>
             </DockPanel>
         </Border>
         <!-- status line -->
@@ -41,7 +41,10 @@
                     <Rectangle x:Name="DropFrame" RadiusX="10" RadiusY="10" StrokeThickness="2" StrokeDashArray="5 3"
                                Stroke="{DynamicResource Acc2}" Fill="{DynamicResource Bg2}"/>
                     <StackPanel Margin="16,14">
-                        <TextBlock x:Name="DropTitle" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Text="Send a picture"/>
+                        <DockPanel>
+                            <ComboBox x:Name="SendToBox" DockPanel.Dock="Right" Width="150" Margin="8,0,0,0" ToolTip="Who gets what you drop, paste or choose here"/>
+                            <TextBlock x:Name="DropTitle" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" Text="Send a picture" VerticalAlignment="Center"/>
+                        </DockPanel>
                         <TextBlock Style="{StaticResource Dim}" TextWrapping="Wrap" Margin="0,4,0,10"
                                    Text="Drop pictures here, paste one (Ctrl+V) or choose files. Your friend sees them at once."/>
                         <WrapPanel>

@@ -376,7 +376,8 @@ public sealed class DirectHub : IDisposable
             window = new DirectWindow(this, app);
             window.Closed += (_, _) => { window = null; if (!Wanted) service.Stop(); };
         }
-        window.ShowFor(friend ?? (app.Settings.DirectLastFriend.Length > 0 ? app.Settings.DirectLastFriend : Friends.FirstOrDefault()), path, activate);
+        // Without a friend: everything (all friends, all months); sending goes to the last friend sent to.
+        window.ShowFor(friend, path, activate);
         if (!service.Running && !starting) _ = StartAsync();
     }
 

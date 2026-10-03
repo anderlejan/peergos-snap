@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.3.0 – 2026-10-03
+
+- **Draw on pictures.** Arrows, lines, boxes, ellipses, highlights, a free pen, text labels, numbered steps (1, 2, 3 …)
+  and blur (pixelation that really removes what was under it), with colours, three sizes, undo/redo and zoom. Right
+  after a capture: tray menu → *Take picture and draw on it*, *Draw on it…* in the after-picture question, or for every
+  picture (Settings → Capture). From the history: *Draw* saves the drawing as a new capture; the original stays.
+- **Upload files and folders** from the tray menu (*Upload files…*, *Upload a folder…*). Files get their own secret
+  links (all copied, one per line); a folder is uploaded with its subfolders and gets one link. They appear in the
+  history (filter *Uploaded files and folders*); the originals on the PC are only read, never changed or deleted.
+- **History: full-screen view.** Double-click the preview (or *View*, or Space): the mouse wheel zooms where the pointer
+  is, the view follows the mouse, a click zooms in or out, ← → go through the list, Esc closes.
+- **History: buttons on top.** The actions sit above the preview in a compact bar with icons (*Copy link*, *Link*,
+  *View*, *Open*, *Folder*, *Copy picture*, *Draw*, *Upload*, *Lock*, *Delete ▾*), and a right click on the list
+  offers them too.
+- **History: lock.** Locked entries (🔒, key L) are never deleted or removed: not by any delete, *Clean up*, clearing
+  the history, or the automatic removal of old local copies. New filter *Locked*.
+- **History: asking before a delete is optional** (default on): *Don't ask again* in the question, or Settings →
+  Files & history → *Ask before deleting in the history*.
+- **History: select with the mouse.** A tick box on every row adds or removes it from the selection; *☑ All* /
+  *☐ None* at the top.
+- **Fixed: deleting while not signed in to Peergos.** A delete that needs Peergos while you are signed out no longer
+  half-runs: it says which files cannot be deleted in Peergos now and offers *Sign in to Peergos…*, *Delete on this PC
+  only* (the entries stay for later) or Cancel. A refused delete says why and keeps the entry. The open history looks
+  at Peergos again when you sign in or out, and shows *Peergos ?* while that is not known.
+- **Direct window: everything by default.** It opens with *All friends* and *All months*; choosing a friend or month
+  narrows the list. *Send to* in the drop area chooses the receiver when several friends are shown.
+- **One main folder in Peergos.** Direct sharing now uses *PeergosSnap/Direct/(friend)/(month)* inside the app's
+  folder instead of *PeergosSnap-Direct* next to it. Files from 2.2 stay where they are and are still shown, labelled
+  and deletable. A friend still on 2.2 sees new files only after their Peergos Snap updates.
+- **Choose the Peergos folder by browsing** (Settings → Peergos → *Browse…*), or make a new one there.
+- Help updated for all of the above.
+
 ## 2.2.0 – 2026-10-01
 
 - **Direct to a friend.** Send a picture, video or any file straight to a friend's screen while you talk with them in
