@@ -221,7 +221,7 @@
 <section id="uploads" data-keywords="upload file files folder directory share link any file document">
 <h2>Uploading files and folders</h2>
 <p>Any file from your PC can be shared through Peergos the same way as a capture: right-click the icon → <em>Upload files…</em> and choose one or more files. Each goes into your Peergos folder for captures and gets its own secret link; the links are copied to the clipboard, one per line.</p>
-<p><em>Upload a folder…</em> uploads a whole folder with its subfolders, as a new folder inside your Peergos folder (numbered when the name is taken), and copies <strong>one</strong> link for the whole folder. A folder with more than 200 files or more than 500 MB asks first.</p>
+<p><em>Upload a folder…</em> uploads a whole folder with its subfolders, as a new folder inside your Peergos folder (numbered when the name is taken), and copies <strong>one</strong> link for the whole folder. A folder with more than 200 files or more than 500 MB asks first. Hidden and system files (those Explorer hides, such as Thumbs.db or Office lock files) are left out, a subfolder that cannot be read is skipped, and links to other folders are not followed. The name <em>Direct</em> inside PeergosSnap belongs to direct sharing: an upload with that name gets a number.</p>
 <p>Uploaded files and folders appear in the <a href="#history">history</a> (filter <em>Uploaded files and folders</em>) with their links. Peergos Snap keeps no copy of them: the files on your PC are only read and are never changed or deleted – <em>Delete</em> in the history only deletes the uploaded copy in Peergos.</p>
 </section>
 
@@ -265,6 +265,7 @@
 </ul>
 <h3 id="direct-privacy">Who can see it</h3>
 <p>What you send stays in <strong>your</strong> Peergos, in a folder for that friend (<em>PeergosSnap</em> → <em>Direct</em> → the friend's name → one folder per month; files from version 2.2 stay in <em>PeergosSnap-Direct</em> and are shown as before). The folder itself is not shared: each file you send is shared, read-only, with that one friend only, so they see exactly what you sent them and nothing else. No link is created. When it arrives, your friend's Peergos Snap copies it into <strong>their</strong> Peergos (the month's <em>received</em> folder) – from then on it is their copy. What you receive is copied into yours the same way, and with <em>Also keep received files on this PC</em> (Settings → Direct, on by default) also downloaded to the <em>Direct</em> folder next to the captures folder.</p>
+<p><strong>Keep PeergosSnap private.</strong> The direct folders are inside <em>PeergosSnap</em>, so Peergos Snap checks that <em>PeergosSnap</em>, <em>PeergosSnap/Direct</em> and the friend's folder there are not shared with anyone and have no secret link. If one is, nothing is sent or copied and the direct window says which folder is shared and how: remove that share or link in Peergos. (The secret links of single captures are fine: each shows only its own file.)</p>
 <p>Both of you need Peergos Snap running and signed in to Peergos. To receive pictures at once, Peergos Snap keeps a connection to Peergos open while you have friends to share with; you can turn this off in Settings → Direct (pictures then arrive while the direct window is open).</p>
 </section>
 

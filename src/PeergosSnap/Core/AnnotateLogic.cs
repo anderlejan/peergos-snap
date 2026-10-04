@@ -10,9 +10,10 @@ public static class AnnotateLogic
     public static double TextSize(int size, int w, int h) => new[] { 16.0, 22.0, 32.0 }[Math.Clamp(size, 0, 2)] * Scale(w, h);
     public static double NumberDiameter(int size, int w, int h) => new[] { 24.0, 32.0, 44.0 }[Math.Clamp(size, 0, 2)] * Scale(w, h);
 
-    /// <summary>The block size of the pixelation: big enough that text under it cannot be read back.</summary>
+    /// <summary>The block size of the pixelation: big enough that text under it cannot be read back. A quarter of the
+    /// box's shorter side, so even large text dragged over closely is only a few blocks high.</summary>
     public static int BlurBlock(int size, int w, int h) =>
-        Math.Clamp(Math.Min(w, h) / 10, new[] { 8, 12, 18 }[Math.Clamp(size, 0, 2)], 40);
+        Math.Clamp(Math.Min(w, h) / 4, new[] { 8, 12, 18 }[Math.Clamp(size, 0, 2)], 64);
 
     /// <summary>
     /// The arrow: where the shaft ends (under the head) and the two back corners of the head. The tip is at

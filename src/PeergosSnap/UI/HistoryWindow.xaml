@@ -90,7 +90,7 @@
                             <Grid Margin="2,4">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="112"/><ColumnDefinition/></Grid.ColumnDefinitions>
                                 <!-- a click on the box adds or removes this capture without Ctrl: selecting several with the mouse only -->
-                                <CheckBox VerticalAlignment="Center" Margin="2,0,8,0" Focusable="False" ToolTip="Select (keeps the others selected)"
+                                <CheckBox VerticalAlignment="Center" Margin="2,0,8,0" Focusable="False" Click="Tick_Click" ToolTip="Select (keeps the others selected)"
                                           IsChecked="{Binding IsSelected, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"/>
                                 <Border Grid.Column="1" Width="100" Height="64" CornerRadius="6" Background="{DynamicResource Bg3}" ClipToBounds="True" HorizontalAlignment="Left">
                                     <Grid>
@@ -183,7 +183,9 @@
                                 <Button x:Name="ConfirmSignIn" Content="Sign in to Peergos…" Visibility="Collapsed"/>
                                 <Button x:Name="ConfirmNo" Content="Cancel"/>
                             </WrapPanel>
-                            <CheckBox x:Name="ConfirmNever" Content="Don't ask again (Settings → Files &amp; history brings the question back)" Margin="0,4,0,0"/>
+                            <CheckBox x:Name="ConfirmNever" Margin="0,4,0,0">
+                                <TextBlock TextWrapping="Wrap" Text="Don't ask again (Settings → Files &amp; history brings the question back)"/>
+                            </CheckBox>
                         </StackPanel>
                     </Border>
                     <TextBlock x:Name="ActionResult" TextWrapping="Wrap" Foreground="{DynamicResource Fg2}"/>

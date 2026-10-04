@@ -659,7 +659,7 @@ public sealed class TrayController : IDisposable
     {
         var root = Path.GetFullPath(folder).TrimEnd('\\', '/');
         List<string> files;
-        try { files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).ToList(); }
+        try { files = UploadLogic.FolderFiles(root); }
         catch (Exception e) { Notify(ToastKind.Error, "The folder cannot be read", e.Message); return; }
         if (files.Count == 0) { Notify(ToastKind.Warn, "Nothing to upload", "The folder has no files."); return; }
         long bytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
@@ -721,12 +721,14 @@ public sealed class TrayController : IDisposable
     void UploadDone(PutResult put, List<string> links, string what, int asked, string? file)
     {
         string copied = "";
+        bool onClipboard = false;
         if (links.Count > 0)
         {
+            lastLink = links[^1]; // "Copy last link" offers it even when the clipboard was busy
             try
             {
                 ClipboardService.OnUi(() => ClipboardService.SetText(string.Join(Environment.NewLine, links)));
-                lastLink = links[^1];
+                onClipboard = true;
                 copied = links.Count == 1 ? " The link is on the clipboard." : $" {links.Count} links are on the clipboard, one per line.";
             }
             catch (Exception e) { Log.Error("clipboard links", e); copied = " The clipboard was busy: find the links in History…"; }
@@ -735,7 +737,7 @@ public sealed class TrayController : IDisposable
             Notify(ToastKind.Warn, $"{put.Files.Count} of {asked} files uploaded", $"Not uploaded: {put.Failed[0]}" + (put.Failed.Count > 1 ? $" (and {put.Failed.Count - 1} more)" : "") + "." + copied,
                 links.Count == 1 ? links[0] : null, extra: ("History", ShowHistory));
         else
-            Notify(ToastKind.Ok, links.Count == 1 ? "Link copied to the clipboard" : $"{what} uploaded", $"{what} uploaded to Peergos.{copied}",
+            Notify(ToastKind.Ok, links.Count == 1 && onClipboard ? "Link copied to the clipboard" : $"{what} uploaded", $"{what} uploaded to Peergos.{copied}",
                 links.Count == 1 ? links[0] : null, file, extra: ("History", ShowHistory));
     }
 

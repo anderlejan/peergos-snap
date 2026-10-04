@@ -281,10 +281,51 @@ public static class PeergosLinks
     }
 }
 
+/// <summary>Command-line values for the Java bridge.</summary>
+public static class BridgeArgs
+{
+    /// <summary>Java on Windows reads its command line in the ANSI code page, so a folder name with letters outside it
+    /// (Cyrillic, Greek, Chinese …) would arrive as "?". Such values travel as "b64:" + Base64 of their UTF-8 bytes,
+    /// which the bridge decodes; plain ASCII values stay readable.</summary>
+    public static string Encode(string value) =>
+        value.Any(c => c > 127) || value.StartsWith("b64:", StringComparison.Ordinal)
+            ? "b64:" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(value))
+            : value;
+}
+
 public static class UploadLogic
 {
     /// <summary>A large folder is uploaded only after a yes (it can take long and use much of the Peergos space).</summary>
     public static bool NeedsConfirm(int files, long bytes) => files > 200 || bytes > 500L * 1024 * 1024;
+
+    /// <summary>
+    /// The files of a folder upload, with its subfolders: what Explorer shows. Hidden and system files (Office lock
+    /// files carrying the user's name, Thumbs.db, desktop.ini) stay out, an unreadable subfolder is skipped instead of
+    /// stopping the upload, and links to other folders (junctions, symbolic links) are not followed. Other reparse
+    /// points stay in: OneDrive keeps every file and folder as one, also those on this PC.
+    /// </summary>
+    public static List<string> FolderFiles(string root)
+    {
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true, IgnoreInaccessible = true,
+            AttributesToSkip = FileAttributes.Hidden | FileAttributes.System,
+        };
+        return new System.IO.Enumeration.FileSystemEnumerable<string>(root,
+            (ref System.IO.Enumeration.FileSystemEntry e) => e.ToFullPath(), options)
+        {
+            ShouldIncludePredicate = (ref System.IO.Enumeration.FileSystemEntry e) => !e.IsDirectory,
+            ShouldRecursePredicate = (ref System.IO.Enumeration.FileSystemEntry e) =>
+                (e.Attributes & FileAttributes.ReparsePoint) == 0 || !IsFolderLink(e.ToFullPath()),
+        }.ToList();
+    }
+
+    /// <summary>A junction or symbolic link to a folder (when unsure: yes, so it is not followed).</summary>
+    static bool IsFolderLink(string dir)
+    {
+        try { return new DirectoryInfo(dir).LinkTarget != null; }
+        catch { return true; }
+    }
 }
 
 /// <summary>The full-screen viewer's zoom (unit tested).</summary>
@@ -331,5 +372,15 @@ public static class PeergosFolders
     {
         var n = (name ?? "").Trim();
         return n.Length == 0 || n is "." or ".." || n.IndexOfAny(['/', '\\']) >= 0 || n.StartsWith('.') ? null : n;
+    }
+
+    /// <summary>At or inside the folders of direct sharing (PeergosSnap/Direct, or PeergosSnap-Direct of 2.2): never a
+    /// capture folder, or captures with their links would mix with what friends exchange.</summary>
+    public static bool IsDirectFolder(string? rel)
+    {
+        var r = (rel ?? "").Replace('\\', '/').Trim().Trim('/');
+        foreach (var root in new[] { "PeergosSnap/Direct", "PeergosSnap-Direct" })
+            if (r == root || r.StartsWith(root + "/", StringComparison.Ordinal)) return true;
+        return false;
     }
 }

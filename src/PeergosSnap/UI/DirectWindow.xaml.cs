@@ -259,7 +259,8 @@ public partial class DirectWindow : Window
     /// </summary>
     async Task LoadOlder(bool again)
     {
-        if (loadingOlder) return;
+        // Asked while a load runs (the filter widened, Refresh): it runs once more afterwards with what is shown then.
+        if (loadingOlder) { loadOlderAgain = true; loadOlderFresh |= again; return; }
         loadingOlder = true;
         try
         {
@@ -283,10 +284,20 @@ public partial class DirectWindow : Window
             Status(month != null && month != hub.WatchMonth ? $"{month} is not watched for changes – use Refresh" : hub.Status);
         }
         catch (DirectException e) { Status(e.Message); }
-        finally { loadingOlder = false; Rebuild(); }
+        finally
+        {
+            loadingOlder = false;
+            Rebuild();
+            if (loadOlderAgain)
+            {
+                var fresh = loadOlderFresh;
+                loadOlderAgain = loadOlderFresh = false;
+                _ = LoadOlder(fresh);
+            }
+        }
     }
 
-    bool loadingOlder;
+    bool loadingOlder, loadOlderAgain, loadOlderFresh;
 
     async Task Reload()
     {
@@ -527,6 +538,7 @@ public partial class DirectWindow : Window
             FillMonths();
             wantedPath = sent.LastOrDefault()?.Path;
             Rebuild();
+            _ = LoadOlder(false); // "All months" again: the other months of the friends shown
         }
         catch (DirectException e) { SendState.Text = "Not sent: " + e.Message; }
         finally

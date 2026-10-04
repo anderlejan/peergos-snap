@@ -248,31 +248,40 @@ public static class HistoryLogic
     /// now because the user is not signed in (they are named, and the user decides).
     /// </summary>
     public static DeletePlan PlanDelete(IReadOnlyList<HistoryRecord> selected, bool local, bool remote, bool signedIn,
-        Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths)
+        Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths, string? remoteFolder = null)
     {
         var open = selected.Where(r => !r.Locked).ToList();
         var localItems = local ? open.Where(r => r.File != null && localExists(r.File)).ToList() : [];
-        var inPeergos = remote ? open.Where(r => r.PeergosPath != null && InPeergos(r, remotePaths) != false).ToList() : [];
+        var inPeergos = remote ? open.Where(r => r.PeergosPath != null && InPeergos(r, remotePaths, remoteFolder) != false).ToList() : [];
         return new DeletePlan(localItems, signedIn ? inPeergos : [], selected.Where(r => r.Locked).ToList(), signedIn ? [] : inPeergos);
     }
 
-    /// <summary>Is the file in Peergos? null = unknown (not signed in, not looked yet).</summary>
-    public static bool? InPeergos(HistoryRecord r, IReadOnlyCollection<string>? remotePaths) =>
-        r.PeergosPath == null ? false : remotePaths == null ? null : remotePaths.Contains(r.PeergosPath);
+    /// <summary>Is the file in Peergos? null = unknown (not signed in, not looked yet, or in another folder than the
+    /// one listed – e.g. uploaded before the capture folder was changed).</summary>
+    public static bool? InPeergos(HistoryRecord r, IReadOnlyCollection<string>? remotePaths, string? remoteFolder = null)
+    {
+        if (r.PeergosPath == null) return false;
+        if (remotePaths == null) return null;
+        if (remotePaths.Contains(r.PeergosPath)) return true;
+        if (remoteFolder != null && !r.PeergosPath.StartsWith(remoteFolder.TrimEnd('/') + "/", StringComparison.Ordinal)) return null;
+        return false;
+    }
 
-    /// <summary>Records that no longer lead to any file: not on this PC and not (or no longer) in Peergos.</summary>
-    public static List<HistoryRecord> Gone(IEnumerable<HistoryRecord> records, Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths) =>
-        records.Where(r => !r.Locked && (r.File == null || !localExists(r.File)) && InPeergos(r, remotePaths) != true
-                           && !(remotePaths == null && r.PeergosPath != null)).ToList();
+    /// <summary>Records that no longer lead to any file: not on this PC and not (or no longer) in Peergos. An entry whose
+    /// Peergos state is unknown is never counted as gone.</summary>
+    public static List<HistoryRecord> Gone(IEnumerable<HistoryRecord> records, Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths,
+        string? remoteFolder = null) =>
+        records.Where(r => !r.Locked && (r.File == null || !localExists(r.File))
+                           && (r.PeergosPath == null || InPeergos(r, remotePaths, remoteFolder) == false)).ToList();
 
     public static IEnumerable<HistoryRecord> Filter(IEnumerable<HistoryRecord> records, string show, string search,
-        Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths)
+        Func<string, bool> localExists, IReadOnlyCollection<string>? remotePaths, string? remoteFolder = null)
     {
         var words = search.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         foreach (var r in records)
         {
             bool local = r.File != null && localExists(r.File);
-            bool? peer = InPeergos(r, remotePaths);
+            bool? peer = InPeergos(r, remotePaths, remoteFolder);
             bool keep = show switch
             {
                 "pictures" => r.IsPicture,
@@ -284,7 +293,7 @@ public static class HistoryLogic
                 "peergos" => peer == true || (peer == null && r.PeergosPath != null),
                 "pc-only" => local && peer == false,
                 "peergos-only" => !local && (peer == true || (peer == null && r.PeergosPath != null)),
-                "missing" => !local,
+                "missing" => !local && !r.IsUpload, // uploads never had a copy here (the original is the user's own file)
                 _ => true,
             };
             if (!keep) continue;

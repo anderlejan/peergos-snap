@@ -261,8 +261,10 @@ public class AnnotateTests
     public void Blur_blocks_are_coarse_enough()
     {
         Assert.Equal(8, AnnotateLogic.BlurBlock(0, 40, 20));
-        Assert.Equal(30, AnnotateLogic.BlurBlock(0, 900, 300));
-        Assert.Equal(40, AnnotateLogic.BlurBlock(2, 2000, 2000));
+        Assert.Equal(12, AnnotateLogic.BlurBlock(1, 300, 40));   // one line of text: about three blocks high
+        Assert.Equal(30, AnnotateLogic.BlurBlock(0, 400, 120));  // large text, dragged over closely
+        Assert.Equal(64, AnnotateLogic.BlurBlock(0, 900, 300));
+        Assert.Equal(64, AnnotateLogic.BlurBlock(2, 2000, 2000));
     }
 
     [Fact]
@@ -299,5 +301,97 @@ public class ViewerTests
         Assert.Equal(0.5, ViewerLogic.Fit(1920, 1080, 3840, 1000));
         Assert.Equal(1, ViewerLogic.ClickZoom(0.5));
         Assert.Equal(2, ViewerLogic.ClickZoom(1));
+    }
+}
+
+/// <summary>2.3 fixes found while verifying on Windows.</summary>
+public class Version23FixTests
+{
+    [Fact]
+    public void Names_outside_the_command_line_code_page_travel_as_base64()
+    {
+        Assert.Equal("PeergosSnap", BridgeArgs.Encode("PeergosSnap"));
+        var cyrillic = BridgeArgs.Encode("Фото Élan");
+        Assert.StartsWith("b64:", cyrillic);
+        Assert.Equal("Фото Élan", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(cyrillic[4..])));
+        // A plain name that happens to start like an encoded one is encoded too, so it is never misread.
+        Assert.StartsWith("b64:", BridgeArgs.Encode("b64:abc"));
+        Assert.NotEqual("b64:abc", BridgeArgs.Encode("b64:abc"));
+    }
+
+    [Fact]
+    public void Entries_in_another_folder_than_the_one_listed_are_unknown_not_gone()
+    {
+        var listed = new HashSet<string> { "/example-user/Shots/new.png" };
+        var old = new HistoryRecord { Id = "o", PeergosPath = "/example-user/PeergosSnap/old.png" };
+        var deleted = new HistoryRecord { Id = "d", PeergosPath = "/example-user/Shots/deleted.png" };
+        var here = new HistoryRecord { Id = "h", PeergosPath = "/example-user/Shots/new.png" };
+        Assert.Null(HistoryLogic.InPeergos(old, listed, "/example-user/Shots"));
+        Assert.False(HistoryLogic.InPeergos(deleted, listed, "/example-user/Shots"));
+        Assert.True(HistoryLogic.InPeergos(here, listed, "/example-user/Shots"));
+        // Clean-up removes only what is known to be gone.
+        Assert.Equal(["d"], HistoryLogic.Gone([old, deleted, here], _ => false, listed, "/example-user/Shots").Select(r => r.Id));
+        // Without the folder (as before) the old entry counts as gone.
+        Assert.False(HistoryLogic.InPeergos(old, listed));
+    }
+
+    [Fact]
+    public void A_folder_upload_takes_what_Explorer_shows_and_does_not_follow_links()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "snap-folder-test-" + Guid.NewGuid().ToString("N"));
+        var elsewhere = root + "-elsewhere";
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "sub"));
+            Directory.CreateDirectory(elsewhere);
+            File.WriteAllText(Path.Combine(root, "a.txt"), "a");
+            File.WriteAllText(Path.Combine(root, "sub", "b.txt"), "b");
+            var hidden = Path.Combine(root, "~$lock.docx");
+            File.WriteAllText(hidden, "h");
+            File.SetAttributes(hidden, FileAttributes.Hidden);
+            File.WriteAllText(Path.Combine(elsewhere, "outside.txt"), "o");
+            // A junction needs no rights (a symbolic link would): created the way Explorer users get them.
+            var mk = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                $"/c mklink /J \"{Path.Combine(root, "link")}\" \"{elsewhere}\"") { CreateNoWindow = true, UseShellExecute = false })!;
+            mk.WaitForExit();
+            Assert.True(Directory.Exists(Path.Combine(root, "link", ".")), "the junction was not created");
+
+            var names = UploadLogic.FolderFiles(root).Select(f => Path.GetRelativePath(root, f)).OrderBy(n => n).ToList();
+            Assert.Equal(["a.txt", Path.Combine("sub", "b.txt")], names);
+        }
+        finally
+        {
+            try { Directory.Delete(Path.Combine(root, "link")); } catch { }
+            try { foreach (var f in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) File.SetAttributes(f, FileAttributes.Normal); } catch { }
+            try { Directory.Delete(root, true); } catch { }
+            try { Directory.Delete(elsewhere, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void The_direct_folders_are_never_the_capture_folder()
+    {
+        Assert.True(PeergosFolders.IsDirectFolder("PeergosSnap/Direct"));
+        Assert.True(PeergosFolders.IsDirectFolder("/PeergosSnap/Direct/friend/"));
+        Assert.True(PeergosFolders.IsDirectFolder(@"PeergosSnap-Direct\friend"));
+        Assert.False(PeergosFolders.IsDirectFolder("PeergosSnap"));
+        Assert.False(PeergosFolders.IsDirectFolder("PeergosSnap/Directory"));
+        Assert.False(PeergosFolders.IsDirectFolder("PeergosSnap/direct")); // Peergos names are case-sensitive: another folder
+    }
+
+    [Fact]
+    public void Uploads_are_not_missing_files()
+    {
+        var upload = new HistoryRecord { Id = "u", Kind = "file", Source = @"C:\docs\a.pdf", PeergosPath = "/example-user/PeergosSnap/a.pdf" };
+        var capture = new HistoryRecord { Id = "c", File = @"C:\gone\b.png" };
+        Assert.Equal(["c"], HistoryLogic.Filter([upload, capture], "missing", "", _ => false, null).Select(r => r.Id));
+    }
+
+    [Fact]
+    public void An_uploaded_file_deleted_from_both_places_leaves_the_history()
+    {
+        // The entry has no copy on this PC; its Peergos path is still set when the decision is made.
+        var upload = new HistoryRecord { Id = "u", Kind = "file", Source = @"C:\docs\a.pdf", PeergosPath = "/example-user/PeergosSnap/a.pdf" };
+        Assert.Equal(["u"], HistoryLogic.RemovableAfterDelete([upload], new HashSet<string>(), new HashSet<string> { "/example-user/PeergosSnap/a.pdf" }));
     }
 }

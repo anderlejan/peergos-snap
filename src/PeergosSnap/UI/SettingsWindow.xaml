@@ -6,7 +6,11 @@
     <Window.Resources>
         <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}"><Setter Property="Margin" Value="0,2,0,8"/><Setter Property="Padding" Value="3"/></Style>
         <Style TargetType="PasswordBox" BasedOn="{StaticResource {x:Type PasswordBox}}"><Setter Property="Margin" Value="0,2,0,8"/><Setter Property="Padding" Value="3"/></Style>
-        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}"><Setter Property="Margin" Value="0,4,0,6"/></Style>
+        <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+            <Setter Property="Margin" Value="0,4,0,6"/>
+            <!-- long texts wrap instead of being cut off at the window edge -->
+            <Setter Property="ContentTemplate"><Setter.Value><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></Setter.Value></Setter>
+        </Style>
         <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}"><Setter Property="Margin" Value="0,3,16,3"/></Style>
         <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}"><Setter Property="Margin" Value="0,2,0,8"/></Style>
         <Style x:Key="Hint" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource Fg3}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="Opacity" Value="0.95"/></Style>

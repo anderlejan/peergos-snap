@@ -129,8 +129,9 @@ public sealed class Uploader
             StandardInputEncoding = new UTF8Encoding(false),
             WorkingDirectory = AppPaths.BridgeDir,
         };
-        foreach (var a in new[] { "-Xmx1g", "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true", "-cp", cp, "snap.bridge.PeergosBridge" }.Concat(args))
+        foreach (var a in new[] { "-Xmx1g", "--enable-native-access=ALL-UNNAMED", "-Djava.awt.headless=true", "-cp", cp, "snap.bridge.PeergosBridge" })
             psi.ArgumentList.Add(a);
+        foreach (var a in args) psi.ArgumentList.Add(BridgeArgs.Encode(a));
 
         Log.Info("bridge: " + args[0]);
         using var p = new Process { StartInfo = psi };
@@ -197,6 +198,9 @@ public sealed class Uploader
     public static string Friendly(string? error)
     {
         var e = (error ?? "Unknown error").Replace('+', ' ');
+        // The bridge's own plain message about a shared folder names folders and users: shown as it is (a user named
+        // "example-space-user" must not turn it into "not enough space").
+        if (e.Contains("direct sharing is paused", StringComparison.Ordinal)) return e;
         if (e.Contains("UnknownHost", StringComparison.OrdinalIgnoreCase) || e.Contains("ConnectException") || e.Contains("Connection refused")
             || e.Contains("timed out", StringComparison.OrdinalIgnoreCase))
             return "Cannot reach the Peergos server (offline?)";

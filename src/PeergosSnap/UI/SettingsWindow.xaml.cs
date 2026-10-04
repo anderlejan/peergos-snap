@@ -22,6 +22,8 @@ public partial class SettingsWindow : Window
         Load();
         Wire();
         loading = false;
+        app.SettingsChanged += FollowChanges;
+        Closed += (_, _) => app.SettingsChanged -= FollowChanges;
         UpdateAccountPanels();
         ShowHotkeyErrors();
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { e.Handled = true; OpenHelp(); } };
@@ -33,6 +35,29 @@ public partial class SettingsWindow : Window
     void OpenHelp() => app.ShowHelp(Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < TabHelp.Length ? TabHelp[Tabs.SelectedIndex] : "settings");
 
     Settings S => app.Settings;
+
+    /// <summary>Changes made elsewhere while this window is open (tray menu, hotkeys, the history's "Don't ask
+    /// again"): the boxes follow, so a click here never just "confirms" a value that is no longer set.</summary>
+    void FollowChanges(Settings before)
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => FollowChanges(before)); return; }
+        loading = true;
+        try
+        {
+            ConfirmDelete.IsChecked = S.ConfirmHistoryDelete;
+            AskPicture.IsChecked = S.AskBeforePictureUpload;
+            AnnotateAfter.IsChecked = S.AnnotateAfterPicture;
+            RecordCursor.IsChecked = S.RecordCursor;
+            RecordSound.IsChecked = S.RecordSound;
+            KindPicture.IsChecked = S.DefaultKind == CaptureKind.Picture;
+            KindVideo.IsChecked = S.DefaultKind == CaptureKind.Video;
+            OutLink.IsChecked = S.Output == OutputMode.SecretLink;
+            OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
+            if (!DelayBox.IsKeyboardFocusWithin) DelayBox.Text = S.DelaySeconds.ToString();
+        }
+        finally { loading = false; }
+        if (before.PeergosConfigured != S.PeergosConfigured) UpdateAccountPanels();
+    }
 
     void Change(Action<Settings> a)
     {
@@ -129,7 +154,11 @@ public partial class SettingsWindow : Window
     {
         Server.LostFocus += (_, _) => Change(s => s.Server = Server.Text);
         Username.TextChanged += (_, _) => { if (!S.PeergosConfigured) Change(s => s.Username = Username.Text.Trim()); };
-        AccountFolder.LostFocus += (_, _) => Change(s => s.AccountFolder = AccountFolder.Text);
+        AccountFolder.LostFocus += (_, _) =>
+        {
+            if (DirectFolderRefused(AccountFolder.Text)) { AccountFolder.Text = S.AccountFolder; return; }
+            Change(s => s.AccountFolder = AccountFolder.Text);
+        };
         TestBtn.Click += async (_, _) => await Test();
         SignInBtn.Click += async (_, _) => await SignIn();
         SignOutBtn.Click += (_, _) =>
@@ -320,8 +349,18 @@ public partial class SettingsWindow : Window
         };
     }
 
+    /// <summary>The folders of direct sharing are never the capture folder: says so and returns true.</summary>
+    bool DirectFolderRefused(string rel)
+    {
+        if (!PeergosFolders.IsDirectFolder(rel)) return false;
+        TestResult.Foreground = System.Windows.Media.Brushes.Firebrick;
+        TestResult.Text = "PeergosSnap/Direct holds what you share directly with friends; captures cannot go there. Choose another folder.";
+        return true;
+    }
+
     void UseFolder(string rel)
     {
+        if (DirectFolderRefused(rel)) return;
         AccountFolder.Text = rel;
         Change(s => s.AccountFolder = rel);
         BrowsePanel.Visibility = Visibility.Collapsed;

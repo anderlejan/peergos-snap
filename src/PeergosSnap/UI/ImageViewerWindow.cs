@@ -28,6 +28,7 @@ public sealed class ImageViewerWindow : Window
     BitmapSource? picture;
     double fit = 1;
     Point mouse;
+    bool pressed; // a click zooms only when it also began on the picture (not the release of the double-click that opened it)
 
     public ImageViewerWindow(IReadOnlyList<HistoryItem> items, int index, Action<HistoryItem>? onDraw)
     {
@@ -65,9 +66,18 @@ public sealed class ImageViewerWindow : Window
         root.Children.Add(bar);
         Content = root;
 
-        canvas.MouseMove += (_, e) => { mouse = e.GetPosition(canvas); Place(); };
-        canvas.MouseWheel += (_, e) => { mouse = e.GetPosition(canvas); Zoom(scale.ScaleX * (e.Delta > 0 ? 1.2 : 1 / 1.2)); };
-        canvas.MouseLeftButtonUp += (_, e) => { mouse = e.GetPosition(canvas); Zoom(scale.ScaleX > fit * 1.01 ? fit : ViewerLogic.ClickZoom(fit)); };
+        // The whole window follows the mouse, also over the caption bar at the bottom (the last rows of a zoomed picture).
+        PreviewMouseMove += (_, e) => { mouse = e.GetPosition(canvas); Place(); };
+        // One notch of a wheel zooms 20 %; a touchpad's many small steps add up to the same.
+        canvas.MouseWheel += (_, e) => { mouse = e.GetPosition(canvas); Zoom(scale.ScaleX * Math.Pow(1.2, e.Delta / 120.0)); };
+        canvas.MouseLeftButtonDown += (_, _) => pressed = true;
+        canvas.MouseLeftButtonUp += (_, e) =>
+        {
+            if (!pressed) return;
+            pressed = false;
+            mouse = e.GetPosition(canvas);
+            Zoom(scale.ScaleX > fit * 1.01 ? fit : ViewerLogic.ClickZoom(fit));
+        };
         canvas.MouseRightButtonUp += (_, _) => Close();
         canvas.SizeChanged += (_, _) => { bool fitted = Math.Abs(scale.ScaleX - fit) < 0.001; fit = Fit(); if (fitted) Zoom(fit); else Place(); };
         PreviewKeyDown += Keys;
@@ -128,14 +138,31 @@ public sealed class ImageViewerWindow : Window
         if (it.Record.IsVideo) note.Text = "Video – Enter plays it in your video player";
         picture = bmp;
         image.Source = bmp;
-        image.Width = bmp.PixelWidth;
-        image.Height = bmp.PixelHeight;
+        SizeImage();
         fit = Fit();
         CenterMouse();
         Zoom(fit);
     }
 
-    double Fit() => picture == null ? 1 : ViewerLogic.Fit(canvas.ActualWidth, canvas.ActualHeight, picture.PixelWidth, picture.PixelHeight);
+    /// <summary>One screen pixel per picture pixel at 100 %, also on a scaled display (125 %, 150 % …).</summary>
+    void SizeImage()
+    {
+        if (picture == null) return;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        image.Width = picture.PixelWidth / dpi.DpiScaleX;
+        image.Height = picture.PixelHeight / dpi.DpiScaleY;
+    }
+
+    protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
+    {
+        base.OnDpiChanged(oldDpi, newDpi);
+        if (picture == null) return;
+        SizeImage();
+        fit = Fit();
+        Zoom(fit);
+    }
+
+    double Fit() => picture == null ? 1 : ViewerLogic.Fit(canvas.ActualWidth, canvas.ActualHeight, (int)Math.Round(image.Width), (int)Math.Round(image.Height));
 
     void Zoom(double s)
     {
@@ -148,8 +175,8 @@ public sealed class ImageViewerWindow : Window
     void Place()
     {
         if (picture == null) return;
-        move.X = ViewerLogic.Offset(mouse.X, canvas.ActualWidth, picture.PixelWidth * scale.ScaleX);
-        move.Y = ViewerLogic.Offset(mouse.Y, canvas.ActualHeight, picture.PixelHeight * scale.ScaleY);
+        move.X = ViewerLogic.Offset(mouse.X, canvas.ActualWidth, image.Width * scale.ScaleX);
+        move.Y = ViewerLogic.Offset(mouse.Y, canvas.ActualHeight, image.Height * scale.ScaleY);
     }
 
     static void Open(string f)

@@ -12,6 +12,7 @@ package snap.bridge;
 import peergos.shared.Crypto;
 import peergos.shared.NetworkAccess;
 import peergos.shared.social.FollowRequestWithCipherText;
+import peergos.shared.user.FileSharedWithState;
 import peergos.shared.user.SocialState;
 import peergos.shared.user.UserContext;
 import peergos.shared.user.fs.AsyncReader;
@@ -274,6 +275,7 @@ final class DirectServe {
     /** My folder for this friend exists (files can only be shared with friends). */
     String ensureOpen(String friend) {
         String path = mine(friend);
+        requireUnexposed(friend); // the folder's name alone tells who the friend is
         if (opened.contains(friend))
             return path;
         if (!await(ctx.getSocialState()).getFriends().contains(friend))
@@ -283,6 +285,82 @@ final class DirectServe {
         return path;
     }
     // ---------- listing ----------
+
+    /** Folders found unshared, and until when that is trusted (looked at again every minute). */
+    final Map<String, Long> unexposedUntil = new HashMap<>();
+    /** Per friend, the last "folder is shared" problem reported while listing (said once, not at every check). */
+    final Map<String, String> exposureSaid = new HashMap<>();
+
+    /**
+     * The direct folders lie inside PeergosSnap. If PeergosSnap, PeergosSnap/Direct or the friend's folder there is
+     * shared with someone or has a secret link, everything sent and received directly would be visible to them too.
+     * Returns what is shared (a short message), or null. A check that fails (e.g. the folder does not exist yet, or
+     * Peergos does not answer) counts as not shared and is not repeated for a minute.
+     */
+    String exposure(String friend) {
+        for (String p : List.of("/" + me + "/PeergosSnap", "/" + me + "/" + ROOT, mine(friend))) {
+            Long until = unexposedUntil.get(p);
+            if (until != null && until > System.currentTimeMillis())
+                continue;
+            FileSharedWithState s;
+            try {
+                s = await(ctx.sharedWith(PathUtil.get(p)));
+            } catch (Exception e) {
+                System.err.println("direct: sharing state of " + p + ": " + message(e));
+                unexposedUntil.put(p, System.currentTimeMillis() + 60_000);
+                continue;
+            }
+            List<String> who = new ArrayList<>(s.readAccess);
+            for (String w : s.writeAccess)
+                if (!who.contains(w))
+                    who.add(w);
+            if (!who.isEmpty() || !s.links.isEmpty()) {
+                String how = (who.isEmpty() ? "" : " with " + String.join(", ", who))
+                        + (s.links.isEmpty() ? "" : (who.isEmpty() ? " through " : " and through ") + s.links.size()
+                        + (s.links.size() == 1 ? " secret link" : " secret links"));
+                return p.substring(me.length() + 2) + " is shared" + how + ": direct sharing is paused until you remove that in Peergos.";
+            }
+            unexposedUntil.put(p, System.currentTimeMillis() + 60_000);
+        }
+        return null;
+    }
+
+    /** Nothing is created or written below a shared or linked folder (see {@link #exposure}). */
+    void requireUnexposed(String friend) {
+        String exposed = exposure(friend);
+        if (exposed != null)
+            throw new IllegalStateException(exposed);
+    }
+
+    /**
+     * Each user's meta of 2.2 and of 2.3 combined field by field. Label and pin keep their rule "the latest change
+     * wins" (labelAt, pinAt), also across the two files; the other fields (star, got) take the 2.3 file's value: a star
+     * taken away since the update (written only to the new file) does not come back, and a 2.2 label stays when only a
+     * star was added.
+     */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> combine(Map<String, Object> older, Map<String, Object> newer) {
+        Map<String, Object> out = new LinkedHashMap<>(older);
+        for (Map.Entry<String, Object> e : newer.entrySet()) {
+            if (out.get(e.getKey()) instanceof Map<?, ?> o && e.getValue() instanceof Map<?, ?> n) {
+                Map<String, Object> old = (Map<String, Object>) o, neu = (Map<String, Object>) n;
+                Map<String, Object> m = new LinkedHashMap<>(old);
+                m.putAll(neu);
+                for (String[] f : new String[][]{{"label", "labelAt"}, {"pin", "pinAt"}})
+                    if (old.containsKey(f[0]) && neu.containsKey(f[0]) && stamp(old.get(f[1])) > stamp(neu.get(f[1]))) {
+                        m.put(f[0], old.get(f[0]));
+                        m.put(f[1], old.get(f[1]));
+                    }
+                out.put(e.getKey(), m);
+            } else
+                out.put(e.getKey(), e.getValue());
+        }
+        return out;
+    }
+
+    static long stamp(Object v) {
+        return v instanceof Number x ? x.longValue() : 0;
+    }
 
     String mine(String friend) { return "/" + me + "/" + ROOT + "/" + friend; }
     String theirs(String friend) { return "/" + friend + "/" + ROOT + "/" + me; }
@@ -331,10 +409,14 @@ final class DirectServe {
         List<String> myDirs = List.of(mine(friend) + "/" + month, mineLegacy(friend) + "/" + month);
         List<String> theirDirs = List.of(theirs(friend) + "/" + month, theirsLegacy(friend) + "/" + month);
         Map<String, Map<String, Object>> meta = new HashMap<>();
+        // Each user's meta of 2.3 and of 2.2, combined field by field with 2.3 winning (see combine).
+        Map<String, Object> myNew = new LinkedHashMap<>(), myOld = new LinkedHashMap<>();
+        Map<String, Object> theirNew = new LinkedHashMap<>(), theirOld = new LinkedHashMap<>();
         Set<String> got = new HashSet<>(); // "SENDER/NAME" of the friend's files I copied before (in either folder)
         List<Object[]> found = new ArrayList<>(); // {file, folder, sender}
         Set<String> have = new HashSet<>();
         for (String myDir : myDirs) {
+            Map<String, Object> myInto = myDir.equals(myDirs.get(0)) ? myNew : myOld;
             for (FileWrapper k : files(myDir)) {
                 String n = k.getFileProperties().name;
                 if (k.isDirectory())
@@ -344,7 +426,7 @@ final class DirectServe {
                     for (Map.Entry<String, Object> e : m.entrySet())
                         if (e.getValue() instanceof Map<?, ?> it && Boolean.TRUE.equals(it.get("got")))
                             got.add(e.getKey());
-                    mergeMeta(meta, me, m);
+                    myInto.putAll(m);
                 } else if (!n.startsWith("."))
                     found.add(new Object[]{k, myDir, me});
             }
@@ -358,21 +440,34 @@ final class DirectServe {
             }
         }
         Map<String, FileWrapper> shared = new HashMap<>(); // the friend's originals shared with me
-        for (String theirDir : theirDirs)
+        for (String theirDir : theirDirs) {
+            Map<String, Object> theirInto = theirDir.equals(theirDirs.get(0)) ? theirNew : theirOld;
             for (FileWrapper k : files(theirDir)) {
                 String n = k.getFileProperties().name;
                 if (k.isDirectory())
                     continue;
                 if (n.equals(META_PREFIX + friend + ".json"))
-                    mergeMeta(meta, friend, readMeta(theirDir + "/" + n, k));
+                    theirInto.putAll(readMeta(theirDir + "/" + n, k));
                 else if (!n.startsWith("."))
                     shared.putIfAbsent(n, k);
             }
+        }
+        mergeMeta(meta, me, combine(myOld, myNew));
+        mergeMeta(meta, friend, combine(theirOld, theirNew));
         if (copyNew) {
             List<String> fresh = new ArrayList<>();
             for (String n : shared.keySet())
                 if (!have.contains(n) && !got.contains(friend + "/" + n))
                     fresh.add(n);
+            String exposed = fresh.isEmpty() ? null : exposure(friend);
+            if (exposed != null) {
+                // Nothing is copied into folders others can see; the files that are there are still listed.
+                if (!exposed.equals(exposureSaid.get(friend)))
+                    emit(map("event", "problem", "friend", friend, "error", exposed));
+                exposureSaid.put(friend, exposed);
+                fresh.clear();
+            } else
+                exposureSaid.remove(friend);
             if (!fresh.isEmpty()) {
                 Collections.sort(fresh);
                 List<String> copied = new ArrayList<>();
@@ -534,6 +629,7 @@ final class DirectServe {
         String[] p = parse(direct(Json.str(c, "path"))); // owner, other, month, received|null, name
         boolean copy = p[3] != null;
         String friend = p[0].equals(me) ? p[1] : p[0];
+        requireUnexposed(friend); // labels are written into the month folder
         String sender = p[0].equals(me) && !copy ? me : friend;
         String item = sender + "/" + p[4];
         long now = System.currentTimeMillis();

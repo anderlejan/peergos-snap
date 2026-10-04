@@ -130,7 +130,7 @@ public sealed class AnnotateWindow : Window
         viewer.PreviewMouseWheel += (_, e) =>
         {
             if (Keyboard.Modifiers != ModifierKeys.Control) return;
-            ZoomAt(zoom.ScaleX * (e.Delta > 0 ? 1.15 : 1 / 1.15), e.GetPosition(viewer));
+            ZoomAt(zoom.ScaleX * Math.Pow(1.15, e.Delta / 120.0), e.GetPosition(viewer));
             e.Handled = true;
         };
 
@@ -243,8 +243,8 @@ public sealed class AnnotateWindow : Window
         zIn.Click += (_, _) => ZoomAt(zoom.ScaleX * 1.25, null);
         var fit = new Button { Content = "Fit", Margin = new Thickness(0, 0, 4, 6), Focusable = false, ToolTip = "The whole picture (F)" };
         fit.Click += (_, _) => Fit();
-        var actual = new Button { Content = "100 %", Margin = new Thickness(0, 0, 4, 6), Focusable = false, ToolTip = "Actual size (0)" };
-        actual.Click += (_, _) => ZoomAt(1, null);
+        var actual = new Button { Content = "100 %", Margin = new Thickness(0, 0, 4, 6), Focusable = false, ToolTip = "Actual size (Ctrl+0)" };
+        actual.Click += (_, _) => ZoomAt(1 / Dpi, null);
         bar.Children.Add(zOut);
         bar.Children.Add(zoomText);
         bar.Children.Add(zIn);
@@ -450,7 +450,7 @@ public sealed class AnnotateWindow : Window
                 double dx = moveDx, dy = moveDy;
                 // Already moved on screen: only bake it in (blur is drawn again from the original at its new place).
                 Translate(el).X -= dx; Translate(el).Y -= dy;
-                ApplyMove(el, dx, dy);
+                (dx, dy) = ApplyMove(el, dx, dy);
                 Push(new Step(() => ApplyMove(el, -dx, -dy), () => ApplyMove(el, dx, dy)));
             }
             return;
@@ -584,15 +584,16 @@ public sealed class AnnotateWindow : Window
         return img;
     }
 
-    FrameworkElement MakeLabel(Point p, string text)
+    FrameworkElement MakeLabel(Point p, string text, Color? colour = null, double? fontSize = null)
     {
-        var fs = FontPx;
+        var fs = fontSize ?? FontPx;
+        var c = colour ?? color;
         var label = new Border
         {
-            Background = new SolidColorBrush(color), CornerRadius = new CornerRadius(fs * 0.25), Padding = new Thickness(fs * 0.35, fs * 0.12, fs * 0.35, fs * 0.16),
+            Background = new SolidColorBrush(c), CornerRadius = new CornerRadius(fs * 0.25), Padding = new Thickness(fs * 0.35, fs * 0.12, fs * 0.35, fs * 0.16),
             Child = new TextBlock
             {
-                Text = text, FontSize = fs, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(TextOn(color)),
+                Text = text, FontSize = fs, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(TextOn(c)),
                 FontFamily = new FontFamily("Segoe UI"),
             },
             Tag = text,
@@ -645,12 +646,15 @@ public sealed class AnnotateWindow : Window
         return n;
     }
 
-    /// <summary>Moves a mark for good. Blur is drawn again from the original at its new place.</summary>
-    void ApplyMove(FrameworkElement el, double dx, double dy)
+    /// <summary>Moves a mark for good and returns how far it really moved. Blur is drawn again from the original at its
+    /// new place, and stops at the picture's edge.</summary>
+    (double Dx, double Dy) ApplyMove(FrameworkElement el, double dx, double dy)
     {
         if (el.Tag is BlurTag b)
         {
             int nx = Math.Clamp(b.X + (int)Math.Round(dx), 0, Math.Max(0, pw - b.W)), ny = Math.Clamp(b.Y + (int)Math.Round(dy), 0, Math.Max(0, ph - b.H));
+            dx = nx - b.X;
+            dy = ny - b.Y;
             var fresh = (Image)MakeBlur(nx, ny, b.W, b.H, b.Block);
             ((Image)el).Source = fresh.Source;
             el.Tag = fresh.Tag;
@@ -663,6 +667,7 @@ public sealed class AnnotateWindow : Window
             Translate(el).Y += dy;
         }
         if (el == selected) ShowSelection();
+        return (dx, dy);
     }
 
     void AddMark(FrameworkElement el)
@@ -732,14 +737,18 @@ public sealed class AnnotateWindow : Window
     // ---------- text ----------
 
     FrameworkElement? editingLabel;
+    Color editingColour;
+    double editingFont;
 
-    void StartText(Point p, string? text)
+    void StartText(Point p, string? text, Color? colour = null, double? fontSize = null)
     {
         typingAt = p;
+        var fs = fontSize ?? FontPx;
+        var c = colour ?? color;
         typing = new TextBox
         {
-            Text = text ?? "", FontSize = FontPx, FontWeight = FontWeights.SemiBold, MinWidth = Math.Max(80, FontPx * 4), AcceptsReturn = false,
-            Background = new SolidColorBrush(color), Foreground = new SolidColorBrush(TextOn(color)), BorderThickness = new Thickness(1),
+            Text = text ?? "", FontSize = fs, FontWeight = FontWeights.SemiBold, MinWidth = Math.Max(80, fs * 4), AcceptsReturn = false,
+            Background = new SolidColorBrush(c), Foreground = new SolidColorBrush(TextOn(c)), BorderThickness = new Thickness(1),
             Padding = new Thickness(2),
         };
         typing.KeyDown += (_, e) =>
@@ -765,8 +774,10 @@ public sealed class AnnotateWindow : Window
         if (label.Tag is not string text) return;
         var at = label.TranslatePoint(new Point(0, 0), layer);
         editingLabel = label;
+        editingColour = Snapshot(label);
+        editingFont = (label as Border)?.Child is TextBlock tb ? tb.FontSize : FontPx;
         label.Visibility = Visibility.Hidden;
-        StartText(at, text);
+        StartText(at, text, editingColour, editingFont);
     }
 
     void CommitText()
@@ -781,17 +792,24 @@ public sealed class AnnotateWindow : Window
         {
             old.Visibility = Visibility.Visible;
             if (text.Length == 0 || text == old.Tag as string) return;
-            // A changed text replaces the old label (undo brings the old one back).
+            // A changed text replaces the old label, in that label's colour and size (undo brings the old one back).
+            var fresh = MakeLabel(typingAt, text, editingColour, editingFont);
             int at = layer.Children.IndexOf(old);
-            var fresh = MakeLabel(typingAt, text);
+            if (at < 0) { AddMark(fresh); return; } // the old label was deleted or undone meanwhile
             layer.Children.Remove(old);
             layer.Children.Insert(at, fresh);
             Select(null);
-            Push(new Step(() => { layer.Children.Remove(fresh); layer.Children.Insert(Math.Min(at, layer.Children.Count), old); },
-                          () => { layer.Children.Remove(old); layer.Children.Insert(Math.Min(at, layer.Children.Count), fresh); }));
+            Push(new Step(() => { Unselect(fresh); layer.Children.Remove(fresh); layer.Children.Insert(Math.Min(at, layer.Children.Count), old); },
+                          () => { Unselect(old); layer.Children.Remove(old); layer.Children.Insert(Math.Min(at, layer.Children.Count), fresh); }));
             return;
         }
         if (text.Length > 0) AddMark(MakeLabel(typingAt, text));
+    }
+
+    /// <summary>A mark that leaves the picture (undo, redo) is no longer selected.</summary>
+    void Unselect(FrameworkElement el)
+    {
+        if (selected == el) Select(null);
     }
 
     void CancelText()
@@ -821,7 +839,7 @@ public sealed class AnnotateWindow : Window
                 case Key.Y: Redo(); e.Handled = true; return;
                 case Key.C: CopyToClipboard(); e.Handled = true; return;
                 case Key.S: Finish(mode == AnnotateMode.Capture ? AnnotateOutcome.Saved : AnnotateOutcome.SavedUpload); e.Handled = true; return;
-                case Key.D0 or Key.NumPad0: ZoomAt(1, null); e.Handled = true; return;
+                case Key.D0 or Key.NumPad0: ZoomAt(1 / Dpi, null); e.Handled = true; return;
             }
             return;
         }
@@ -853,8 +871,11 @@ public sealed class AnnotateWindow : Window
     {
         viewer.UpdateLayout();
         double w = Math.Max(100, viewer.ViewportWidth - 16), h = Math.Max(100, viewer.ViewportHeight - 16);
-        ZoomAt(Math.Min(1, Math.Min(w / pw, h / ph)), null);
+        ZoomAt(Math.Min(1 / Dpi, Math.Min(w / pw, h / ph)), null);
     }
+
+    /// <summary>The display scaling (1.25 at 125 %): the stage is in picture pixels, the screen in units of 1/96 inch.</summary>
+    double Dpi => VisualTreeHelper.GetDpi(this).DpiScaleX;
 
     /// <summary>Zooms, keeping the point under the mouse where it is (or the middle of the view).</summary>
     void ZoomAt(double s, Point? at)
@@ -863,7 +884,7 @@ public sealed class AnnotateWindow : Window
         var anchor = at ?? new Point(viewer.ViewportWidth / 2, viewer.ViewportHeight / 2);
         var before = viewer.TranslatePoint(anchor, stage); // picture pixel under the anchor
         zoom.ScaleX = zoom.ScaleY = s;
-        zoomText.Text = $"{s * 100:0} %";
+        zoomText.Text = $"{s * Dpi * 100:0} %";
         viewer.UpdateLayout();
         var after = stage.TranslatePoint(before, viewer);
         viewer.ScrollToHorizontalOffset(viewer.HorizontalOffset + after.X - anchor.X);

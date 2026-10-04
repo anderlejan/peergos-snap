@@ -22,6 +22,12 @@ public sealed class HistoryItem : INotifyPropertyChanged
     {
         Local = local;
         InPeergos = inPeergos;
+        // A picture drawn on in place keeps its name: a new size means new content, so the thumbnail is made again.
+        if (Record.Bytes != thumbBytes)
+        {
+            thumbBytes = Record.Bytes;
+            if (thumb != null) { thumb = null; loading = false; }
+        }
         Changed(nameof(Title), nameof(Line2), nameof(Day), nameof(PcBrush), nameof(PcText), nameof(PcTip),
             nameof(PeergosBrush), nameof(PeergosText), nameof(PeergosTip), nameof(PeergosLabel), nameof(LinkBadge), nameof(LockBadge),
             nameof(Thumb), nameof(Glyph));
@@ -88,6 +94,7 @@ public sealed class HistoryItem : INotifyPropertyChanged
 
     ImageSource? thumb;
     bool loading;
+    long thumbBytes = -1;
 
     public ImageSource? Thumb
     {

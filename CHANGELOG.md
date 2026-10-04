@@ -9,6 +9,8 @@
 - **Upload files and folders** from the tray menu (*Upload files…*, *Upload a folder…*). Files get their own secret
   links (all copied, one per line); a folder is uploaded with its subfolders and gets one link. They appear in the
   history (filter *Uploaded files and folders*); the originals on the PC are only read, never changed or deleted.
+  Hidden and system files are left out, folder names in any script (Cyrillic, Greek, Chinese …) arrive unchanged, and
+  the name *Direct* inside PeergosSnap stays reserved for direct sharing.
 - **History: full-screen view.** Double-click the preview (or *View*, or Space): the mouse wheel zooms where the pointer
   is, the view follows the mouse, a click zooms in or out, ← → go through the list, Esc closes.
 - **History: buttons on top.** The actions sit above the preview in a compact bar with icons (*Copy link*, *Link*,
@@ -28,7 +30,9 @@
   narrows the list. *Send to* in the drop area chooses the receiver when several friends are shown.
 - **One main folder in Peergos.** Direct sharing now uses *PeergosSnap/Direct/(friend)/(month)* inside the app's
   folder instead of *PeergosSnap-Direct* next to it. Files from 2.2 stay where they are and are still shown, labelled
-  and deletable. A friend still on 2.2 sees new files only after their Peergos Snap updates.
+  and deletable. A friend still on 2.2 sees new files only after their Peergos Snap updates. Because Direct is now
+  inside PeergosSnap, direct sharing pauses with a clear message when PeergosSnap (or Direct, or the friend's folder
+  there) is shared with someone or has a secret link: what you exchange would be visible there too.
 - **Choose the Peergos folder by browsing** (Settings → Peergos → *Browse…*), or make a new one there.
 - Help updated for all of the above.
 
