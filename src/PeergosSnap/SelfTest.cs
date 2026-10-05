@@ -70,20 +70,34 @@ public static class SelfTest
                 rec.Cleanup();
 
                 // Mouse pointer option: the same spot recorded with the pointer shown and hidden must differ there.
+                // Someone may be using the PC meanwhile: Windows hides the pointer while typing, and the mouse may be
+                // moved away. A recording only counts when the pointer stayed visible on the spot (tried 3 times); if
+                // it never did, the check is only noted, as for the sound below.
                 Native.GetCursorPos(out var before);
                 int cx = rect.X + 100, cy = rect.Y + 50;
-                Native.SetCursorPos(cx, cy);
-                Thread.Sleep(1200); // let hover effects under the pointer settle
-                var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true, RecordSound = false }, rect);
-                var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
-                var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
-                Native.SetCursorPos(before.X, before.Y);
                 int w = Geometry.EvenSize(rect).Width;
-                int changed = Diff(withPointer, withoutPointer, w, 100, 50, 14, 20);
-                int noise = Diff(withoutPointer, withoutAgain, w, 100, 50, 14, 20);
-                // Compressed video differs a little between two recordings of the same screen; the pointer must stand far above that.
-                Check("mouse pointer shown / hidden in videos", changed >= 40 && changed >= 3 * Math.Max(noise, 1),
-                    $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it");
+                int changed = -1, noise = -1;
+                bool steady = false;
+                static bool Seen(int changed, int noise) => changed >= 40 && changed >= 3 * Math.Max(noise, 1);
+                for (int attempt = 0; attempt < 3 && !(steady || Seen(changed, noise)); attempt++)
+                {
+                    Native.SetCursorPos(cx, cy);
+                    Thread.Sleep(1200); // let hover effects under the pointer settle
+                    bool shownBefore = Native.PointerShownAt(cx, cy);
+                    var withPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = true, RecordSound = false }, rect);
+                    steady = shownBefore && Native.PointerShownAt(cx, cy);
+                    var withoutPointer = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
+                    var withoutAgain = FrameOf(new Settings { FrameRate = 15, RecordCursor = false, RecordSound = false }, rect);
+                    changed = Diff(withPointer, withoutPointer, w, 100, 50, 14, 20);
+                    noise = Diff(withoutPointer, withoutAgain, w, 100, 50, 14, 20);
+                }
+                Native.SetCursorPos(before.X, before.Y);
+                var pointerDetail = $"{changed} pixels differ at the pointer (shown vs hidden), {noise} between two recordings without it";
+                if (!steady && !Seen(changed, noise))
+                    report.Add("NOTE mouse pointer shown / hidden in videos not checked: the pointer was moved or hidden during the test (someone used the mouse or typed) – " + pointerDetail);
+                else
+                    // Compressed video differs a little between two recordings of the same screen; the pointer must stand far above that.
+                    Check("mouse pointer shown / hidden in videos", Seen(changed, noise), pointerDetail);
 
                 // Sound: a tone played while recording (with a pause in between) must be in the video, in full length,
                 // and in step with the picture: it starts 1 s after the recording, so it must start about 1 s into the video.

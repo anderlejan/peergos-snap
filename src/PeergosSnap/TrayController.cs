@@ -88,6 +88,9 @@ public sealed class TrayController : IDisposable
 
     public HistoryStore History => history;
 
+    /// <summary>Raised after every settings change (the History window follows sign-in and sign-out with it).</summary>
+    public event Action<Settings>? SettingsChanged;
+
     /// <summary>Before 2.1 local copies were deleted after 30 days by default; now the default is to keep them.</summary>
     void MigrateKeepDays()
     {
@@ -254,6 +257,7 @@ public sealed class TrayController : IDisposable
         UpdateTip();
         if (before.ColorScheme != Settings.ColorScheme) RebuildOpenWindows();
         direct?.SettingsChanged(before);
+        SettingsChanged?.Invoke(before);
     }
 
     /// <summary>WPF's Fluent style cannot fully restyle an open window, so a new colour scheme re-creates the open
@@ -317,9 +321,13 @@ public sealed class TrayController : IDisposable
         var delaySuffix = Settings.DelaySeconds > 0 ? $" (after {Settings.DelaySeconds} s)" : "";
         if (countdownCts != null) m.Items.Add(Item("Cancel the countdown", () => countdownCts?.Cancel()));
         m.Items.Add(Item("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
+        if (!Settings.AnnotateAfterPicture)
+            m.Items.Add(Item("Take picture and draw on it" + delaySuffix, () => _ = CapturePicture(annotate: true), enabled: !rec));
         m.Items.Add(Item(rec ? "Stop recording" : "Record video", () => _ = ToggleRecording(), Settings.HotkeyVideo));
         if (rec) m.Items.Add(Item(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
         if (rec) m.Items.Add(Item("Cancel recording", () => _ = CancelRecording()));
+        m.Items.Add(Item("Upload files…", () => _ = ChooseAndUploadFiles(), enabled: uploads == 0));
+        m.Items.Add(Item("Upload a folder…", () => _ = ChooseAndUploadFolder(), enabled: uploads == 0));
         // Delay before capturing: quick choices here, any length in Settings.
         var delay = new WinForms.ToolStripMenuItem(Settings.DelaySeconds > 0 ? $"Delay: {Settings.DelaySeconds} s" : "Delay: none");
         void D(int sec, string text)
@@ -445,6 +453,8 @@ public sealed class TrayController : IDisposable
             case "--menu": ShowMenu(); break;
             case "--history": ShowHistory(); break;
             case "--direct": direct.ShowWindow(null, null); break;
+            case "--upload-files": _ = ChooseAndUploadFiles(); break;
+            case "--upload-folder": _ = ChooseAndUploadFolder(); break;
             case "--quit": System.Windows.Application.Current.Shutdown(); break;
         }
     }
@@ -470,8 +480,9 @@ public sealed class TrayController : IDisposable
         finally { selecting = false; }
     }
 
-    /// <summary>Takes a picture; with <paramref name="toFriend"/> it goes straight to that friend (direct mode).</summary>
-    public async Task CapturePicture(string? toFriend = null)
+    /// <summary>Takes a picture; with <paramref name="toFriend"/> it goes straight to that friend (direct mode). With
+    /// <paramref name="annotate"/> (or Settings → Capture → draw after every picture) the drawing editor opens first.</summary>
+    public async Task CapturePicture(string? toFriend = null, bool annotate = false)
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; } // pressing again cancels the countdown
         if (recorder != null || selecting) return;
@@ -514,6 +525,7 @@ public sealed class TrayController : IDisposable
                 Created = now, Kind = "picture", File = file, Width = rect.Width, Height = rect.Height,
                 Bytes = new FileInfo(file).Length, App = source.App, WindowTitle = source.Title,
             });
+            if (annotate || Settings.AnnotateAfterPicture) DrawOnCapture(file, record);
             if (toFriend != null)
             {
                 await SendDirect(toFriend, file, record);
@@ -522,10 +534,17 @@ public sealed class TrayController : IDisposable
             if (Settings.AskBeforePictureUpload)
             {
                 // Settings → Capture: decide for each picture, as after a recording (upload, copy, save as, discard).
-                var dlg = new FinishRecordingDialog(file, TimeSpan.Zero, Settings, video: false);
-                dlg.ShowDialog();
-                Log.Info("picture " + file + " -> " + dlg.Choice);
-                await Finish(file, record, dlg.Choice);
+                FinishChoice choice;
+                while (true)
+                {
+                    var dlg = new FinishRecordingDialog(file, TimeSpan.Zero, Settings, video: false);
+                    dlg.ShowDialog();
+                    choice = dlg.Choice;
+                    if (choice != FinishChoice.Annotate) break;
+                    DrawOnCapture(file, record); // then the same choices again, with the drawing in the preview
+                }
+                Log.Info("picture " + file + " -> " + choice);
+                await Finish(file, record, choice);
                 return;
             }
             await Deliver(file, Settings.Output, record, fresh: true);
@@ -536,6 +555,190 @@ public sealed class TrayController : IDisposable
             Notify(ToastKind.Error, "Capture failed", e.Message);
         }
         finally { frozen?.Dispose(); }
+    }
+
+    /// <summary>The drawing editor on a fresh capture (not shared yet): "Done" writes the drawing into the file,
+    /// "Skip" leaves it as taken.</summary>
+    void DrawOnCapture(string file, HistoryRecord record)
+    {
+        try
+        {
+            var w = new AnnotateWindow(file, AnnotateMode.Capture, this);
+            w.ShowDialog();
+            if (w.Outcome == AnnotateOutcome.Cancelled) return;
+            record.Bytes = new FileInfo(file).Length;
+            history.Save();
+            Log.Info("picture drawn on: " + file);
+        }
+        catch (Exception e)
+        {
+            Log.Error("annotate", e);
+            Notify(ToastKind.Warn, "The drawing editor failed", e.Message + "\nThe picture is used as it was taken.");
+        }
+    }
+
+    /// <summary>
+    /// The drawing editor on a capture from the history: the original stays as it is; the drawn picture becomes a new
+    /// capture (in the captures folder and the history), and is then uploaded or copied when that was chosen.
+    /// </summary>
+    public async Task<HistoryRecord?> DrawOnRecordAsync(HistoryRecord original)
+    {
+        if (original.File == null || !File.Exists(original.File)) return null;
+        var w = new AnnotateWindow(original.File, AnnotateMode.Copy, this);
+        w.ShowDialog();
+        if (w.Outcome == AnnotateOutcome.Cancelled || w.SavedFile == null) return null;
+        var now = DateTime.Now;
+        var record = history.Add(new HistoryRecord
+        {
+            Created = now, Kind = "picture", File = w.SavedFile, Width = w.SavedWidth, Height = w.SavedHeight,
+            Bytes = new FileInfo(w.SavedFile).Length, App = original.App, WindowTitle = original.WindowTitle,
+            Label = original.Title + " – drawn on",
+        });
+        Log.Info($"drawn copy of {original.File} -> {w.SavedFile} ({w.Outcome})");
+        switch (w.Outcome)
+        {
+            case AnnotateOutcome.SavedUpload: await Deliver(w.SavedFile, OutputMode.SecretLink, record); break;
+            case AnnotateOutcome.SavedCopy: await Deliver(w.SavedFile, OutputMode.DirectMedia, record); break;
+            default:
+                record.MirrorFile = Mirror(w.SavedFile, now);
+                history.Save();
+                Notify(ToastKind.Ok, "Drawn picture saved", "It is a new entry in the history; the original is unchanged.", null, w.SavedFile);
+                break;
+        }
+        return record;
+    }
+
+    // ---------- uploading files and folders (tray menu) ----------
+
+    async Task ChooseAndUploadFiles()
+    {
+        if (!SignedInForUpload()) return;
+        var d = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Files to upload to Peergos (each gets its own secret link)" };
+        if (d.ShowDialog() != true || d.FileNames.Length == 0) return;
+        await UploadFilesAsync(d.FileNames);
+    }
+
+    async Task ChooseAndUploadFolder()
+    {
+        if (!SignedInForUpload()) return;
+        var d = new Microsoft.Win32.OpenFolderDialog { Title = "Folder to upload to Peergos (one secret link for the whole folder)" };
+        if (d.ShowDialog() != true || string.IsNullOrEmpty(d.FolderName)) return;
+        await UploadFolderAsync(d.FolderName);
+    }
+
+    bool SignedInForUpload()
+    {
+        if (Settings.PeergosConfigured) return true;
+        Notify(ToastKind.Warn, "Sign in to Peergos first", "Uploading files needs your Peergos account: Settings → Peergos.", extra: ("Sign in", ShowSettings));
+        return false;
+    }
+
+    /// <summary>Uploads files into the Peergos capture folder; each gets its own secret link (all links are copied).</summary>
+    public async Task UploadFilesAsync(IReadOnlyList<string> files)
+    {
+        var list = files.Where(File.Exists).Select(f => (f, Path.GetFileName(f))).ToList();
+        if (list.Count == 0) return;
+        var what = list.Count == 1 ? Path.GetFileName(list[0].f) : $"{list.Count} files";
+        var put = await PutAsync(list, null, what);
+        if (put == null) return;
+        var links = new List<string>();
+        foreach (var f in put.Files)
+        {
+            history.Add(new HistoryRecord
+            {
+                Kind = "file", Source = f.Local, PeergosPath = f.Path, Link = f.Link, Bytes = f.Size, Uploaded = DateTime.Now,
+            });
+            if (f.Link != null) links.Add(f.Link);
+        }
+        UploadDone(put, links, put.Files.Count == 1 ? "File" : $"{put.Files.Count} files", list.Count, list.Count == 1 ? list[0].f : null);
+    }
+
+    /// <summary>Uploads a folder (with its subfolders) as a new folder in the Peergos capture folder, with one secret
+    /// link to the whole folder.</summary>
+    public async Task UploadFolderAsync(string folder)
+    {
+        var root = Path.GetFullPath(folder).TrimEnd('\\', '/');
+        List<string> files;
+        try { files = UploadLogic.FolderFiles(root); }
+        catch (Exception e) { Notify(ToastKind.Error, "The folder cannot be read", e.Message); return; }
+        if (files.Count == 0) { Notify(ToastKind.Warn, "Nothing to upload", "The folder has no files."); return; }
+        long bytes = files.Sum(f => { try { return new FileInfo(f).Length; } catch { return 0L; } });
+        if (UploadLogic.NeedsConfirm(files.Count, bytes)
+            && System.Windows.MessageBox.Show($"Upload {files.Count} files ({HistoryLogic.Size(bytes)}) from {root} to Peergos?",
+                "Peergos Snap", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) != System.Windows.MessageBoxResult.Yes)
+            return;
+        var name = Path.GetFileName(root);
+        var list = files.Select(f => (f, Path.GetRelativePath(root, f))).ToList();
+        var put = await PutAsync(list, name.Length > 0 ? name : "Folder", $"the folder {name}");
+        if (put == null) return;
+        if (put.Folder != null)
+            history.Add(new HistoryRecord
+            {
+                Kind = "folder", Source = root, PeergosPath = put.Folder, Link = put.FolderLink,
+                Bytes = put.Files.Sum(f => f.Size), Uploaded = DateTime.Now,
+            });
+        UploadDone(put, put.FolderLink != null ? [put.FolderLink] : [], $"Folder {name}", files.Count, null);
+    }
+
+    async Task<PutResult?> PutAsync(List<(string, string)> files, string? folderName, string what)
+    {
+        uploads++;
+        tray.Icon = recorder == null ? iconBusy : tray.Icon;
+        tray.Text = "Peergos Snap – uploading…";
+        Notify(ToastKind.Busy, $"Uploading {what} to Peergos…", files.Count == 1 ? Path.GetFileName(files[0].Item1) : $"{files.Count} files");
+        var dispatcher = System.Windows.Application.Current.Dispatcher;
+        try
+        {
+            var (r, put) = await Uploader.PutAsync(Settings.Clone(), files, folderName, pct => dispatcher.BeginInvoke(() =>
+            {
+                tray.Text = $"Peergos Snap – uploading {pct}%";
+                Notify(ToastKind.Busy, $"Uploading {what} to Peergos… {pct}%", files.Count == 1 ? Path.GetFileName(files[0].Item1) : $"{files.Count} files", percent: pct);
+            }));
+            if (put.Files.Count == 0)
+            {
+                var why = r.Error ?? put.Failed.FirstOrDefault() ?? "Unknown error";
+                (string, Action)? signIn = null;
+                if (Uploader.NeedsSignIn(why)) { UpdateSettings(s => s.Session = ""); signIn = ("Sign in", ShowSettings); }
+                Notify(ToastKind.Error, "Upload failed – nothing was uploaded", why, extra: signIn);
+                return null;
+            }
+            return put;
+        }
+        catch (Exception e)
+        {
+            Log.Error("upload files", e);
+            Notify(ToastKind.Error, "Upload failed", e.Message);
+            return null;
+        }
+        finally
+        {
+            uploads--;
+            if (recorder == null) tray.Icon = uploads > 0 ? iconBusy : iconIdle;
+            UpdateTip();
+        }
+    }
+
+    void UploadDone(PutResult put, List<string> links, string what, int asked, string? file)
+    {
+        string copied = "";
+        bool onClipboard = false;
+        if (links.Count > 0)
+        {
+            lastLink = links[^1]; // "Copy last link" offers it even when the clipboard was busy
+            try
+            {
+                ClipboardService.OnUi(() => ClipboardService.SetText(string.Join(Environment.NewLine, links)));
+                onClipboard = true;
+                copied = links.Count == 1 ? " The link is on the clipboard." : $" {links.Count} links are on the clipboard, one per line.";
+            }
+            catch (Exception e) { Log.Error("clipboard links", e); copied = " The clipboard was busy: find the links in History…"; }
+        }
+        if (put.Failed.Count > 0)
+            Notify(ToastKind.Warn, $"{put.Files.Count} of {asked} files uploaded", $"Not uploaded: {put.Failed[0]}" + (put.Failed.Count > 1 ? $" (and {put.Failed.Count - 1} more)" : "") + "." + copied,
+                links.Count == 1 ? links[0] : null, extra: ("History", ShowHistory));
+        else
+            Notify(ToastKind.Ok, links.Count == 1 && onClipboard ? "Link copied to the clipboard" : $"{what} uploaded", $"{what} uploaded to Peergos.{copied}",
+                links.Count == 1 ? links[0] : null, file, extra: ("History", ShowHistory));
     }
 
     /// <summary>The delay countdown: a card at the bottom right and the seconds in the tray icon. False = cancelled
@@ -1026,7 +1229,9 @@ public sealed class TrayController : IDisposable
             // 0 = keep forever (the default). Otherwise old captures go to the Recycle Bin, never deleted outright.
             if (Settings.CacheKeepDays <= 0 || !Directory.Exists(AppPaths.CacheDir)) return;
             var limit = DateTime.Now.AddDays(-Settings.CacheKeepDays);
-            var old = CaptureFiles.Scan(AppPaths.CacheDir).Where(f => File.GetLastWriteTime(f) < limit).ToList();
+            // Locked history entries keep their files, however old.
+            var locked = history.Records.Where(r => r.Locked && r.File != null).Select(r => r.File!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var old = CaptureFiles.Scan(AppPaths.CacheDir).Where(f => File.GetLastWriteTime(f) < limit && !locked.Contains(f)).ToList();
             if (old.Count > 0)
             {
                 Recycle.Delete(old);

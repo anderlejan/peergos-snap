@@ -12,8 +12,10 @@ using PeergosSnap.Services;
 namespace PeergosSnap.UI;
 
 /// <summary>One picture in the direct window's list.</summary>
-public sealed class DirectRow(DirectItem item, string me, string? localFile)
+public sealed class DirectRow(DirectItem item, string friend, string me, string? localFile, bool showFriend)
 {
+    /// <summary>The friend this file is shared with (sender or receiver).</summary>
+    public string Friend { get; } = friend;
     ImageSource? thumb;
     string? thumbOf;
     public DirectItem Item { get; } = item;
@@ -30,7 +32,7 @@ public sealed class DirectRow(DirectItem item, string me, string? localFile)
     }
     public string Glyph => Item.IsImage ? "" : "";
     public string Title => Item.Label.Trim().Length > 0 ? Item.Label.Trim() : Item.Name;
-    public string Line2 => (string.Equals(Item.From, me, StringComparison.OrdinalIgnoreCase) ? "You" : Item.From) + " · "
+    public string Line2 => (string.Equals(Item.From, me, StringComparison.OrdinalIgnoreCase) ? (showFriend ? "You → " + Friend : "You") : Item.From) + " · "
                            + Item.Modified.ToString("d MMM, HH:mm", System.Globalization.CultureInfo.InvariantCulture)
                            + (Item.Label.Trim().Length > 0 ? " · " + Item.Name : "");
     public string Badges => (Item.Pinned ? "📌 " : "") + (Item.Stars.Count > 0 ? "★ " + DirectLogic.StarredBy(Item.Stars, me) : "");
@@ -46,10 +48,12 @@ public partial class DirectWindow : Window
     readonly TrayController app;
     readonly DispatcherTimer labelSave = new() { Interval = TimeSpan.FromMilliseconds(900) };
     readonly List<DirectRow> rows = [];
-    string? friend;
-    string month = DirectLogic.MonthOf(DateTime.Now);
-    List<string> months = [];
-    List<DirectItem>? otherMonth; // the list of a month that is not watched (no live updates)
+    const string AllFriends = "All friends", AllMonths = "All months"; // never usernames (those have no spaces)
+    string? friend; // the friend shown; null = all friends
+    string? month;  // the month shown; null = all months
+    /// <summary>Months other than the watched one (no live updates): loaded once, again with Refresh.</summary>
+    readonly Dictionary<(string Friend, string Month), List<DirectItem>> older = [];
+    readonly Dictionary<string, List<string>> monthsOf = new(StringComparer.OrdinalIgnoreCase);
     string? wantedPath;
     bool loadingFriend, showing, sending;
     double fitScale = 1;
@@ -69,8 +73,9 @@ public partial class DirectWindow : Window
         hub.Updated += HubUpdated;
         Closed += (_, _) => hub.Updated -= HubUpdated;
 
-        FriendBox.SelectionChanged += (_, _) => { if (!loadingFriend && FriendBox.SelectedItem is string f) SelectFriend(f); };
-        MonthBox.SelectionChanged += async (_, _) => { if (!loadingFriend && MonthBox.SelectedItem is string m && m != month) await SelectMonth(m); };
+        FriendBox.SelectionChanged += (_, _) => { if (!loadingFriend && FriendBox.SelectedItem is string f) SelectFriend(f == AllFriends ? null : f); };
+        MonthBox.SelectionChanged += (_, _) => { if (!loadingFriend && MonthBox.SelectedItem is string m) SelectMonth(m == AllMonths ? null : m); };
+        SendToBox.SelectionChanged += (_, _) => { if (!loadingFriend) UpdateDropZone(); };
         RefreshBtn.Click += async (_, _) => await Reload();
         FriendsBtn.Click += async (_, _) => await ToggleFriends(true);
         FriendsClose.Click += async (_, _) => await ToggleFriends(false);
@@ -82,10 +87,10 @@ public partial class DirectWindow : Window
         PasteBtn.Click += async (_, _) => await Paste();
         CaptureBtn.Click += async (_, _) =>
         {
-            if (friend == null) return;
+            if (SendTo is not { } to) return;
             WindowState = WindowState.Minimized; // out of the way while selecting
             await Task.Delay(250);
-            await app.CapturePicture(toFriend: friend);
+            await app.CapturePicture(toFriend: to);
             WindowState = WindowState.Normal;
         };
         DragEnter += (_, e) => { e.Effects = CanTake(e.Data) ? DragDropEffects.Copy : DragDropEffects.None; DropFrame.StrokeThickness = 4; e.Handled = true; };
@@ -140,8 +145,9 @@ public partial class DirectWindow : Window
 
     // ---------- showing ----------
 
-    /// <summary>Shows the window for a friend (and a picture). Without <paramref name="activate"/> it comes to the front
-    /// but does not take the keyboard from the app the user is typing in.</summary>
+    /// <summary>Shows the window: everything (all friends, all months) unless a friend is named. With a path, that file
+    /// is selected (the filters open up when they would hide it). Without <paramref name="activate"/> it comes to the
+    /// front but does not take the keyboard from the app the user is typing in.</summary>
     public void ShowFor(string? who, string? path, bool activate)
     {
         wantedPath = path;
@@ -158,92 +164,148 @@ public partial class DirectWindow : Window
             Native.SetWindowPos(h, Native.HWND_TOPMOST, 0, 0, 0, 0, Native.SWP_NOACTIVATE | Native.SWP_NOSIZE | 0x2 /*NOMOVE*/);
             Native.SetWindowPos(h, new IntPtr(-2) /*NOTOPMOST*/, 0, 0, 0, 0, Native.SWP_NOACTIVATE | Native.SWP_NOSIZE | 0x2);
         }
-        FillFriends(who);
-        if (who != null && who != friend) SelectFriend(who);
-        else Rebuild();
+        if (path != null)
+        {
+            // The file must be in view: a filter that would hide it opens up.
+            var pf = DirectLogic.FriendOf(path, Me);
+            if (friend != null && !string.Equals(friend, pf, StringComparison.OrdinalIgnoreCase)) friend = null;
+            if (month != null && month != DirectLogic.MonthOf(path)) month = null;
+        }
+        else if (who != null) friend = who;
+        FillFriends();
+        FillMonths();
+        Rebuild();
+        _ = LoadOlder(false);
         if (hub.Friends.Count == 0) _ = ToggleFriends(true);
     }
 
     void HubUpdated()
     {
-        FillFriends(friend);
-        if (otherMonth == null) Rebuild();
+        FillFriends();
+        Rebuild();
         if (FriendsPanel.Visibility == Visibility.Visible) FillFriendsPanel();
         Status(hub.Status);
     }
 
-    void FillFriends(string? select)
+    /// <summary>The friends in the filter ("All friends" first) and in "Send to".</summary>
+    void FillFriends()
     {
         loadingFriend = true;
         var list = hub.Friends.ToList();
-        if (!FriendBox.Items.Cast<string>().SequenceEqual(list))
+        if (friend != null && !list.Contains(friend)) friend = null;
+        var filter = new List<string> { AllFriends };
+        filter.AddRange(list);
+        if (!FriendBox.Items.Cast<string>().SequenceEqual(filter))
         {
             FriendBox.Items.Clear();
-            foreach (var f in list) FriendBox.Items.Add(f);
+            foreach (var f in filter) FriendBox.Items.Add(f);
         }
-        var want = select ?? friend;
-        if (want != null && list.Contains(want)) FriendBox.SelectedItem = want;
-        else if (FriendBox.SelectedItem == null && list.Count > 0) FriendBox.SelectedIndex = 0;
+        FriendBox.SelectedItem = friend ?? AllFriends;
+        var keep = SendToBox.SelectedItem as string;
+        if (!SendToBox.Items.Cast<string>().SequenceEqual(list))
+        {
+            SendToBox.Items.Clear();
+            foreach (var f in list) SendToBox.Items.Add(f);
+        }
+        // Send to: the friend shown, else the one chosen before, else the last one sent to, else the first.
+        SendToBox.SelectedItem = friend ?? (keep != null && list.Contains(keep) ? keep
+            : list.Contains(app.Settings.DirectLastFriend) ? app.Settings.DirectLastFriend : list.FirstOrDefault());
         loadingFriend = false;
-        if (friend == null && FriendBox.SelectedItem is string f0) SelectFriend(f0);
+        Title = friend == null ? "Peergos Snap – Direct" : $"Peergos Snap – Direct with {friend}";
         UpdateDropZone();
     }
 
-    void SelectFriend(string f)
+    void FillMonths()
+    {
+        loadingFriend = true;
+        var ms = new SortedSet<string>(Comparer<string>.Create((a, b) => string.CompareOrdinal(b, a))) { hub.WatchMonth };
+        foreach (var f in Scope()) if (monthsOf.TryGetValue(f, out var l)) ms.UnionWith(l);
+        if (month != null) ms.Add(month);
+        var items = new List<string> { AllMonths };
+        items.AddRange(ms);
+        if (!MonthBox.Items.Cast<string>().SequenceEqual(items))
+        {
+            MonthBox.Items.Clear();
+            foreach (var m in items) MonthBox.Items.Add(m);
+        }
+        MonthBox.SelectedItem = month ?? AllMonths;
+        loadingFriend = false;
+    }
+
+    /// <summary>The friends whose files are shown.</summary>
+    IEnumerable<string> Scope() => friend == null ? hub.Friends : hub.Friends.Where(f => f == friend);
+
+    string? SendTo => SendToBox.SelectedItem as string;
+
+    void SelectFriend(string? f)
     {
         friend = f;
-        loadingFriend = true;
-        FriendBox.SelectedItem = f;
-        loadingFriend = false;
-        Title = $"Peergos Snap – Direct with {f}";
-        otherMonth = null;
-        month = hub.WatchMonth;
-        UpdateDropZone();
+        FillFriends();
+        FillMonths();
         Rebuild();
-        _ = LoadMonths();
+        _ = LoadOlder(false);
     }
 
-    async Task LoadMonths()
+    void SelectMonth(string? m)
     {
-        if (friend == null) return;
-        try
-        {
-            var (items, ms) = await hub.ListAsync(friend, hub.WatchMonth);
-            months = ms;
-            if (!months.Contains(hub.WatchMonth)) months.Insert(0, hub.WatchMonth);
-            loadingFriend = true;
-            MonthBox.Items.Clear();
-            foreach (var m in months) MonthBox.Items.Add(m);
-            MonthBox.SelectedItem = month;
-            loadingFriend = false;
-            Rebuild();
-        }
-        catch (DirectException e) { Status(e.Message); }
-    }
-
-    async Task SelectMonth(string m)
-    {
-        if (friend == null) return;
         month = m;
-        if (m == hub.WatchMonth) { otherMonth = null; Rebuild(); return; }
-        Status($"Loading {m}…");
+        Rebuild();
+        _ = LoadOlder(false);
+    }
+
+    /// <summary>
+    /// Loads the months that are not watched live (all months, or the one chosen) for the friends shown. Each month
+    /// is loaded once; Refresh loads them again.
+    /// </summary>
+    async Task LoadOlder(bool again)
+    {
+        // Asked while a load runs (the filter widened, Refresh): it runs once more afterwards with what is shown then.
+        if (loadingOlder) { loadOlderAgain = true; loadOlderFresh |= again; return; }
+        loadingOlder = true;
         try
         {
-            otherMonth = (await hub.ListAsync(friend, m)).Items;
-            Rebuild();
-            Status($"{m}: this month is not watched for changes – use Refresh");
+            if (again) { older.Clear(); monthsOf.Clear(); }
+            foreach (var f in Scope().ToList())
+            {
+                if (!monthsOf.ContainsKey(f) || again)
+                {
+                    var (_, ms) = await hub.ListAsync(f, hub.WatchMonth);
+                    monthsOf[f] = ms;
+                    FillMonths();
+                }
+                foreach (var m in monthsOf[f].Where(m => m != hub.WatchMonth && (month == null || m == month)))
+                {
+                    if (older.ContainsKey((f, m))) continue;
+                    Status($"Loading {f}, {m}…");
+                    older[(f, m)] = (await hub.ListAsync(f, m)).Items;
+                    Rebuild();
+                }
+            }
+            Status(month != null && month != hub.WatchMonth ? $"{month} is not watched for changes – use Refresh" : hub.Status);
         }
         catch (DirectException e) { Status(e.Message); }
+        finally
+        {
+            loadingOlder = false;
+            Rebuild();
+            if (loadOlderAgain)
+            {
+                var fresh = loadOlderFresh;
+                loadOlderAgain = loadOlderFresh = false;
+                _ = LoadOlder(fresh);
+            }
+        }
     }
+
+    bool loadingOlder, loadOlderAgain, loadOlderFresh;
 
     async Task Reload()
     {
-        if (friend == null) { await hub.StartAsync(); return; }
+        if (hub.Friends.Count == 0) { await hub.StartAsync(); return; }
         try
         {
-            var (items, ms) = await hub.ListAsync(friend, month);
-            if (month != hub.WatchMonth) otherMonth = items;
-            Rebuild();
+            foreach (var f in Scope().ToList()) await hub.ListAsync(f, hub.WatchMonth);
+            await LoadOlder(true);
             Status("Up to date");
         }
         catch (DirectException e) { Status(e.Message); }
@@ -251,31 +313,46 @@ public partial class DirectWindow : Window
 
     void UpdateDropZone()
     {
-        bool can = friend != null && !sending;
-        DropTitle.Text = friend == null ? "Add a friend to share pictures directly" : $"Send a picture to {friend}";
+        bool can = SendTo != null && !sending;
+        SendToBox.Visibility = friend == null && hub.Friends.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        DropTitle.Text = hub.Friends.Count == 0 ? "Add a friend to share pictures directly"
+            : friend == null && hub.Friends.Count > 1 ? "Send to" : $"Send a picture to {SendTo}";
         ChooseBtn.IsEnabled = PasteBtn.IsEnabled = CaptureBtn.IsEnabled = can;
     }
 
-    /// <summary>Rebuilds the list (pinned first, then newest), keeping the selection.</summary>
+    /// <summary>The files shown: of the friends and months chosen (pinned first, then newest), keeping the selection.</summary>
     void Rebuild()
     {
         var keep = wantedPath ?? Current?.Item.Path;
-        var source = friend == null ? [] : otherMonth ?? hub.Items(friend).ToList();
         rows.Clear();
-        foreach (var it in DirectLogic.Sort(source))
+        bool all = friend == null;
+        foreach (var f in Scope())
         {
-            var local = DirectLogic.CacheFile(AppPaths.DirectDir, friend!, it);
-            rows.Add(new DirectRow(it, Me, File.Exists(local) ? local : null));
+            var list = new List<DirectItem>();
+            if (month == null || month == hub.WatchMonth) list.AddRange(hub.Items(f));
+            foreach (var ((of, m), items) in older)
+                if (of == f && m != hub.WatchMonth && (month == null || m == month)) list.AddRange(items);
+            foreach (var it in list.DistinctBy(i => i.Path))
+            {
+                var local = DirectLogic.CacheFile(AppPaths.DirectDir, f, it);
+                rows.Add(new DirectRow(it, f, Me, File.Exists(local) ? local : null, all));
+            }
         }
+        var sorted = DirectLogic.Sort(rows.Select(r => r.Item)).Select(i => rows.First(r => r.Item == i)).ToList();
+        rows.Clear();
+        rows.AddRange(sorted);
         List.ItemsSource = null;
         List.ItemsSource = rows;
         // The same picture stays selected; if it is gone (deleted), the first one.
         var sel = rows.FirstOrDefault(r => r.Item.Path == keep) ?? rows.FirstOrDefault();
         if (sel != null) { List.SelectedItem = sel; List.ScrollIntoView(sel); }
-        wantedPath = null;
-        Empty.Text = friend == null ? "No friend yet. Click Friends… to add one." : $"Nothing shared with {friend} in {month} yet. Drop a picture above.";
+        if (sel?.Item.Path == wantedPath) wantedPath = null;
+        var who = friend ?? "your friends";
+        var when = month == null ? "" : $" in {month}";
+        Empty.Text = hub.Friends.Count == 0 ? "No friend yet. Click Friends… to add one."
+            : loadingOlder ? "Loading…" : $"Nothing shared with {who}{when} yet. Drop a picture above.";
         Empty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        CountText.Text = rows.Count == 0 ? "" : $"{rows.Count} in {month} · {rows.Count(r => r.Item.From != Me)} from {friend}";
+        CountText.Text = rows.Count == 0 ? "" : $"{rows.Count} shown{when}" + $" · {rows.Count(r => r.Item.From != Me)} from {(friend ?? "friends")}";
         _ = FetchThumbs();
         if (rows.Count == 0) _ = ShowCurrent();
     }
@@ -285,20 +362,20 @@ public partial class DirectWindow : Window
     /// <summary>Downloads the pictures of the list that are not on this PC yet (one after the other).</summary>
     async Task FetchThumbs()
     {
-        if (friend == null || fetching) return;
+        if (fetching) return;
         fetching = true;
-        try { await FetchThumbsOnce(friend); }
+        try { await FetchThumbsOnce(); }
         finally { fetching = false; }
     }
 
-    async Task FetchThumbsOnce(string f)
+    async Task FetchThumbsOnce()
     {
         foreach (var r in rows.Where(r => r.LocalFile == null && r.Item.IsImage && r.Item.Size < 40_000_000).ToList())
         {
             try
             {
-                r.LocalFile = await hub.LocalFileAsync(f, r.Item);
-                if (f != friend) return;
+                r.LocalFile = await hub.LocalFileAsync(r.Friend, r.Item);
+                if (!rows.Contains(r)) continue; // the list changed meanwhile
                 List.Items.Refresh();
                 if (Current == r) await ShowCurrent();
             }
@@ -320,7 +397,7 @@ public partial class DirectWindow : Window
             {
                 Picture.Source = null;
                 shownFile = null;
-                ViewerNote.Text = friend == null ? "" : "Select a picture";
+                ViewerNote.Text = hub.Friends.Count == 0 ? "" : "Select a picture";
                 if (!LabelBox.IsKeyboardFocused) LabelBox.Text = "";
                 InfoText.Text = "";
                 return;
@@ -344,7 +421,7 @@ public partial class DirectWindow : Window
             {
                 Picture.Source = null;
                 ViewerNote.Text = "Loading the picture…";
-                try { r.LocalFile = await hub.LocalFileAsync(friend!, it); }
+                try { r.LocalFile = await hub.LocalFileAsync(r.Friend, it); }
                 catch (DirectException e) { ViewerNote.Text = "Could not load it: " + e.Message; return; }
                 if (Current != r) return;
             }
@@ -439,7 +516,7 @@ public partial class DirectWindow : Window
     {
         var d = new Microsoft.Win32.OpenFileDialog
         {
-            Multiselect = true, Title = $"Pictures for {friend}",
+            Multiselect = true, Title = $"Files for {SendTo}",
             Filter = "Pictures|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|Videos|*.mp4;*.webm|All files|*.*",
         };
         if (d.ShowDialog(this) == true) await Send(d.FileNames.ToList());
@@ -447,16 +524,21 @@ public partial class DirectWindow : Window
 
     async Task Send(List<string> files)
     {
-        if (friend == null || files.Count == 0 || sending) return;
+        if (SendTo is not { } to || files.Count == 0 || sending) return;
         sending = true;
         UpdateDropZone();
         try
         {
-            var sent = await hub.SendAsync(friend, files, t => SendState.Text = t);
-            SendState.Text = sent.Count == 1 ? $"Sent – {friend} sees it now." : $"{sent.Count} sent – {friend} sees them now.";
-            if (month != hub.WatchMonth) await SelectMonthBack();
+            var sent = await hub.SendAsync(to, files, t => SendState.Text = t);
+            SendState.Text = sent.Count == 1 ? $"Sent – {to} sees it now." : $"{sent.Count} sent – {to} sees them now.";
+            // What was just sent must be in view.
+            if (month != null && month != hub.WatchMonth) month = null;
+            if (friend != null && friend != to) friend = null;
+            FillFriends();
+            FillMonths();
             wantedPath = sent.LastOrDefault()?.Path;
             Rebuild();
+            _ = LoadOlder(false); // "All months" again: the other months of the friends shown
         }
         catch (DirectException e) { SendState.Text = "Not sent: " + e.Message; }
         finally
@@ -464,16 +546,6 @@ public partial class DirectWindow : Window
             sending = false;
             UpdateDropZone();
         }
-    }
-
-    async Task SelectMonthBack()
-    {
-        otherMonth = null;
-        month = hub.WatchMonth;
-        loadingFriend = true;
-        MonthBox.SelectedItem = month;
-        loadingFriend = false;
-        await Task.CompletedTask;
     }
 
     async Task Keys(KeyEventArgs e)
@@ -500,11 +572,16 @@ public partial class DirectWindow : Window
 
     async Task Meta(string? label = null, bool? pin = null, bool? star = null)
     {
-        if (Current is not { } r || friend == null) return;
+        if (Current is not { } r) return;
         if (label != null && label == r.Item.Label) return;
         try
         {
-            await hub.SetMetaAsync(friend, r.Item, label, pin, star);
+            await hub.SetMetaAsync(r.Friend, r.Item, label, pin, star);
+            Replace(r.Friend, r.Item.Path, i => i with
+            {
+                Label = label ?? i.Label, Pinned = pin ?? i.Pinned,
+                Stars = star == null ? i.Stars : star.Value ? i.Stars.Append(Me).Distinct().ToList() : i.Stars.Where(x => x != Me).ToList(),
+            });
             Status(label != null ? "Label saved – your friend sees it" : pin != null ? (pin.Value ? "Pinned for both of you" : "Unpinned")
                 : star == true ? "Starred" : "Star removed");
         }
@@ -515,22 +592,31 @@ public partial class DirectWindow : Window
     {
         if (Current is not { } r) return;
         ConfirmText.Text = $"Delete your copy of “{r.Item.Name}”? It is removed from your Peergos and this PC. "
-                           + (r.Item.From == Me ? $"{friend}'s copy stays theirs." : $"{friend} keeps theirs.");
+                           + (r.Item.From == Me ? $"{r.Friend}'s copy stays theirs." : $"{r.Friend} keeps theirs.");
         ConfirmBar.Visibility = Visibility.Visible;
     }
 
     async Task Delete()
     {
         ConfirmBar.Visibility = Visibility.Collapsed;
-        if (Current is not { } r || friend == null) return;
+        if (Current is not { } r) return;
         try
         {
-            await hub.DeleteAsync(friend, r.Item);
-            if (otherMonth != null) otherMonth = otherMonth.Where(i => i.Path != r.Item.Path).ToList();
+            await hub.DeleteAsync(r.Friend, r.Item);
+            foreach (var k in older.Keys.Where(k => k.Friend == r.Friend).ToList())
+                older[k] = older[k].Where(i => i.Path != r.Item.Path).ToList();
             Rebuild();
             Status("Your copy is deleted");
         }
         catch (DirectException e) { Status("Not deleted: " + e.Message); }
+    }
+
+    /// <summary>A label, pin or star shows at once also in a month that is not watched.</summary>
+    void Replace(string f, string path, Func<DirectItem, DirectItem> change)
+    {
+        foreach (var k in older.Keys.Where(k => k.Friend == f).ToList())
+            older[k] = older[k].Select(i => i.Path == path ? change(i) : i).ToList();
+        Rebuild();
     }
 
     void SaveAs()
@@ -593,7 +679,7 @@ public partial class DirectWindow : Window
         {
             var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
             var remove = new Button { Content = "Remove", Margin = new Thickness(6, 0, 0, 0), ToolTip = "Stop sharing directly in this app (the pictures and the Peergos friendship stay)" };
-            remove.Click += async (_, _) => { await hub.RemoveFriendAsync(who); if (friend == who) { friend = null; FillFriends(null); Rebuild(); } FillFriendsPanel(); };
+            remove.Click += async (_, _) => { await hub.RemoveFriendAsync(who); if (friend == who) friend = null; FillFriends(); Rebuild(); FillFriendsPanel(); };
             DockPanel.SetDock(remove, Dock.Right);
             row.Children.Add(remove);
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -615,7 +701,6 @@ public partial class DirectWindow : Window
         {
             AddResult.Text = await hub.AddFriendAsync(user);
             AddBox.Clear();
-            FillFriends(user);
             SelectFriend(user);
         }
         catch (DirectException e) { AddResult.Text = e.Message; }

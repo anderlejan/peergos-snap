@@ -62,18 +62,40 @@ writer, and such links are being disabled on the Peergos side. Peergos Snap 2.0 
 link type completely. A folder link stored by 1.x is kept untouched in the settings file (unused) for a possible
 future folder feature.
 
+## Uploading files and folders (2.3)
+
+`put` uploads several files with one sign-in (`--folder` = the capture folder): without `--dir` each file gets its own
+read-only secret link (like a capture); with `--dir NAME` a new folder (numbered when NAME exists) gets the files at
+their relative paths and one read-only secret link for the folder (not opened in the viewer: the link shows the
+folder). `list` also reports folders (`"dir":true`), so the history can tell whether an uploaded folder still exists.
+Deleting an uploaded folder from the history uses the same `delete` (`FileWrapper.remove`, which also removes the
+links of everything inside it). `folders --path REL` lists the folders of `/<me>/REL` for choosing the capture folder.
+The original files on the PC are only read; the history remembers where they came from but never changes them.
+
+- **Reserved names.** `PeergosSnap/Direct` (and `PeergosSnap-Direct` of 2.2) hold what friends exchange. `put` and
+  `upload` never create or reuse them (a folder upload named "Direct" becomes "Direct (2)"; in the home the app's main
+  folder `PeergosSnap` is reserved too), `folders` does not offer them, the capture folder cannot be inside them (the
+  app refuses it in Settings, the bridge in `upload`/`put`/`list`), and `delete` refuses them, everything inside and
+  `PeergosSnap` itself (direct files are deleted only through `serve`). Otherwise a folder upload named "Direct" could
+  become the direct folder, and its secret link would show everything sent and received directly. Names are compared
+  exactly: Peergos names are case-sensitive, so `direct` is another folder.
+- **Names on the command line.** Java on Windows reads its command line in the ANSI code page, so letters outside it
+  arrive as "?". The app sends any argument with non-ASCII characters as `b64:` + Base64 of its UTF-8 bytes, and the
+  bridge decodes it (stdin, used for file lists and sessions, is UTF-8 anyway).
+
 ## Direct mode (2.2): sharing with a friend
 
 Two users who are **friends in Peergos** (a follow request sent and accepted with reciprocation) share pictures,
 videos and other files without links:
 
-- Each user has `/<me>/PeergosSnap-Direct/<friend>/<yyyy-MM>/`. These folders are **not shared**. Sending = uploading
+- Each user has `/<me>/PeergosSnap/Direct/<friend>/<yyyy-MM>/` (since 2.3, inside the app's main folder; 2.2 used
+  `/<me>/PeergosSnap-Direct/…`). These folders are **not shared**. Sending = uploading
   into one's own month folder, then sharing **that one file read-only with that friend** (`shareReadAccessWith`).
   The friend therefore sees exactly the files sent to them (2.2 development builds shared the whole folder for
   writing).
-- The receiver lists `/<friend>/PeergosSnap-Direct/<me>/<month>`: Peergos shows the folders on the path to a file
+- The receiver lists `/<friend>/PeergosSnap/Direct/<me>/<month>`: Peergos shows the folders on the path to a file
   shared with you, and in them only the shared files. Each new file is **copied** into the receiver's own
-  `/<me>/PeergosSnap-Direct/<friend>/<month>/received/` (`FileWrapper.copyTo(dir, ctx)`), once: `"got": true` in the
+  `/<me>/PeergosSnap/Direct/<friend>/<month>/received/` (`FileWrapper.copyTo(dir, ctx)`), once: `"got": true` in the
   receiver's meta file remembers it. From then on the receiver owns that copy; the sender cannot affect it.
 - **Delete** only ever deletes one's own copy (what I sent, or my copy of what I received) in my Peergos; the app also
   deletes the PC copy. A deleted received copy is not copied again ("got" stays while the sender's original exists).
@@ -101,8 +123,26 @@ videos and other files without links:
   and `discover` skips them, so one such friend never holds up the others or the user's commands.
 - `discover` lists friends who have shared something with this user, so the receiving side is set up without doing
   anything. The app only keeps the session running while there are friends to share with.
-- Only paths of the shape `/<owner>/PeergosSnap-Direct/<other>/<yyyy-MM>/<name>` with this user as owner or other
-  are accepted by `get`, `delete` and `meta`.
+- Only paths of the shape `/<owner>/PeergosSnap/Direct/<other>/<yyyy-MM>/[received/]<name>` (or the same under
+  `PeergosSnap-Direct`) with this user as owner or other are accepted by `get`, `delete` and `meta`.
+- **Nothing shared above the direct folders (2.3).** Peergos read access to a folder covers everything created inside
+  it later. Since Direct is inside PeergosSnap, everything that creates or writes there (`open`/`send`, which make the
+  friend's folder – its name alone tells who the friend is –, `meta`, and the copying of received files) first checks
+  `ctx.sharedWith(path)` (`readAccess`, `writeAccess`, `links`) for `/<me>/PeergosSnap`, `/<me>/PeergosSnap/Direct` and
+  `/<me>/PeergosSnap/Direct/<friend>`. If any is shared or linked, commands stop with a short message naming the folder;
+  while listing, nothing is copied, the files already there are still shown and a `problem` event says why (once). A
+  result is trusted for a minute; a failing check (the folder does not exist yet, no answer) counts as not shared.
+- **Meta of 2.2 and 2.3.** Each user's two meta files are combined field by field before the two users' meta are
+  merged: label and pin follow the later `labelAt`/`pinAt` in either file, the other fields (star, got) take the 2.3
+  file's value. A star removed after the update (written only to the new file) does not come back, and a 2.2 label
+  stays when only a star was added since.
+- **The move in 2.3.** New files, copies and meta files go only to `PeergosSnap/Direct`. The 2.2 folders
+  (`PeergosSnap-Direct`, on both sides) are still listed, merged into the same month, and their files can be labelled,
+  pinned, starred and deleted as before (labels of those files are kept in the new meta file from then on). Nothing
+  is moved: a move would create new capabilities and break what the friend was given. Consequence: a friend still
+  running **2.2** does not see what a 2.3 user sends (2.2 only looks at `PeergosSnap-Direct`) until their Peergos
+  Snap updates itself (at most a day with automatic updates on). Once both 2.2 folders are empty they can be deleted
+  in the Peergos web app; Peergos Snap does not delete them.
 
 ### Peergos social behaviour worth knowing (found while testing)
 

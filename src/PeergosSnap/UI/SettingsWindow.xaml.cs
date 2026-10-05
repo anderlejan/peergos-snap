@@ -22,6 +22,8 @@ public partial class SettingsWindow : Window
         Load();
         Wire();
         loading = false;
+        app.SettingsChanged += FollowChanges;
+        Closed += (_, _) => app.SettingsChanged -= FollowChanges;
         UpdateAccountPanels();
         ShowHotkeyErrors();
         PreviewKeyDown += (_, e) => { if (e.Key == Key.F1) { e.Handled = true; OpenHelp(); } };
@@ -33,6 +35,29 @@ public partial class SettingsWindow : Window
     void OpenHelp() => app.ShowHelp(Tabs.SelectedIndex >= 0 && Tabs.SelectedIndex < TabHelp.Length ? TabHelp[Tabs.SelectedIndex] : "settings");
 
     Settings S => app.Settings;
+
+    /// <summary>Changes made elsewhere while this window is open (tray menu, hotkeys, the history's "Don't ask
+    /// again"): the boxes follow, so a click here never just "confirms" a value that is no longer set.</summary>
+    void FollowChanges(Settings before)
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => FollowChanges(before)); return; }
+        loading = true;
+        try
+        {
+            ConfirmDelete.IsChecked = S.ConfirmHistoryDelete;
+            AskPicture.IsChecked = S.AskBeforePictureUpload;
+            AnnotateAfter.IsChecked = S.AnnotateAfterPicture;
+            RecordCursor.IsChecked = S.RecordCursor;
+            RecordSound.IsChecked = S.RecordSound;
+            KindPicture.IsChecked = S.DefaultKind == CaptureKind.Picture;
+            KindVideo.IsChecked = S.DefaultKind == CaptureKind.Video;
+            OutLink.IsChecked = S.Output == OutputMode.SecretLink;
+            OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
+            if (!DelayBox.IsKeyboardFocusWithin) DelayBox.Text = S.DelaySeconds.ToString();
+        }
+        finally { loading = false; }
+        if (before.PeergosConfigured != S.PeergosConfigured) UpdateAccountPanels();
+    }
 
     void Change(Action<Settings> a)
     {
@@ -72,6 +97,8 @@ public partial class SettingsWindow : Window
             if ((string)i.Tag == S.HistoryDeleteAction.ToString()) HistoryDeleteBox.SelectedItem = i;
         BothRemovesEntry.IsChecked = S.DeleteBothRemovesEntry;
         AskPicture.IsChecked = S.AskBeforePictureUpload;
+        AnnotateAfter.IsChecked = S.AnnotateAfterPicture;
+        ConfirmDelete.IsChecked = S.ConfirmHistoryDelete;
 
         Dim.Value = S.OverlayDimPercent;
         DimLabel.Text = $"Darken outside the selection ({S.OverlayDimPercent} %; 0 = fully transparent)";
@@ -127,7 +154,11 @@ public partial class SettingsWindow : Window
     {
         Server.LostFocus += (_, _) => Change(s => s.Server = Server.Text);
         Username.TextChanged += (_, _) => { if (!S.PeergosConfigured) Change(s => s.Username = Username.Text.Trim()); };
-        AccountFolder.LostFocus += (_, _) => Change(s => s.AccountFolder = AccountFolder.Text);
+        AccountFolder.LostFocus += (_, _) =>
+        {
+            if (DirectFolderRefused(AccountFolder.Text)) { AccountFolder.Text = S.AccountFolder; return; }
+            Change(s => s.AccountFolder = AccountFolder.Text);
+        };
         TestBtn.Click += async (_, _) => await Test();
         SignInBtn.Click += async (_, _) => await SignIn();
         SignOutBtn.Click += (_, _) =>
@@ -192,6 +223,9 @@ public partial class SettingsWindow : Window
         BothRemovesEntry.Click += (_, _) => Change(s => s.DeleteBothRemovesEntry = BothRemovesEntry.IsChecked == true);
         OpenHistoryBtn.Click += (_, _) => app.ShowHistory();
         AskPicture.Click += (_, _) => Change(s => s.AskBeforePictureUpload = AskPicture.IsChecked == true);
+        AnnotateAfter.Click += (_, _) => Change(s => s.AnnotateAfterPicture = AnnotateAfter.IsChecked == true);
+        ConfirmDelete.Click += (_, _) => Change(s => s.ConfirmHistoryDelete = ConfirmDelete.IsChecked == true);
+        WireBrowse();
 
         Dim.ValueChanged += (_, _) => { DimLabel.Text = $"Darken outside the selection ({(int)Dim.Value} %; 0 = fully transparent)"; Change(s => s.OverlayDimPercent = (int)Dim.Value); };
         BorderColor.TextChanged += (_, _) =>
@@ -280,6 +314,80 @@ public partial class SettingsWindow : Window
             var f = Path.Combine(AppPaths.AppDir, "licenses", "THIRD-PARTY-NOTICES.md");
             Shell(File.Exists(f) ? f : Path.Combine(AppPaths.AppDir, "licenses"));
         };
+    }
+
+    // ---------- choosing the Peergos folder ----------
+
+    string browseAt = "";
+
+    void WireBrowse()
+    {
+        BrowseFolderBtn.Click += async (_, _) =>
+        {
+            if (!S.PeergosConfigured) { BrowsePanel.Visibility = Visibility.Visible; BrowseState.Text = "Sign in above first: browsing needs your Peergos account."; return; }
+            BrowsePanel.Visibility = Visibility.Visible;
+            // Start where the current folder is (its parent, when it does not exist yet).
+            await BrowseTo(S.AccountFolder.Trim('/'));
+        };
+        BrowseClose.Click += (_, _) => BrowsePanel.Visibility = Visibility.Collapsed;
+        BrowseUp.Click += async (_, _) => await BrowseTo(PeergosFolders.Parent(browseAt));
+        BrowseList.MouseDoubleClick += async (_, _) => { if (BrowseList.SelectedItem is string f) await BrowseTo(PeergosFolders.Join(browseAt, f)); };
+        BrowseList.KeyDown += async (_, e) => { if (e.Key == Key.Enter && BrowseList.SelectedItem is string f) await BrowseTo(PeergosFolders.Join(browseAt, f)); };
+        BrowseChoose.Click += (_, _) =>
+        {
+            // A selected folder in the list is the choice; otherwise the folder being shown.
+            var pick = BrowseList.SelectedItem is string f ? PeergosFolders.Join(browseAt, f) : browseAt;
+            if (pick.Length == 0) { BrowseState.Text = "Choose a folder: captures cannot go directly into your home folder."; return; }
+            UseFolder(pick);
+        };
+        BrowseNew.Click += (_, _) =>
+        {
+            var name = PeergosFolders.CleanName(BrowseNewName.Text);
+            if (name == null) { BrowseState.Text = "Type a folder name first (no / or \\)."; return; }
+            // Created in Peergos with the first upload into it.
+            UseFolder(PeergosFolders.Join(browseAt, name));
+        };
+    }
+
+    /// <summary>The folders of direct sharing are never the capture folder: says so and returns true.</summary>
+    bool DirectFolderRefused(string rel)
+    {
+        if (!PeergosFolders.IsDirectFolder(rel)) return false;
+        TestResult.Foreground = System.Windows.Media.Brushes.Firebrick;
+        TestResult.Text = "PeergosSnap/Direct holds what you share directly with friends; captures cannot go there. Choose another folder.";
+        return true;
+    }
+
+    void UseFolder(string rel)
+    {
+        if (DirectFolderRefused(rel)) return;
+        AccountFolder.Text = rel;
+        Change(s => s.AccountFolder = rel);
+        BrowsePanel.Visibility = Visibility.Collapsed;
+        TestResult.Foreground = (System.Windows.Media.Brush)FindResource("Acc");
+        TestResult.Text = $"Captures now go to /{S.Username}/{S.AccountFolder}. Earlier captures stay where they are; History shows the files of this folder.";
+    }
+
+    async Task BrowseTo(string rel)
+    {
+        BrowseState.Text = "Looking in your Peergos…";
+        BrowseList.IsEnabled = BrowseUp.IsEnabled = BrowseChoose.IsEnabled = false;
+        try
+        {
+            var (r, path, exists, folders) = await Uploader.FoldersAsync(S.Clone(), rel);
+            if (!r.Ok)
+            {
+                BrowseState.Text = "✗ " + r.Error;
+                if (Uploader.NeedsSignIn(r.Error)) { Change(s => s.Session = ""); UpdateAccountPanels(); }
+                return;
+            }
+            if (!exists && rel.Length > 0) { await BrowseTo(PeergosFolders.Parent(rel)); return; } // not there (yet): show its parent
+            browseAt = rel;
+            BrowsePath.Text = path;
+            BrowseList.ItemsSource = folders;
+            BrowseState.Text = folders.Count == 0 ? "No folders here. Use this folder, or make a new one." : "Double-click a folder to open it, or select it and click 'Use this folder'.";
+        }
+        finally { BrowseList.IsEnabled = BrowseUp.IsEnabled = BrowseChoose.IsEnabled = true; BrowseUp.IsEnabled = browseAt.Length > 0; }
     }
 
     void ValidateMirror()

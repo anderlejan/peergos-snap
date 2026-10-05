@@ -21,6 +21,17 @@ public static class Native
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
 
+    [StructLayout(LayoutKind.Sequential)] public struct CURSORINFO { public int cbSize; public int flags; public IntPtr hCursor; public POINT pt; }
+    [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref CURSORINFO info);
+
+    /// <summary>Is the mouse pointer visible at this point? Windows hides it while typing ("hide pointer while
+    /// typing") and after touch input, and the user may have moved it.</summary>
+    public static bool PointerShownAt(int x, int y)
+    {
+        var ci = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
+        return GetCursorInfo(ref ci) && ci.flags == 1 /* CURSOR_SHOWING */ && ci.hCursor != IntPtr.Zero && ci.pt.X == x && ci.pt.Y == y;
+    }
+
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
