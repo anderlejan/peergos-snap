@@ -25,7 +25,7 @@ public sealed class ToastWindow : Window
     readonly TextBlock title = new() { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
     readonly TextBlock text = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
     readonly ProgressBar progress = new() { Height = 4, Margin = new Thickness(0, 6, 0, 0), Minimum = 0, Maximum = 100 };
-    readonly StackPanel actions = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+    readonly WrapPanel actions = new() { Margin = new Thickness(0, 8, 0, 0) };
     readonly DispatcherTimer hide = new();
     readonly Border card;
 
@@ -101,9 +101,10 @@ public sealed class ToastWindow : Window
             Native.SWP_NOACTIVATE | Native.SWP_NOSIZE | Native.SWP_SHOWWINDOW);
     }
 
-    /// <summary>Shows (or updates) the single notification card.</summary>
+    /// <summary>Shows (or updates) the single notification card. <paramref name="history"/> opens the capture's entry in
+    /// the history.</summary>
     public static ToastWindow Show(ToastKind kind, string heading, string body, string? link = null, string? file = null, int? percent = null,
-        (string Label, Action Run)? extra = null, Action? discard = null)
+        (string Label, Action Run)? extra = null, Action? discard = null, Action? history = null)
     {
         var t = current ??= new ToastWindow();
         var sc = Theme.Current;
@@ -124,14 +125,16 @@ public sealed class ToastWindow : Window
         t.actions.Children.Clear();
         void Action(string label, Action a)
         {
-            var b = new Button { Content = label, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 0, 6, 0), Focusable = false };
-            b.Click += (_, _) => { a(); t.Close(); };
+            var b = new Button { Content = label, Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(0, 0, 6, 4), Focusable = false };
+            // Closed first: an action may show a card of its own (e.g. "Link copied").
+            b.Click += (_, _) => { t.Close(); a(); };
             t.actions.Children.Add(b);
         }
         if (extra is { } x) Action(x.Label, x.Run);
         if (link != null) Action("Open link", () => Open(link));
         // The file may be gone by the time the button is clicked (discarded, or not kept after the upload).
         if (file != null && File.Exists(file)) Action("Show file", () => { if (File.Exists(file)) Process.Start("explorer.exe", "/select,\"" + file + "\""); });
+        if (history != null) Action("History", history);
         if (discard != null) Action("Discard", discard);
         t.actions.Visibility = t.actions.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 

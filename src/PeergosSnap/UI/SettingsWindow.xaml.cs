@@ -49,10 +49,13 @@ public partial class SettingsWindow : Window
             AnnotateAfter.IsChecked = S.AnnotateAfterPicture;
             RecordCursor.IsChecked = S.RecordCursor;
             RecordSound.IsChecked = S.RecordSound;
-            KindPicture.IsChecked = S.DefaultKind == CaptureKind.Picture;
-            KindVideo.IsChecked = S.DefaultKind == CaptureKind.Video;
+            KindPicture.IsChecked = S.Mode == TrayMode.Picture;
+            KindVideo.IsChecked = S.Mode == TrayMode.Video;
+            KindFiles.IsChecked = S.Mode == TrayMode.Files;
+            OutUploadMedia.IsChecked = S.Output == OutputMode.UploadAndMedia;
             OutLink.IsChecked = S.Output == OutputMode.SecretLink;
             OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
+            ShutterSoundBox.IsChecked = S.ShutterSound;
             if (!DelayBox.IsKeyboardFocusWithin) DelayBox.Text = S.DelaySeconds.ToString();
         }
         finally { loading = false; }
@@ -80,8 +83,10 @@ public partial class SettingsWindow : Window
         Username.Text = S.Username;
         AccountFolder.Text = S.AccountFolder;
 
-        KindPicture.IsChecked = S.DefaultKind == CaptureKind.Picture;
-        KindVideo.IsChecked = S.DefaultKind == CaptureKind.Video;
+        KindPicture.IsChecked = S.Mode == TrayMode.Picture;
+        KindVideo.IsChecked = S.Mode == TrayMode.Video;
+        KindFiles.IsChecked = S.Mode == TrayMode.Files;
+        ShutterSoundBox.IsChecked = S.ShutterSound;
         Select(ImageFormat, S.ImageFormat);
         Select(VideoFormat, S.VideoFormat);
         Select(FrameRate, S.FrameRate.ToString());
@@ -107,6 +112,7 @@ public partial class SettingsWindow : Window
         PickWindow.IsChecked = S.PickWindowOnClick;
         Delay.Text = S.CaptureDelayMs.ToString();
 
+        OutUploadMedia.IsChecked = S.Output == OutputMode.UploadAndMedia;
         OutLink.IsChecked = S.Output == OutputMode.SecretLink;
         OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
         Fallback.IsChecked = S.FallbackToClipboard;
@@ -195,8 +201,11 @@ public partial class SettingsWindow : Window
         PasswordPlain.KeyDown += async (_, e) => { if (e.Key == Key.Enter) await SignIn(); };
         HelpBtn.Click += (_, _) => OpenHelp();
 
-        KindPicture.Checked += (_, _) => Change(s => s.DefaultKind = CaptureKind.Picture);
-        KindVideo.Checked += (_, _) => Change(s => s.DefaultKind = CaptureKind.Video);
+        KindPicture.Checked += (_, _) => Change(s => s.Mode = TrayMode.Picture);
+        KindVideo.Checked += (_, _) => Change(s => s.Mode = TrayMode.Video);
+        KindFiles.Checked += (_, _) => Change(s => s.Mode = TrayMode.Files);
+        ShutterSoundBox.Click += (_, _) => Change(s => s.ShutterSound = ShutterSoundBox.IsChecked == true);
+        ShutterPlay.Click += (_, _) => PeergosSnap.Services.ShutterSound.Play();
         ImageFormat.SelectionChanged += (_, _) => Change(s => s.ImageFormat = Sel(ImageFormat));
         VideoFormat.SelectionChanged += (_, _) => Change(s => s.VideoFormat = Sel(VideoFormat));
         FrameRate.SelectionChanged += (_, _) => Change(s => s.FrameRate = int.Parse(Sel(FrameRate)));
@@ -243,6 +252,7 @@ public partial class SettingsWindow : Window
             if (ok) Change(s => s.CaptureDelayMs = ms);
         };
 
+        OutUploadMedia.Checked += (_, _) => Change(s => s.Output = OutputMode.UploadAndMedia);
         OutLink.Checked += (_, _) => Change(s => s.Output = OutputMode.SecretLink);
         OutMedia.Checked += (_, _) => Change(s => s.Output = OutputMode.DirectMedia);
         Fallback.Click += (_, _) => Change(s => s.FallbackToClipboard = Fallback.IsChecked == true);

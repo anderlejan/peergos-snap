@@ -394,7 +394,7 @@
         heading, modeSeg, text: make(curMode),
         kind: () => (kind === 'feedback' ? 'feedback' : 'prompt-' + curMode),
         help: (kind === 'feedback' ? 'Plain feedback you can paste into a message or ticket. Edit it here if you like.'
-          : 'Paste this into a Claude session. Full = a new session; Short = a follow-up in the session that already knows the project.') +
+          : 'Paste this into an AI session. Full = a new session; Short = a follow-up in the session that already knows the project.') +
           ' Nothing changes in your notes until you press "Mark as Sent".',
         extraButtons: o => {
           const b = h('button', { class: 'un-btn', 'data-act': 'mark-sent', title: 'Set these notes to Sent (with today\'s date and the saved file). They stay queued until you do.' }, `Mark these ${chosen.length} as Sent`);

@@ -35,6 +35,10 @@ public sealed class TrayController : IDisposable
     readonly DispatcherTimer updateTimer = new() { Interval = TimeSpan.FromHours(1) };
     bool installingUpdate;
     UpdateInfo? pendingUpdate;
+    /// <summary>Set by a mode entry of the tray menu: the menu stays open and shows that mode's actions.</summary>
+    bool keepMenuOpen;
+    /// <summary>Where the pointer was when the tray menu opened (a changed menu keeps its edge there).</summary>
+    Point menuOpenedAt;
     public Dictionary<string, string?> HotkeyErrors { get; } = [];
     readonly DirectHub direct;
     public DirectHub Direct => direct;
@@ -51,7 +55,14 @@ public sealed class TrayController : IDisposable
         tray.Icon = iconIdle;
         tray.Visible = true;
         tray.ContextMenuStrip = new WinForms.ContextMenuStrip();
-        tray.ContextMenuStrip.Opening += (_, _) => BuildMenu();
+        // The menu is built when it opens. WinForms decides before this event to cancel opening a menu that has no
+        // items, so the very first right click showed nothing: opening is allowed again once it is built.
+        tray.ContextMenuStrip.Opening += (_, e) => { menuOpenedAt = WinForms.Cursor.Position; BuildMenu(); e.Cancel = false; };
+        tray.ContextMenuStrip.Closing += (_, e) =>
+        {
+            if (keepMenuOpen && e.CloseReason == WinForms.ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
+            keepMenuOpen = false;
+        };
         tray.MouseClick += (_, e) => { if (e.Button == WinForms.MouseButtons.Left) _ = PrimaryClick(); };
         watch.Tick += async (_, _) => await WatchRecorder();
         var firstRun = !File.Exists(AppPaths.SettingsFile);
@@ -310,75 +321,142 @@ public sealed class TrayController : IDisposable
     {
         var m = tray.ContextMenuStrip!;
         m.Items.Clear();
+        m.ShowItemToolTips = true;
         ThemedMenu.Apply(m);
-        WinForms.ToolStripMenuItem Item(string text, Action a, string? keys = null, bool check = false, bool enabled = true)
-        {
-            var i = new WinForms.ToolStripMenuItem(text) { Checked = check, Enabled = enabled, ShortcutKeyDisplayString = keys };
-            i.Click += (_, _) => a();
-            return i;
-        }
         bool rec = recorder != null;
+        var mode = Settings.Mode;
         var delaySuffix = Settings.DelaySeconds > 0 ? $" (after {Settings.DelaySeconds} s)" : "";
-        if (countdownCts != null) m.Items.Add(Item("Cancel the countdown", () => countdownCts?.Cancel()));
-        m.Items.Add(Item("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
-        if (!Settings.AnnotateAfterPicture)
-            m.Items.Add(Item("Take picture and draw on it" + delaySuffix, () => _ = CapturePicture(annotate: true), enabled: !rec));
-        m.Items.Add(Item(rec ? "Stop recording" : "Record video", () => _ = ToggleRecording(), Settings.HotkeyVideo));
-        if (rec) m.Items.Add(Item(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
-        if (rec) m.Items.Add(Item("Cancel recording", () => _ = CancelRecording()));
-        m.Items.Add(Item("Upload files…", () => _ = ChooseAndUploadFiles(), enabled: uploads == 0));
-        m.Items.Add(Item("Upload a folder…", () => _ = ChooseAndUploadFolder(), enabled: uploads == 0));
-        // Delay before capturing: quick choices here, any length in Settings.
-        var delay = new WinForms.ToolStripMenuItem(Settings.DelaySeconds > 0 ? $"Delay: {Settings.DelaySeconds} s" : "Delay: none");
-        void D(int sec, string text)
+
+        // Top: what to do now – a countdown or a recording first, then the actions of the mode chosen below.
+        if (countdownCts != null) m.Items.Add(MenuEntry("Cancel the countdown", () => countdownCts?.Cancel()));
+        if (rec)
         {
-            var i = new WinForms.ToolStripMenuItem(text) { Checked = Settings.DelaySeconds == sec };
-            i.Click += (_, _) => UpdateSettings(x => x.DelaySeconds = sec);
-            delay.DropDownItems.Add(i);
+            m.Items.Add(MenuEntry("Stop recording", () => _ = StopRecording(), Settings.HotkeyVideo));
+            m.Items.Add(MenuEntry(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
+            m.Items.Add(MenuEntry("Cancel recording", () => _ = CancelRecording()));
+            if (mode != TrayMode.Video) m.Items.Add(new WinForms.ToolStripSeparator());
         }
-        D(0, "No delay");
-        for (int sec = 1; sec <= 5; sec++) D(sec, sec == 1 ? "1 second" : $"{sec} seconds");
-        if (Settings.DelaySeconds > 5) D(Settings.DelaySeconds, $"{Settings.DelaySeconds} seconds (from Settings)");
-        delay.DropDownItems.Add(new WinForms.ToolStripSeparator());
-        var other = new WinForms.ToolStripMenuItem("Other length…");
-        other.Click += (_, _) => ShowSettings(1);
-        delay.DropDownItems.Add(other);
-        ThemedMenu.Apply(delay.DropDown as WinForms.ToolStripDropDownMenu ?? new WinForms.ToolStripDropDownMenu());
-        m.Items.Add(delay);
+        switch (mode)
+        {
+            case TrayMode.Video:
+                if (!rec) m.Items.Add(MenuEntry("Record video" + delaySuffix, () => _ = ToggleRecording(), Settings.HotkeyVideo));
+                m.Items.Add(MenuEntry("Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
+                m.Items.Add(MenuEntry("Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
+                m.Items.Add(OutputMenu("video"));
+                break;
+            case TrayMode.Files:
+                m.Items.Add(MenuEntry("Upload files…", () => _ = ChooseAndUploadFiles(), enabled: uploads == 0,
+                    tip: "Each file gets its own secret link; the links are copied."));
+                m.Items.Add(MenuEntry("Upload a folder…", () => _ = ChooseAndUploadFolder(), enabled: uploads == 0,
+                    tip: "The folder and its subfolders get one secret link, which is copied."));
+                m.Items.Add(MenuEntry("Send files to a friend…", () => direct.ShowWindow(null, null),
+                    tip: "Opens the direct window: drop the files there."));
+                break;
+            default:
+                m.Items.Add(MenuEntry("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
+                if (!Settings.AnnotateAfterPicture)
+                    m.Items.Add(MenuEntry("Take picture and draw on it" + delaySuffix, () => _ = CapturePicture(annotate: true), enabled: !rec));
+                m.Items.Add(DirectMenu(rec));
+                m.Items.Add(OutputMenu("picture"));
+                break;
+        }
+
+        // The modes: what the top shows and what a left click on the icon does. Choosing one keeps the menu open.
         m.Items.Add(new WinForms.ToolStripSeparator());
-        m.Items.Add(new WinForms.ToolStripLabel("Tray click takes"));
-        m.Items.Add(Item("    Picture", () => UpdateSettings(s => s.DefaultKind = CaptureKind.Picture), check: Settings.DefaultKind == CaptureKind.Picture));
-        m.Items.Add(Item("    Video (click again to stop)", () => UpdateSettings(s => s.DefaultKind = CaptureKind.Video), check: Settings.DefaultKind == CaptureKind.Video));
-        m.Items.Add(new WinForms.ToolStripLabel("Output"));
-        m.Items.Add(Item("    Secret link (upload to Peergos)", () => UpdateSettings(s => s.Output = OutputMode.SecretLink), Settings.HotkeyToggleOutput, Settings.Output == OutputMode.SecretLink));
-        m.Items.Add(Item("    Media to clipboard (no upload)", () => UpdateSettings(s => s.Output = OutputMode.DirectMedia), check: Settings.Output == OutputMode.DirectMedia));
-        m.Items.Add(new WinForms.ToolStripLabel("Videos"));
-        m.Items.Add(Item("    Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
-        m.Items.Add(Item("    Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
-        // Direct sharing: pictures straight to a friend's screen.
-        var dm = new WinForms.ToolStripMenuItem("Direct to a friend");
+        m.Items.Add(new WinForms.ToolStripLabel("Mode"));
+        void AddMode(string text, TrayMode which, string tip) => m.Items.Add(MenuEntry("    " + text, () =>
+        {
+            keepMenuOpen = true;
+            if (Settings.Mode != which) UpdateSettings(s => s.Mode = which);
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(RebuildOpenMenu));
+        }, check: mode == which, tip: tip));
+        AddMode("Pictures", TrayMode.Picture, "The menu shows the picture actions; a left click on the icon takes a picture.");
+        AddMode("Videos", TrayMode.Video, "The menu shows the video actions; a left click on the icon starts or stops a video.");
+        AddMode("Files", TrayMode.Files, "The menu shows the upload actions; a left click on the icon asks which files to upload.");
+
+        // Bottom: the windows and settings.
+        m.Items.Add(new WinForms.ToolStripSeparator());
+        m.Items.Add(MenuEntry("History…", () => ShowHistory()));
+        if (lastLink != null) m.Items.Add(MenuEntry("Copy last link", () => ClipboardService.SetText(lastLink)));
+        m.Items.Add(MenuEntry("Settings…", ShowSettings));
+        if (mode != TrayMode.Files) m.Items.Add(DelayMenu());
+        var other = new List<WinForms.ToolStripItem> { MenuEntry("Open captures folder", () => Open(AppPaths.CacheDir)) };
+        if (Settings.ShowUserNotes) other.Add(MenuEntry("User notes…", ShowNotes));
+        other.Add(MenuEntry("Help", () => ShowHelp("")));
+        m.Items.Add(SubMenu("Other", other.ToArray()));
+        m.Items.Add(new WinForms.ToolStripSeparator());
+        m.Items.Add(MenuEntry("Quit", () => System.Windows.Application.Current.Shutdown()));
+    }
+
+    static WinForms.ToolStripMenuItem MenuEntry(string text, Action a, string? keys = null, bool check = false, bool enabled = true, string? tip = null)
+    {
+        var i = new WinForms.ToolStripMenuItem(text) { Checked = check, Enabled = enabled, ShortcutKeyDisplayString = keys, ToolTipText = tip };
+        i.Click += (_, _) => a();
+        return i;
+    }
+
+    static WinForms.ToolStripMenuItem SubMenu(string text, params WinForms.ToolStripItem[] items)
+    {
+        var s = new WinForms.ToolStripMenuItem(text);
+        s.DropDownItems.AddRange(items);
+        ThemedMenu.Apply(s.DropDown as WinForms.ToolStripDropDownMenu ?? new WinForms.ToolStripDropDownMenu());
+        return s;
+    }
+
+    /// <summary>After a picture / video ▸ : the three output choices (one setting for pictures and videos).</summary>
+    WinForms.ToolStripMenuItem OutputMenu(string what)
+    {
+        var items = new[] { OutputMode.UploadAndMedia, OutputMode.SecretLink, OutputMode.DirectMedia }
+            .Select(o => MenuEntry(OutputLogic.Describe(o, what), () => UpdateSettings(s => s.Output = o), check: Settings.Output == o))
+            .ToArray();
+        var menu = SubMenu($"After a {what}: {OutputLogic.Short(Settings.Output)}", items);
+        if (Settings.HotkeyToggleOutput.Length > 0) menu.ToolTipText = $"{Settings.HotkeyToggleOutput} goes round these choices.";
+        return menu;
+    }
+
+    /// <summary>Direct to a friend ▸ : a picture straight to a friend's screen, or the direct window.</summary>
+    WinForms.ToolStripMenuItem DirectMenu(bool rec)
+    {
+        var items = new List<WinForms.ToolStripItem>();
         foreach (var f in direct.Friends)
         {
             var friend = f;
-            var send = new WinForms.ToolStripMenuItem($"Send a picture to {friend}") { Enabled = !rec };
-            send.Click += (_, _) => _ = CapturePicture(toFriend: friend);
-            dm.DropDownItems.Add(send);
+            items.Add(MenuEntry($"Send a picture to {friend}", () => _ = CapturePicture(toFriend: friend), enabled: !rec));
         }
-        if (direct.Friends.Count > 0) dm.DropDownItems.Add(new WinForms.ToolStripSeparator());
-        var openDirect = new WinForms.ToolStripMenuItem("Open the direct window");
-        openDirect.Click += (_, _) => direct.ShowWindow(null, null);
-        dm.DropDownItems.Add(openDirect);
-        ThemedMenu.Apply(dm.DropDown as WinForms.ToolStripDropDownMenu ?? new WinForms.ToolStripDropDownMenu());
-        m.Items.Add(dm);
-        m.Items.Add(new WinForms.ToolStripSeparator());
-        if (lastLink != null) m.Items.Add(Item("Copy last link", () => ClipboardService.SetText(lastLink)));
-        m.Items.Add(Item("History…", ShowHistory));
-        m.Items.Add(Item("Open captures folder", () => Open(AppPaths.CacheDir)));
-        m.Items.Add(Item("Settings…", ShowSettings));
-        if (Settings.ShowUserNotes) m.Items.Add(Item("User notes…", ShowNotes));
-        m.Items.Add(Item("Help", () => ShowHelp("")));
-        m.Items.Add(new WinForms.ToolStripSeparator());
-        m.Items.Add(Item("Quit", () => System.Windows.Application.Current.Shutdown()));
+        if (items.Count > 0) items.Add(new WinForms.ToolStripSeparator());
+        items.Add(MenuEntry("Open the direct window", () => direct.ShowWindow(null, null)));
+        return SubMenu("Direct to a friend", items.ToArray());
+    }
+
+    /// <summary>Delay ▸ : quick choices here, any length in Settings.</summary>
+    WinForms.ToolStripMenuItem DelayMenu()
+    {
+        var items = new List<WinForms.ToolStripItem>();
+        void D(int sec, string text) => items.Add(MenuEntry(text, () => UpdateSettings(x => x.DelaySeconds = sec), check: Settings.DelaySeconds == sec));
+        D(0, "No delay");
+        for (int sec = 1; sec <= 5; sec++) D(sec, sec == 1 ? "1 second" : $"{sec} seconds");
+        if (Settings.DelaySeconds > 5) D(Settings.DelaySeconds, $"{Settings.DelaySeconds} seconds (from Settings)");
+        items.Add(new WinForms.ToolStripSeparator());
+        items.Add(MenuEntry("Other length…", () => ShowSettings(1)));
+        return SubMenu(Settings.DelaySeconds > 0 ? $"Delay: {Settings.DelaySeconds} s" : "Delay: none", items.ToArray());
+    }
+
+    /// <summary>After a mode was chosen, the open menu shows that mode's actions. It keeps the edges that touch the
+    /// pointer where they were (the tray menu usually opens above and to the left of it).</summary>
+    void RebuildOpenMenu()
+    {
+        var m = tray.ContextMenuStrip!;
+        if (!m.Visible) return;
+        var before = m.Bounds;
+        bool above = before.Bottom <= menuOpenedAt.Y + 4, left = before.Right <= menuOpenedAt.X + 4;
+        BuildMenu();
+        var size = m.GetPreferredSize(Size.Empty);
+        var area = WinForms.Screen.FromPoint(menuOpenedAt).WorkingArea;
+        int x = left ? before.Right - size.Width : before.X;
+        int y = above ? before.Bottom - size.Height : before.Y;
+        x = Math.Max(area.Left, Math.Min(x, area.Right - size.Width));
+        y = Math.Max(area.Top, Math.Min(y, area.Bottom - size.Height));
+        m.Bounds = new Rectangle(x, y, size.Width, size.Height);
     }
 
     public void ShowSettings() => ShowSettings(-1);
@@ -397,17 +475,24 @@ public sealed class TrayController : IDisposable
         settingsWindow.Activate();
     }
 
-    public void ShowHistory()
+    public void ShowHistory() => ShowHistory(null);
+
+    /// <summary>Opens the history; with a record id (the History button of a capture's card) that entry is selected and
+    /// scrolled to, and a filter or search that hides it is cleared.</summary>
+    public void ShowHistory(string? recordId)
     {
         if (historyWindow is { IsLoaded: true })
         {
             if (historyWindow.WindowState == System.Windows.WindowState.Minimized) historyWindow.WindowState = System.Windows.WindowState.Normal;
             historyWindow.Activate();
-            return;
         }
-        historyWindow = new HistoryWindow(this);
-        historyWindow.Show();
-        historyWindow.Activate();
+        else
+        {
+            historyWindow = new HistoryWindow(this);
+            historyWindow.Show();
+            historyWindow.Activate();
+        }
+        if (recordId != null) historyWindow.Reveal(recordId);
     }
 
     public void ShowNotes()
@@ -422,9 +507,8 @@ public sealed class TrayController : IDisposable
     void ShowMenu()
     {
         var m = tray.ContextMenuStrip!;
-        BuildMenu();
         var p = WinForms.Cursor.Position;
-        m.Show(p);
+        m.Show(p); // builds the menu as it opens
     }
 
     public void ShowHelp(string section)
@@ -435,8 +519,9 @@ public sealed class TrayController : IDisposable
 
     void ToggleOutput()
     {
-        UpdateSettings(s => s.Output = s.Output == OutputMode.SecretLink ? OutputMode.DirectMedia : OutputMode.SecretLink);
-        Notify(ToastKind.Ok, "Output: " + (Settings.Output == OutputMode.SecretLink ? "secret link (upload to Peergos)" : "media to clipboard (no upload)"), "Changed with the hotkey.");
+        UpdateSettings(s => s.Output = OutputLogic.Next(s.Output));
+        Notify(ToastKind.Ok, "After a capture: " + OutputLogic.Describe(Settings.Output, "picture or video").ToLowerInvariant(),
+            "Changed with the hotkey. Press it again for the next choice.");
     }
 
     // ---------- commands ----------
@@ -463,7 +548,8 @@ public sealed class TrayController : IDisposable
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; }
         if (recorder != null) await StopRecording();
-        else if (Settings.DefaultKind == CaptureKind.Video) await StartRecording();
+        else if (Settings.Mode == TrayMode.Video) await StartRecording();
+        else if (Settings.Mode == TrayMode.Files) await ChooseAndUploadFiles();
         else await CapturePicture();
     }
 
@@ -518,7 +604,10 @@ public sealed class TrayController : IDisposable
             Directory.CreateDirectory(folder);
             var file = Path.Combine(folder, FileNames.Unique(folder, FileNames.ForCapture(now, Settings.ImageFormat)));
             using (var bmp = frozen != null ? ScreenCapture.Crop(frozen, screen, rect) : ScreenCapture.Grab(rect))
+            {
+                if (Settings.ShutterSound) ShutterSound.Play(); // Settings → Capture; it does not wait for the sound
                 ScreenCapture.Save(bmp, file, Settings.ImageFormat);
+            }
             Log.Info($"picture {rect}{(frozen != null ? " (frozen)" : "")} -> {file}");
             var record = history.Add(new HistoryRecord
             {
@@ -597,12 +686,15 @@ public sealed class TrayController : IDisposable
         Log.Info($"drawn copy of {original.File} -> {w.SavedFile} ({w.Outcome})");
         switch (w.Outcome)
         {
-            case AnnotateOutcome.SavedUpload: await Deliver(w.SavedFile, OutputMode.SecretLink, record); break;
+            case AnnotateOutcome.SavedUpload:
+                await Deliver(w.SavedFile, Settings.Output == OutputMode.UploadAndMedia ? OutputMode.UploadAndMedia : OutputMode.SecretLink, record);
+                break;
             case AnnotateOutcome.SavedCopy: await Deliver(w.SavedFile, OutputMode.DirectMedia, record); break;
             default:
                 record.MirrorFile = Mirror(w.SavedFile, now);
                 history.Save();
-                Notify(ToastKind.Ok, "Drawn picture saved", "It is a new entry in the history; the original is unchanged.", null, w.SavedFile);
+                Notify(ToastKind.Ok, "Drawn picture saved", "It is a new entry in the history; the original is unchanged.", null, w.SavedFile,
+                    history: () => ShowHistory(record.Id));
                 break;
         }
         return record;
@@ -950,11 +1042,16 @@ public sealed class TrayController : IDisposable
         switch (choice)
         {
             case FinishChoice.Upload: await Deliver(file, OutputMode.SecretLink, record, fresh: true); break;
+            case FinishChoice.UploadMedia: await Deliver(file, OutputMode.UploadAndMedia, record, fresh: true); break;
             case FinishChoice.Clipboard: await Deliver(file, OutputMode.DirectMedia, record, fresh: true); break;
             case FinishChoice.SaveAs:
                 var ext = Path.GetExtension(file).TrimStart('.');
                 var sfd = new Microsoft.Win32.SaveFileDialog { FileName = Path.GetFileName(file), Filter = $"{What}|*.{ext}" };
-                if (sfd.ShowDialog() == true) { File.Copy(file, sfd.FileName, true); Notify(ToastKind.Ok, $"{What} saved", sfd.FileName, null, sfd.FileName); }
+                if (sfd.ShowDialog() == true)
+                {
+                    File.Copy(file, sfd.FileName, true);
+                    Notify(ToastKind.Ok, $"{What} saved", sfd.FileName, null, sfd.FileName, history: () => ShowHistory(record.Id));
+                }
                 record.MirrorFile = Mirror(file, record.Created);
                 history.Save();
                 break;
@@ -976,7 +1073,7 @@ public sealed class TrayController : IDisposable
             default:
                 record.MirrorFile = Mirror(file, record.Created);
                 history.Save();
-                Notify(ToastKind.Ok, $"{What} kept on this PC only", "Nothing was uploaded or copied.", null, file);
+                Notify(ToastKind.Ok, $"{What} kept on this PC only", "Nothing was uploaded or copied.", null, file, history: () => ShowHistory(record.Id));
                 break;
         }
     }
@@ -984,12 +1081,17 @@ public sealed class TrayController : IDisposable
     /// <summary>"Discard" on the card after a capture was delivered: the capture is removed everywhere it went –
     /// this PC (captures and mirror folder), Peergos (the link stops working), the clipboard if it still holds it,
     /// and the history.</summary>
-    async Task DiscardDelivered(HistoryRecord record)
+    async Task DiscardDelivered(HistoryRecord record, string? clipboardCopy = null)
     {
         bool perm = Settings.DiscardPermanently;
         string What = record.IsVideo ? "Video" : "Picture";
         var problems = new List<string>();
         ClipboardService.ClearIfOurs(record.Link, record.File);
+        if (clipboardCopy != null && clipboardCopy != record.File)
+        {
+            ClipboardService.ClearIfOurs(null, clipboardCopy);
+            try { File.Delete(clipboardCopy); } catch { } // a temporary copy in the work folder
+        }
         if (record.Link != null && lastLink == record.Link) lastLink = null;
         var files = new[] { record.File, record.MirrorFile }.Where(f => f != null && File.Exists(f)).Select(f => f!).ToList();
         if (Recycle.Remove(files, perm) is { Count: > 0 } failed)
@@ -1029,15 +1131,17 @@ public sealed class TrayController : IDisposable
             await direct.SendAsync(friend, [file]);
             record.Label = record.Label.Length > 0 ? record.Label : $"Sent to {friend}";
             history.Save();
-            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file, extra: ("Open", () => direct.ShowWindow(friend, null)));
-            if (Settings.KeepLocalCopies == LocalCopies.OnlyIfUploadFails) DropLocalCopy(record, file);
+            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file, extra: ("Open", () => direct.ShowWindow(friend, null)),
+                history: () => ShowHistory(record.Id));
+            if (!OutputLogic.KeepLocal(Settings.KeepLocalCopies, uploaded: true, uploadFailed: false)) DropLocalCopy(record, file);
         }
         catch (DirectException e)
         {
             if (Settings.FallbackToClipboard && TryClipboard(file, "Picture"))
-                Notify(ToastKind.Warn, $"Not sent to {friend} – the picture is on the clipboard instead", e.Message + "\nA copy is kept in the captures folder.", null, file);
+                Notify(ToastKind.Warn, $"Not sent to {friend} – the picture is on the clipboard instead", e.Message + "\nA copy is kept in the captures folder.", null, file,
+                    history: () => ShowHistory(record.Id));
             else
-                Notify(ToastKind.Error, $"Not sent to {friend}", e.Message + "\nA copy is kept in the captures folder.", null, file);
+                Notify(ToastKind.Error, $"Not sent to {friend}", e.Message + "\nA copy is kept in the captures folder.", null, file, history: () => ShowHistory(record.Id));
         }
         finally
         {
@@ -1047,8 +1151,9 @@ public sealed class TrayController : IDisposable
         }
     }
 
-    /// <summary>Settings → Files & history → "Keep a copy on this PC: only if the upload fails": after a successful
-    /// upload the copy in the captures folder is deleted (the mirror folder is a separate choice and keeps its copy).</summary>
+    /// <summary>Settings → Files & history → "Keep a copy on this PC: only if the upload fails" or "never": the copy in
+    /// the captures folder is deleted once the capture is in Peergos (or, with "never", on the clipboard). The mirror
+    /// folder is a separate choice and keeps its copy.</summary>
     void DropLocalCopy(HistoryRecord record, string file)
     {
         try
@@ -1082,34 +1187,59 @@ public sealed class TrayController : IDisposable
     }
 
     /// <summary>Sends a finished capture where the output mode says; falls back to the clipboard if the upload fails.
-    /// The notification card always says which of the three outcomes happened: link copied, media copied, or failed.</summary>
+    /// The notification card always says what happened: the picture or video copied (and uploaded), the link copied,
+    /// or the upload failed. A fresh capture's card can discard it; every card with an entry opens it in the history.</summary>
     async Task<BridgeResult?> Deliver(string file, OutputMode mode, HistoryRecord? record = null, bool mirror = true, bool fresh = false)
     {
+        string? clipFile = null;
         // A fresh capture (not one uploaded later from the history) can be discarded from its card.
-        Action? discard = fresh && record != null ? () => _ = DiscardDelivered(record) : null;
+        Action? discard = fresh && record != null ? () => _ = DiscardDelivered(record, clipFile) : null;
+        Action? inHistory = record != null ? () => ShowHistory(record.Id) : null;
         var mirrored = mirror ? Mirror(file, record?.Created ?? DateTime.Now) : null;
         if (record != null && mirrored != null) { record.MirrorFile = mirrored; history.Save(); }
         bool video = !file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && !file.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase);
-        string what = video ? "Video" : "Picture";
+        string what = video ? "Video" : "Picture", lower = what.ToLowerInvariant();
         string pasteHint = video ? "The video file is on the clipboard – paste it with Ctrl+V into a chat, mail or folder."
                                  : "The picture is on the clipboard – paste it with Ctrl+V.";
+        // Settings → Files & history → Keep a copy on this PC. A capture the captures folder may not keep goes on the
+        // clipboard as a temporary copy, so pasting the file still works once the copy here is gone.
+        var policy = fresh && record != null ? Settings.KeepLocalCopies : LocalCopies.Always;
+        string ClipFile() => clipFile ??= policy == LocalCopies.Always ? file : ClipboardCopy(file);
+
         if (mode == OutputMode.DirectMedia)
         {
-            if (TryClipboard(file, what)) Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint, null, file, discard: discard);
+            if (!TryClipboard(ClipFile(), what)) return null;
+            if (!OutputLogic.KeepLocal(policy, uploaded: false, uploadFailed: false))
+            {
+                // "Never": the clipboard has it; nothing stays on this PC, not even in the history.
+                var copy = clipFile;
+                DropLocalCopy(record!, file);
+                history.Remove([record!.Id], dismiss: false);
+                Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint + " Nothing is kept on this PC.", discard: () =>
+                {
+                    ClipboardService.ClearIfOurs(null, copy);
+                    try { if (copy != null) File.Delete(copy); } catch { }
+                    Notify(ToastKind.Ok, $"{what} discarded", "It is no longer on the clipboard; nothing was kept.");
+                });
+                return null;
+            }
+            Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint, null, file, discard: discard, history: inHistory);
             return null;
         }
+        // "Upload and copy the picture/video": it is on the clipboard at once and can be pasted while it uploads.
+        bool mediaCopied = mode == OutputMode.UploadAndMedia && TryClipboard(ClipFile(), what);
         if (!Settings.PeergosConfigured)
         {
-            if (TryClipboard(file, what))
+            if (mediaCopied || TryClipboard(ClipFile(), what))
                 Notify(ToastKind.Warn, $"{what} copied to the clipboard (not uploaded)",
                     "You are not signed in to Peergos: right-click the tray icon → Settings → Peergos.", null, file,
-                    extra: ("Sign in", ShowSettings), discard: discard);
+                    extra: ("Sign in", ShowSettings), discard: discard, history: inHistory);
             return new BridgeResult(false, null, null, "Not signed in to Peergos");
         }
         uploads++;
         tray.Icon = recorder == null ? iconBusy : tray.Icon;
         tray.Text = "Peergos Snap – uploading…";
-        Notify(ToastKind.Busy, $"Uploading the {what.ToLowerInvariant()} to Peergos…", Path.GetFileName(file), null, file);
+        Notify(ToastKind.Busy, $"Uploading the {lower} to Peergos…", Path.GetFileName(file), null, file);
         var dispatcher = System.Windows.Application.Current.Dispatcher;
         BridgeResult r;
         try
@@ -1117,7 +1247,7 @@ public sealed class TrayController : IDisposable
             r = await Uploader.UploadAsync(Settings.Clone(), file, pct => dispatcher.BeginInvoke(() =>
             {
                 tray.Text = $"Peergos Snap – uploading {pct}%";
-                Notify(ToastKind.Busy, $"Uploading the {what.ToLowerInvariant()} to Peergos… {pct}%", Path.GetFileName(file), null, file, pct);
+                Notify(ToastKind.Busy, $"Uploading the {lower} to Peergos… {pct}%", Path.GetFileName(file), null, file, pct);
             }));
         }
         catch (Exception e) { r = new BridgeResult(false, null, null, e.Message); }
@@ -1129,26 +1259,35 @@ public sealed class TrayController : IDisposable
         }
         if (r.Ok && r.Link != null)
         {
-            lastLink = r.Link;
+            var link = r.Link;
+            lastLink = link;
             if (record != null)
             {
-                record.Link = r.Link;
+                record.Link = link;
                 record.PeergosPath = r.PeergosPath;
                 record.Uploaded = DateTime.Now;
                 history.Save();
             }
-            try
+            if (mediaCopied)
+                Notify(ToastKind.Ok, $"{what} copied and uploaded", $"{pasteHint} It is in Peergos too: Copy link puts its secret link on the clipboard.",
+                    link, file, extra: ("Copy link", () => CopyLink(link)), discard: discard, history: inHistory);
+            else
             {
-                ClipboardService.OnUi(() => ClipboardService.SetText(r.Link));
-                Notify(ToastKind.Ok, "Link copied to the clipboard", $"{what} uploaded to Peergos ({r.PeergosPath}). Paste the link with Ctrl+V.", r.Link, file, discard: discard);
+                try
+                {
+                    ClipboardService.OnUi(() => ClipboardService.SetText(link));
+                    Notify(ToastKind.Ok, "Link copied to the clipboard", $"{what} uploaded to Peergos ({r.PeergosPath}). Paste the link with Ctrl+V.",
+                        link, file, discard: discard, history: inHistory);
+                }
+                catch (Exception e)
+                {
+                    Log.Error("clipboard link", e);
+                    Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.",
+                        link, file, discard: discard, history: inHistory);
+                }
             }
-            catch (Exception e)
-            {
-                Log.Error("clipboard link", e);
-                Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.", r.Link, file, discard: discard);
-            }
-            // The card has already shown the picture; the local copy can go now if only failed uploads keep one.
-            if (fresh && record != null && Settings.KeepLocalCopies == LocalCopies.OnlyIfUploadFails) DropLocalCopy(record, file);
+            // The card has already shown the picture; the local copy goes now if the setting says so.
+            if (!OutputLogic.KeepLocal(policy, uploaded: true, uploadFailed: false)) DropLocalCopy(record!, file);
             return r;
         }
         var why = r.Error ?? "Unknown error";
@@ -1158,11 +1297,54 @@ public sealed class TrayController : IDisposable
             UpdateSettings(s => s.Session = "");
             signIn = ("Sign in", ShowSettings);
         }
-        if (Settings.FallbackToClipboard && TryClipboard(file, what))
-            Notify(ToastKind.Warn, $"Upload failed – the {what.ToLowerInvariant()} is on the clipboard instead", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn, discard: discard);
+        if (mediaCopied)
+            Notify(ToastKind.Warn, $"Upload failed – the {lower} is on the clipboard", why + "\nA copy is kept in the captures folder.",
+                null, file, extra: signIn, discard: discard, history: inHistory);
+        else if (Settings.FallbackToClipboard && TryClipboard(ClipFile(), what))
+            Notify(ToastKind.Warn, $"Upload failed – the {lower} is on the clipboard instead", why + "\nA copy is kept in the captures folder.",
+                null, file, extra: signIn, discard: discard, history: inHistory);
         else if (!Settings.FallbackToClipboard)
-            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.", null, file, extra: signIn, discard: discard);
+            Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.",
+                null, file, extra: signIn, discard: discard, history: inHistory);
         return r;
+    }
+
+    /// <summary>Copy link on the card of a capture that was copied and uploaded.</summary>
+    void CopyLink(string link)
+    {
+        try
+        {
+            ClipboardService.OnUi(() => ClipboardService.SetText(link));
+            Notify(ToastKind.Ok, "Link copied to the clipboard", "Paste it with Ctrl+V.", link);
+        }
+        catch (Exception e)
+        {
+            Log.Error("clipboard link", e);
+            Notify(ToastKind.Warn, "The clipboard was busy", "Try again, or use the tray menu → Copy last link.");
+        }
+    }
+
+    /// <summary>A copy of a capture for the clipboard, in the work folder, for captures the captures folder may not keep:
+    /// pasting the file keeps working once the copy there is gone. The newest few stay; all go at the next start.</summary>
+    static string ClipboardCopy(string file)
+    {
+        try
+        {
+            var root = Path.Combine(AppPaths.WorkDir, "clipboard");
+            Directory.CreateDirectory(root);
+            foreach (var old in Directory.GetDirectories(root).OrderByDescending(d => d, StringComparer.Ordinal).Skip(4))
+                try { Directory.Delete(old, true); } catch { }
+            var dir = Path.Combine(root, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+            Directory.CreateDirectory(dir);
+            var copy = Path.Combine(dir, Path.GetFileName(file));
+            File.Copy(file, copy);
+            return copy;
+        }
+        catch (Exception e)
+        {
+            Log.Error("clipboard copy " + file, e);
+            return file;
+        }
     }
 
     /// <summary>Uploads a capture from the history (Upload button there): card, clipboard and history as usual.</summary>
@@ -1192,21 +1374,23 @@ public sealed class TrayController : IDisposable
     /// <summary>Shows the app's notification card. Busy and success cards follow the Notifications setting;
     /// warnings and errors are always shown.</summary>
     public void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
-        (string, Action)? extra = null, Action? discard = null)
+        (string, Action)? extra = null, Action? discard = null, Action? history = null)
     {
         if (kind != ToastKind.Busy) Log.Info($"notify: {title} – {text}");
         if (!Settings.Notifications && kind is ToastKind.Ok or ToastKind.Busy && extra == null) return;
-        try { ToastWindow.Show(kind, title, text, link, file, percent, extra, discard); }
+        try { ToastWindow.Show(kind, title, text, link, file, percent, extra, discard, history); }
         catch (Exception e) { Log.Error("toast", e); }
     }
 
     void UpdateTip()
     {
+        bool files = Settings.Mode == TrayMode.Files;
+        string click = Settings.Mode switch { TrayMode.Video => "record video", TrayMode.Files => "upload files", _ => "take picture" };
         string t = recorder != null
             ? (recorder.Paused ? "Peergos Snap – recording paused" : "Peergos Snap – recording… click to stop")
-            : $"Peergos Snap – click: {(Settings.DefaultKind == CaptureKind.Video ? "record video" : "take picture")}"
-              + (Settings.DelaySeconds > 0 ? $" after {Settings.DelaySeconds} s" : "")
-              + $" · {(Settings.Output == OutputMode.SecretLink ? "secret link" : "clipboard")}";
+            : $"Peergos Snap – click: {click}"
+              + (Settings.DelaySeconds > 0 && !files ? $" after {Settings.DelaySeconds} s" : "")
+              + (files ? "" : $" · {OutputLogic.Short(Settings.Output)}");
         tray.Text = t.Length > 127 ? t[..127] : t;
     }
 

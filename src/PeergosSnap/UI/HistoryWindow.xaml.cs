@@ -34,6 +34,8 @@ public partial class HistoryWindow : Window
     Func<Task>? pending;
     bool askedDelete; // the confirmation shown is for a delete (its "Don't ask again" applies)
     bool refreshing;
+    /// <summary>An entry to show once the list has it (the History button of a capture's card).</summary>
+    string? revealId;
 
     HistoryStore Store => app.History;
 
@@ -160,6 +162,13 @@ public partial class HistoryWindow : Window
         Dispatcher.BeginInvoke(async () => await Refresh());
     }
 
+    /// <summary>Shows one entry: selected and scrolled to; a filter or search that hides it is cleared.</summary>
+    public void Reveal(string id)
+    {
+        revealId = id;
+        if (IsLoaded) Rebuild(); // otherwise the first build of the list, when the window has loaded, shows it
+    }
+
     void StoreChanged() => Dispatcher.BeginInvoke(RebuildSoon);
     void RebuildSoon() { rebuildSoon.Stop(); rebuildSoon.Start(); }
 
@@ -193,6 +202,24 @@ public partial class HistoryWindow : Window
             view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(HistoryItem.Day)));
         List.ItemsSource = view;
         foreach (var it in shown.Where(i => keep.Contains(i.Record.Id))) List.SelectedItems.Add(it);
+        if (revealId is { } rid)
+        {
+            if (!items.TryGetValue(rid, out var wanted)) revealId = null; // not in the history any more
+            else if (shown.Contains(wanted))
+            {
+                revealId = null;
+                List.SelectedItems.Clear();
+                List.SelectedItem = wanted;
+                List.ScrollIntoView(wanted);
+                List.Focus();
+            }
+            else if (ShowBox.SelectedIndex != 0 || SearchBox.Text.Length > 0)
+            {
+                ShowBox.SelectedIndex = 0; // both rebuild the list soon, which then shows the entry
+                SearchBox.Text = "";
+            }
+            else revealId = null;
+        }
 
         Empty.Visibility = Store.Records.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         int onPc = items.Values.Count(i => i.Local), inPeergos = items.Values.Count(i => i.InPeergos == true);

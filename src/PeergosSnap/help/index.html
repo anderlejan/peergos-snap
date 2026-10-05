@@ -34,9 +34,9 @@
 <ol class="steps">
   <li><strong>Sign in to Peergos.</strong> Right-click the Peergos Snap icon → <em>Settings…</em> → <em>Peergos</em>. Enter your username and password and click <em>Sign in</em>. You do this once.</li>
   <li><strong>Take a picture.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> (or left-click the icon). Drag a rectangle over the part of the screen you want and let go of the mouse.</li>
-  <li><strong>Share it.</strong> A card at the bottom right says <em>Link copied to the clipboard</em>. Paste the link with <kbd>Ctrl</kbd>+<kbd>V</kbd> into a chat, an e-mail or a document.</li>
-  <li><strong>Record a video.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, drag over the area to record and let go: recording starts. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again (or click <em>Stop</em>), then choose <em>Upload &amp; copy link</em>.</li>
-  <li><strong>Want the picture itself instead of a link?</strong> Right-click the icon → <em>Output</em> → <em>Media to clipboard</em>. Now every capture is copied as a picture or video file, ready to paste.</li>
+  <li><strong>Share it.</strong> The picture is on the clipboard at once: paste it with <kbd>Ctrl</kbd>+<kbd>V</kbd> into a chat, an e-mail or a document. It is uploaded to Peergos too; the card at the bottom right has <em>Copy link</em> when you want to share its secret link instead.</li>
+  <li><strong>Record a video.</strong> Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, drag over the area to record and let go: recording starts. Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> again (or click <em>Stop</em>), then choose <em>Upload &amp; copy video</em> (or <em>Upload &amp; copy link</em>).</li>
+  <li><strong>Rather share links?</strong> Right-click the icon → <em>After a picture ▸</em> → <em>Upload and copy the secret link</em>: every capture then puts its link on the clipboard. <em>Copy the picture only (no upload)</em> keeps captures out of Peergos.</li>
 </ol>
 <p class="tip">Talking with a friend who also uses Peergos Snap? Send pictures straight to their screen: see <a href="#direct">Direct to a friend</a>.</p>
 <p class="tip">Want to capture a menu that closes when you click elsewhere? Choose a delay first: right-click the icon → <em>Delay</em> → e.g. <em>3 seconds</em> (see <a href="#pictures-delay">Capturing a menu</a>). All your captures and their links are in <em>History…</em> (see <a href="#history">History</a>). Press <kbd>F1</kbd> in the Settings window for help on the page you are on.</p>
@@ -46,7 +46,7 @@
 <h2>The Peergos Snap icon</h2>
 <p>The icon is a small green camera in the notification area. If you don't see it, click the <strong>^</strong> arrow next to the clock and drag the camera onto the taskbar so it always stays visible.</p>
 <h3 id="tray-click">Left click</h3>
-<p>A left click takes a picture, or starts a video, depending on what you chose under <em>Tray click takes</em> in the menu. While a video is recording, a left click stops it.</p>
+<p>A left click does what the <strong>mode</strong> chosen in the menu says: <em>Pictures</em> takes a picture, <em>Videos</em> starts a video, <em>Files</em> asks which files to upload. While a video is recording, a left click stops it.</p>
 <h3 id="tray-colors">What the icon shows</h3>
 <table>
   <tr><th>Icon</th><th>Meaning</th></tr>
@@ -57,26 +57,23 @@
 </table>
 <p>Hover over the icon to see what a click will do and where captures go.</p>
 <h3 id="tray-menu">The menu (right click)</h3>
+<p>The menu has three parts: at the top the actions of the <strong>mode</strong> you chose, in the middle the modes, at the bottom your history, the settings and the rest. Choosing a mode keeps the menu open, so the action you want is one more click.</p>
+<table>
+  <tr><th>Mode</th><th>Actions at the top</th></tr>
+  <tr><td>Pictures</td><td><em>Take picture</em>; <em>Take picture and draw on it</em> (the <a href="#drawing">drawing editor</a> opens before the picture is shared; not shown when every picture opens it anyway); <em>Direct to a friend ▸</em> (<em>Send a picture to …</em> each friend you share with directly, and <em>Open the direct window</em>, see <a href="#direct">Direct to a friend</a>); <em>After a picture ▸</em>.</td></tr>
+  <tr><td>Videos</td><td><em>Record video</em>; <em>Show mouse pointer</em> and <em>Record sound</em> (whether videos show the pointer and get the sound your PC plays); <em>After a video ▸</em>.</td></tr>
+  <tr><td>Files</td><td><em>Upload files…</em> (each file gets its own secret link; the links are copied, one per line) and <em>Upload a folder…</em> (one secret link for the folder and everything in it), see <a href="#uploads">Uploading files and folders</a>; <em>Send files to a friend…</em> opens the direct window, where you drop them.</td></tr>
+</table>
+<p>A left click on the icon does the mode's first action; the hotkeys work in every mode. While a recording runs, <em>Stop recording</em>, <em>Pause / Resume recording</em> and <em>Cancel recording</em> are at the very top; during a delay, <em>Cancel the countdown</em>.</p>
 <table>
   <tr><th>Menu item</th><th>What it does</th></tr>
-  <tr><td>Take picture</td><td>Starts selecting an area for a picture.</td></tr>
-  <tr><td>Take picture and draw on it</td><td>The same, then the drawing editor opens before the picture is shared (see <a href="#drawing">Drawing on pictures</a>). Not shown when every picture opens the editor anyway.</td></tr>
-  <tr><td>Record video / Stop recording</td><td>Starts selecting an area to record, or stops the running recording.</td></tr>
-  <tr><td>Pause / Resume recording, Cancel recording</td><td>Shown while recording.</td></tr>
-  <tr><td>Upload files…</td><td>Choose one or more files on your PC: each is uploaded to your Peergos folder and gets its own secret link; the links are copied (one per line). See <a href="#uploads">Uploading files and folders</a>.</td></tr>
-  <tr><td>Upload a folder…</td><td>Choose a folder: it is uploaded with everything in it and gets one secret link, which is copied.</td></tr>
-  <tr><td>Delay ▸</td><td>No delay, or 1–5 seconds before a picture is taken or a recording starts (see <a href="#pictures-delay">Capturing a menu</a>). Other lengths: Settings → Capture.</td></tr>
-  <tr><td>Cancel the countdown</td><td>Shown while a delay is counting down.</td></tr>
-  <tr><td>Tray click takes: Picture / Video</td><td>What a left click on the icon does.</td></tr>
-  <tr><td>Output: Secret link / Media to clipboard</td><td>Where captures go (see <a href="#output">Where your capture goes</a>).</td></tr>
-  <tr><td>Videos: Show mouse pointer, Record sound</td><td>Whether the mouse pointer is visible in videos, and whether they get the sound your PC plays.</td></tr>
-  <tr><td>Direct to a friend ▸</td><td><em>Send a picture to …</em> each friend you share with directly, and <em>Open the direct window</em> (see <a href="#direct">Direct to a friend</a>).</td></tr>
-  <tr><td>Copy last link</td><td>Copies the link of the last upload again.</td></tr>
+  <tr><td>After a picture ▸ / After a video ▸</td><td>What happens with a capture: <em>Upload and copy the picture</em> (or video; the default), <em>Upload and copy the secret link</em>, or <em>Copy the picture only (no upload)</em>. One choice for pictures and videos, see <a href="#output">Where your capture goes</a>.</td></tr>
+  <tr><td>Mode: Pictures / Videos / Files</td><td>What the top of the menu shows and what a left click on the icon does.</td></tr>
   <tr><td>History…</td><td>All your captures with previews, labels and links (see <a href="#history">History</a>).</td></tr>
-  <tr><td>Open captures folder</td><td>Opens the folder where every capture is also kept on your PC.</td></tr>
+  <tr><td>Copy last link</td><td>Copies the link of the last upload again.</td></tr>
   <tr><td>Settings…</td><td>All options.</td></tr>
-  <tr><td>User notes…</td><td>Your list of wanted changes (can be hidden in Settings → General).</td></tr>
-  <tr><td>Help</td><td>This help.</td></tr>
+  <tr><td>Delay ▸</td><td>No delay, or 1–5 seconds before a picture is taken or a recording starts (see <a href="#pictures-delay">Capturing a menu</a>). Other lengths: Settings → Capture. Not shown in the Files mode.</td></tr>
+  <tr><td>Other ▸</td><td><em>Open captures folder</em> (where your captures are kept on your PC), <em>User notes…</em> (your list of wanted changes; can be hidden in Settings → General) and <em>Help</em>.</td></tr>
   <tr><td>Quit</td><td>Closes Peergos Snap. Start it again from the Start menu.</td></tr>
 </table>
 </section>
@@ -108,7 +105,7 @@
 <p>What happens next depends on the output: see <a href="#output">Where your capture goes</a>.</p>
 <h3 id="pictures-discard">Changed your mind? Discard</h3>
 <p>The card that appears after a picture has a <em>Discard</em> button. It removes the picture everywhere it went: from this PC (also from your mirror folder), from Peergos (the link stops working), from the clipboard if it is still there, and from the history. By default nothing is kept, not even in the Recycle Bin; Settings → Files &amp; history can send discarded captures to the Recycle Bin instead.</p>
-<p>To decide before anything happens, turn on <em>After a picture, ask what to do</em> (Settings → Capture): you then see the picture and choose <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em> or <em>Discard</em>, as after a recording. <kbd>Delete</kbd> discards, <kbd>Esc</kbd> keeps the picture on this PC only.</p>
+<p>To decide before anything happens, turn on <em>After a picture, ask what to do</em> (Settings → Capture): you then see the picture and choose <em>Upload &amp; copy picture</em>, <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em> or <em>Discard</em>, as after a recording. <kbd>Delete</kbd> discards, <kbd>Esc</kbd> keeps the picture on this PC only.</p>
 </section>
 
 <section id="videos" data-keywords="video record recording stop pause resume cancel mp4 webm mouse pointer cursor frame bar finish dialog sound audio">
@@ -142,23 +139,26 @@
 <p>Videos get the sound your PC plays while you record: a video you watch, a game, a call, a notification sound. Your microphone is not recorded. If nothing played during the whole recording, the video has no sound track at all. Turn it off in the menu (<em>Videos</em> → <em>Record sound</em>) or in Settings → Capture.</p>
 </section>
 
-<section id="output" data-keywords="output secret link clipboard paste media fallback mirror folder local copy captures folder ask before upload">
+<section id="output" data-keywords="output secret link clipboard paste media copy link upload fallback mirror folder local copy captures folder never ask before upload">
 <h2>Where your capture goes</h2>
-<p>There are two outputs. Switch between them in the menu (<em>Output</em>), in Settings → Output, or with your own hotkey.</p>
-<h3 id="output-link">Secret link (upload to Peergos)</h3>
+<p>There are three choices. Switch between them in the menu (<em>After a picture ▸</em> or <em>After a video ▸</em>), in Settings → Output, or with your own hotkey.</p>
+<h3 id="output-both">Upload and copy the picture / video (the default)</h3>
+<p>The picture, or the video file, is put on the clipboard at once, so you can paste it right away, and it is uploaded to your Peergos account at the same time. The card that follows has <em>Copy link</em>: it puts the capture's secret link on the clipboard when you want to share the link instead. The history keeps the link too. If the upload fails, an orange card says so; the capture stays on the clipboard and a copy stays on your PC.</p>
+<h3 id="output-link">Upload and copy the secret link</h3>
 <p>The capture is uploaded to your Peergos account, into the folder set in Settings → Peergos (normally <em>PeergosSnap</em>). A <strong>secret link</strong> to just that file is created and copied. It looks like this:</p>
 <p class="sample">https://peergos.net/secret/z59…/1234567890#exampleKey1?open=true</p>
 <p>Anyone who has the link can open and view that one file in a web browser, without an account. They cannot change it and cannot see your other files.</p>
-<h3 id="output-media">Media to clipboard (no upload)</h3>
+<h3 id="output-media">Copy the picture / video only (no upload)</h3>
 <p>Pictures are copied as a picture: paste them into chat apps, image editors, documents or e-mails. Videos are copied as a file: paste them into a chat, an e-mail or a folder. Nothing is uploaded.</p>
 <h3 id="output-fallback">When an upload fails</h3>
 <p>If you are offline or Peergos cannot be reached, the picture or video is put on the clipboard instead, so you can still paste it (you can switch this off in Settings → Output). The card tells you why the upload failed.</p>
 <h3 id="output-local">Copies on your PC</h3>
 <ul>
-  <li>Every capture is also kept in the <strong>captures folder</strong>: menu → <em>Open captures folder</em>. Captures are sorted into one folder per month, named like <em>2026-10</em>; you can choose one folder per day or year, or none (Settings → Files &amp; history).</li>
+  <li>Captures are also kept in the <strong>captures folder</strong> (unless you choose otherwise below): menu → <em>Other ▸</em> → <em>Open captures folder</em>. They are sorted into one folder per month, named like <em>2026-10</em>; you can choose one folder per day or year, or none (Settings → Files &amp; history).</li>
   <li>Copies are <strong>kept forever</strong> unless you set a number of days in Settings → Files &amp; history; older copies then go to the Recycle Bin, so nothing is lost by accident.</li>
   <li>To keep every capture in a folder of your own as well, turn on <em>Also save every capture to this folder</em> (Settings → Files &amp; history). It uses the same monthly folders.</li>
-  <li><strong>Only keep a copy when the upload fails:</strong> Settings → Files &amp; history → <em>Keep a copy on this PC</em> → <em>Only if the upload fails</em>. A capture that reached Peergos is then not kept in the captures folder; the history still has its link. Captures that are only copied to the clipboard or kept on this PC stay.</li>
+  <li><strong>Only keep a copy when the upload fails:</strong> Settings → Files &amp; history → <em>Keep a copy on this PC</em> → <em>Only if the upload fails</em>. A capture that reached Peergos is then not kept in the captures folder; the history still has its link. Captures that are only copied to the clipboard stay.</li>
+  <li><strong>Never keep a copy:</strong> <em>Keep a copy on this PC</em> → <em>Never</em>. Uploaded captures are then only in Peergos, and captures that are only copied to the clipboard are only there (pasting the file works until Peergos Snap restarts) and not in the history. A capture whose upload failed is still kept, so nothing is lost; so is one you keep or save from the question after a recording.</li>
   <li><em>After a picture, ask what to do</em> (Settings → Capture) lets you decide for each picture.</li>
 </ul>
 </section>
@@ -168,13 +168,14 @@
 <p>After every capture a card appears at the bottom right for a few seconds. Warnings and errors stay longer, and hovering over the card keeps it open. The card is never part of your pictures or videos.</p>
 <table>
   <tr><th>Card</th><th>On your clipboard now</th></tr>
-  <tr><td><span class="dot ok"></span><strong>Link copied to the clipboard</strong></td><td>The link. Buttons: <em>Open link</em>, <em>Show file</em>.</td></tr>
+  <tr><td><span class="dot ok"></span><strong>Picture / video copied and uploaded</strong></td><td>The picture itself, or the video file. It is in Peergos too. Buttons: <em>Copy link</em> (its secret link instead), <em>Open link</em>, <em>Show file</em>, <em>History</em>.</td></tr>
+  <tr><td><span class="dot ok"></span><strong>Link copied to the clipboard</strong></td><td>The link. Buttons: <em>Open link</em>, <em>Show file</em>, <em>History</em>.</td></tr>
   <tr><td><span class="dot ok"></span><strong>Picture / video copied to the clipboard</strong></td><td>The picture itself, or the video file.</td></tr>
-  <tr><td><span class="dot warn"></span><strong>Upload failed – the picture is on the clipboard instead</strong></td><td>The picture or video; the card says why the upload failed.</td></tr>
+  <tr><td><span class="dot warn"></span><strong>Upload failed – the picture is on the clipboard</strong></td><td>The picture or video; the card says why the upload failed, and a copy stays on your PC.</td></tr>
   <tr><td><span class="dot warn"></span><strong>… copied to the clipboard (not uploaded)</strong></td><td>The picture or video, because you are not signed in. Button: <em>Sign in</em>.</td></tr>
   <tr><td><span class="dot err"></span><strong>… failed</strong></td><td>Nothing new. The card gives the reason; the file stays in the captures folder.</td></tr>
 </table>
-<p>After a capture the card also has a <em>Discard</em> button (see <a href="#pictures-discard">Discard</a>). While uploading, the card shows the progress. <em>Show notifications</em> in Settings → Output hides the green cards; orange and red ones always appear.</p>
+<p>After a capture the card also has <em>History</em>, which opens the history with that capture selected (to label, view, draw on or delete it), and <em>Discard</em> (see <a href="#pictures-discard">Discard</a>). While uploading, the card shows the progress. <em>Show notifications</em> in Settings → Output hides the green cards; orange and red ones always appear.</p>
 </section>
 
 <section id="peergos" data-keywords="peergos account sign in sign out login password two-factor authenticator code server folder session link share">
@@ -276,7 +277,7 @@
   <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td><td>Take a picture</td></tr>
   <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></td><td>Start recording a video / stop the recording</td></tr>
   <tr><td>(not set)</td><td>Pause / resume the recording</td></tr>
-  <tr><td>(not set)</td><td>Switch the output (secret link ↔ clipboard)</td></tr>
+  <tr><td>(not set)</td><td>Switch what happens after a capture (goes round the three choices)</td></tr>
   <tr><td><kbd>Esc</kbd></td><td>Cancel while selecting an area</td></tr>
 </table>
 <p>Change them in Settings → Hotkeys: click a box and press the keys you want, together with <kbd>Ctrl</kbd>, <kbd>Alt</kbd>, <kbd>Shift</kbd> or <kbd>Win</kbd>. <kbd>Backspace</kbd> or <kbd>Delete</kbd> clears a box. A red note means another program already uses that combination; choose another one.</p>
@@ -297,15 +298,16 @@
 <h3 id="settings-capture">Capture</h3>
 <table>
   <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
-  <tr><td>A left click on the tray icon</td><td>Takes a picture, or starts / stops a video.</td><td>Picture</td></tr>
+  <tr><td>Mode</td><td>What the tray menu shows first and what a left click on the icon does: <em>Pictures</em> (takes a picture), <em>Videos</em> (starts / stops a video) or <em>Files</em> (asks which files to upload). Also at the bottom of the menu.</td><td>Pictures</td></tr>
   <tr><td>Picture format</td><td>PNG keeps every detail; JPG makes smaller files for photos and games.</td><td>PNG</td></tr>
   <tr><td>Video format</td><td>MP4 plays everywhere; WebM is an open alternative.</td><td>MP4</td></tr>
   <tr><td>Video frame rate</td><td>Pictures per second: 15, 24, 30 or 60.</td><td>30</td></tr>
   <tr><td>Video quality</td><td>Left gives smaller files, right gives sharper videos.</td><td>Middle</td></tr>
-  <tr><td>Show the mouse pointer in videos</td><td>Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
-  <tr><td>Record the sound Windows plays</td><td>Videos get the sound of your PC; no sound track when nothing played. Also in the menu under <em>Videos</em>.</td><td>On</td></tr>
-  <tr><td>After a picture, ask what to do</td><td>Shows the picture with <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em>, <em>Draw on it…</em> and <em>Discard</em>.</td><td>Off</td></tr>
+  <tr><td>Show the mouse pointer in videos</td><td>Also in the menu in the <em>Videos</em> mode.</td><td>On</td></tr>
+  <tr><td>Record the sound Windows plays</td><td>Videos get the sound of your PC; no sound track when nothing played. Also in the menu in the <em>Videos</em> mode.</td><td>On</td></tr>
+  <tr><td>After a picture, ask what to do</td><td>Shows the picture with <em>Upload &amp; copy picture</em>, <em>Upload &amp; copy link</em>, <em>Copy picture</em>, <em>Save as…</em>, <em>Draw on it…</em> and <em>Discard</em>.</td><td>Off</td></tr>
   <tr><td>Draw on every picture before it is shared</td><td>Opens the <a href="#drawing">drawing editor</a> after each picture.</td><td>Off</td></tr>
+  <tr><td>Play a camera sound when a picture is taken</td><td>A telephoto lens focusing, then the shutter. <em>▶ Listen</em> plays it.</td><td>On</td></tr>
   <tr><td>Delay before capturing</td><td>Seconds of countdown before the screen freezes for a picture, or before a recording starts; 0 = none. The menu offers 1–5 seconds quickly.</td><td>0</td></tr>
 </table>
 
@@ -322,7 +324,7 @@
 <h3 id="settings-output">Output</h3>
 <table>
   <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
-  <tr><td>After a capture</td><td>Upload and copy the secret link, or copy the picture / video itself.</td><td>Secret link</td></tr>
+  <tr><td>After a capture</td><td>Upload and copy the picture / video itself, upload and copy the secret link, or copy the picture / video only (no upload).</td><td>Upload and copy the picture / video (an earlier choice is kept)</td></tr>
   <tr><td>If the upload fails, copy … to the clipboard instead</td><td>So you can always paste something.</td><td>On</td></tr>
   <tr><td>Show notifications</td><td>Hides the green cards when off; warnings and errors still show.</td><td>On</td></tr>
 </table>
@@ -330,8 +332,8 @@
 <h3 id="settings-files">Files &amp; history</h3>
 <table>
   <tr><th>Option</th><th>Meaning</th><th>Default</th></tr>
-  <tr><td>Local captures folder</td><td>Where every capture is kept on your PC; 📂 opens it.</td><td></td></tr>
-  <tr><td>Keep a copy on this PC</td><td><em>Always</em>, or <em>Only if the upload fails</em>: captures that reached Peergos are then not kept here.</td><td>Always</td></tr>
+  <tr><td>Local captures folder</td><td>Where captures are kept on your PC; 📂 opens it.</td><td></td></tr>
+  <tr><td>Keep a copy on this PC</td><td><em>Always</em>; <em>Only if the upload fails</em> (captures that reached Peergos are then not kept here); or <em>Never</em> (captures only copied to the clipboard are not kept either). A capture whose upload failed is always kept.</td><td>Always</td></tr>
   <tr><td>Discarded captures are deleted at once</td><td>Nothing is kept of a discarded capture; off moves it to the Recycle Bin.</td><td>On</td></tr>
   <tr><td>Sort into subfolders</td><td>One folder per month (2026-10), per day (2026-10-05), per year (2026), or none. Also used for the mirror folder.</td><td>Per month</td></tr>
   <tr><td>Delete local copies older than</td><td>Days; 0 keeps them forever. Older copies go to the Recycle Bin.</td><td>0 (keep forever)</td></tr>

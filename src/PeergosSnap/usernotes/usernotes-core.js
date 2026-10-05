@@ -8,7 +8,7 @@
   else root.UserNotesCore = factory();
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  const MODULE_VERSION = '1.5.0';
+  const MODULE_VERSION = '1.5.1';
   const STATUSES = ['open', 'queued', 'sent', 'done'];
   const STATUS_LABEL = { open: 'Open', queued: 'Queued', sent: 'Sent', done: 'Done' };
   const STATUS_HINT = {

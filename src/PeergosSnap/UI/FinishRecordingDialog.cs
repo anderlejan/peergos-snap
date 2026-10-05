@@ -6,7 +6,7 @@ using PeergosSnap.Core;
 
 namespace PeergosSnap.UI;
 
-public enum FinishChoice { Upload, Clipboard, SaveAs, Discard, KeepLocal, Annotate }
+public enum FinishChoice { Upload, Clipboard, SaveAs, Discard, KeepLocal, Annotate, UploadMedia }
 
 /// <summary>Short confirmation after a recording (or, when asked for, after a picture): upload, copy the file, save
 /// it elsewhere, or throw it away.</summary>
@@ -54,17 +54,19 @@ public sealed class FinishRecordingDialog : Window
         link.Click += (_, _) => { try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); } catch { } };
         open.Inlines.Add(link);
 
-        bool linkMode = s.Output == OutputMode.SecretLink;
+        var output = s.Output; // the button for it is the default (Enter)
         Button B(string text, FinishChoice c, bool isDefault = false, string? tip = null)
         {
-            var b = new Button { Content = text, Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 0, 8, 0), IsDefault = isDefault, ToolTip = tip };
+            var b = new Button { Content = text, Padding = new Thickness(12, 5, 12, 5), Margin = new Thickness(0, 0, 8, 6), IsDefault = isDefault, ToolTip = tip };
             b.Click += (_, _) => { Choice = c; DialogResult = true; };
             return b;
         }
         var what = video ? "video" : "picture";
-        var buttons = new WrapPanel();
-        buttons.Children.Add(B("Upload & copy link", FinishChoice.Upload, linkMode, "Upload to Peergos and copy the secret link"));
-        buttons.Children.Add(B(video ? "Copy video" : "Copy picture", FinishChoice.Clipboard, !linkMode, $"Copy the {what} to the clipboard (no upload)"));
+        var buttons = new WrapPanel { MaxWidth = 600 };
+        buttons.Children.Add(B($"Upload & copy {what}", FinishChoice.UploadMedia, output == OutputMode.UploadAndMedia,
+            $"Copy the {what} to the clipboard and upload it to Peergos (its card has Copy link)"));
+        buttons.Children.Add(B("Upload & copy link", FinishChoice.Upload, output == OutputMode.SecretLink, "Upload to Peergos and copy the secret link"));
+        buttons.Children.Add(B(video ? "Copy video" : "Copy picture", FinishChoice.Clipboard, output == OutputMode.DirectMedia, $"Copy the {what} to the clipboard (no upload)"));
         buttons.Children.Add(B("Save as…", FinishChoice.SaveAs, false, "Save a copy somewhere (no upload)"));
         if (!video) buttons.Children.Add(B("Draw on it…", FinishChoice.Annotate, false, "Arrows, numbers, labels, highlights, blur – then choose again"));
         buttons.Children.Add(B("Discard", FinishChoice.Discard, false,

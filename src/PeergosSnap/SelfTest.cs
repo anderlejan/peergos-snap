@@ -38,6 +38,8 @@ public static class SelfTest
             Check("notes module bundled", File.Exists(Path.Combine(AppPaths.AppDir, "usernotes", "usernotes-ui.js")) &&
                                           File.Exists(Path.Combine(AppPaths.AppDir, "notes-host", "host.js")));
             Check("licences bundled", File.Exists(Path.Combine(AppPaths.AppDir, "licenses", "THIRD-PARTY-NOTICES.md")));
+            try { ShutterSound.Load().Dispose(); Check("shutter sound bundled", true); }
+            catch (Exception e) { Check("shutter sound bundled", false, e.Message); }
             Check("help bundled", File.Exists(Path.Combine(AppPaths.AppDir, "help", "index.html")) &&
                                   File.Exists(Path.Combine(AppPaths.AppDir, "help", "help.js")));
 

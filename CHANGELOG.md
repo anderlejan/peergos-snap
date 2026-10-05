@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.4.0 – 2026-10-05
+
+- **After a capture: copy it and upload it (the new default).** The picture or video is on the clipboard at once and is
+  uploaded to Peergos at the same time; its card has *Copy link* for the secret link, and the history keeps the link.
+  A failed upload always shows a card; the capture stays on the clipboard and on this PC. The other choices remain:
+  *Upload and copy the secret link* and *Copy the picture only (no upload)*. An earlier choice is kept. The question
+  after a recording offers *Upload & copy video* first; the output hotkey goes round all three choices.
+- **Camera sound.** Taking a picture plays a short sound made for Peergos Snap: a telephoto lens focusing, then the
+  shutter. Settings → Capture turns it off; *▶ Listen* plays it.
+- **The tray menu, reorganised.** Three modes in the middle – *Pictures*, *Videos*, *Files* – decide what the top of the
+  menu shows and what a left click on the icon does (a picture, a video, or *Upload files…*). Choosing a mode keeps the
+  menu open. *After a picture ▸* / *After a video ▸* hold the output choice; *History…*, *Settings…* and *Delay ▸* are at
+  the bottom, and *Open captures folder*, *User notes…* and *Help* under *Other ▸*. The menu is about half as long.
+- **Fixed: the first right click on the tray icon showed no menu**; only the second one did.
+- **Keep a copy on this PC: Never** (Settings → Files & history). Captures then stay only in Peergos, or only on the
+  clipboard (pasting the file still works until Peergos Snap restarts). A capture whose upload failed is always kept,
+  so nothing is lost.
+- **History from the card.** The card after a capture has *History*: it opens the history with that capture selected,
+  to label, view, draw on or delete it.
+- **User notes** say "Paste this into an AI session" (User notes module 1.5.1).
+- Help updated for all of the above.
+
 ## 2.3.0 – 2026-10-03
 
 - **Draw on pictures.** Arrows, lines, boxes, ellipses, highlights, a free pen, text labels, numbered steps (1, 2, 3 …)

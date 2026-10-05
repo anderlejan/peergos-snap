@@ -130,11 +130,13 @@
             </TabItem>
             <TabItem Header="Capture">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
-                    <TextBlock Text="A left click on the tray icon" FontWeight="SemiBold"/>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <RadioButton x:Name="KindPicture" Content="takes a picture" GroupName="kind"/>
-                        <RadioButton x:Name="KindVideo" Content="starts / stops a video" GroupName="kind"/>
+                    <TextBlock Text="Mode: what the tray menu shows first and what a left click on the icon does" FontWeight="SemiBold"/>
+                    <StackPanel Margin="0,0,0,8">
+                        <RadioButton x:Name="KindPicture" Content="Pictures – a click takes a picture" GroupName="kind"/>
+                        <RadioButton x:Name="KindVideo" Content="Videos – a click starts / stops a video" GroupName="kind"/>
+                        <RadioButton x:Name="KindFiles" Content="Files – a click asks which files to upload" GroupName="kind"/>
                     </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" Text="The same three are at the bottom of the tray menu (Mode). The hotkeys work in every mode."/>
                     <TextBlock Text="Picture format"/>
                     <ComboBox x:Name="ImageFormat" Width="160" HorizontalAlignment="Left"><ComboBoxItem Content="png"/><ComboBoxItem Content="jpg"/></ComboBox>
                     <TextBlock Text="Video format"/>
@@ -154,6 +156,11 @@
                     <CheckBox x:Name="AskPicture" Content="After a picture, ask what to do (upload, copy, save as, draw on it or discard)"/>
                     <CheckBox x:Name="AnnotateAfter" Content="Draw on every picture before it is shared (arrows, numbers, labels, highlights, blur)"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Off: the tray menu has 'Take picture and draw on it' for a single picture, and the history has Draw for older ones (a copy; the original stays)."/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <CheckBox x:Name="ShutterSoundBox" Content="Play a camera sound when a picture is taken" VerticalAlignment="Center"/>
+                        <Button x:Name="ShutterPlay" Content="▶ Listen" Margin="10,0,0,0" Padding="8,1,8,1" ToolTip="Play the sound now"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" Text="A telephoto lens focusing, then the shutter. It plays through Windows' sound; it never ends up in a picture or a video."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Overlay">
@@ -173,6 +180,8 @@
             <TabItem Header="Output">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Text="After a capture" FontWeight="SemiBold"/>
+                    <RadioButton x:Name="OutUploadMedia" Content="Upload to Peergos and copy the picture / video itself" GroupName="out"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="The default. It is on the clipboard at once and can be pasted while it uploads; its card has Copy link for the secret link, and the history keeps the link. If the upload fails, a card says so."/>
                     <RadioButton x:Name="OutLink" Content="Upload to Peergos and copy the secret link" GroupName="out"/>
                     <RadioButton x:Name="OutMedia" Content="Copy the picture / video itself to the clipboard (no upload)" GroupName="out"/>
                     <CheckBox x:Name="Fallback" Content="If the upload fails, copy the picture / video to the clipboard instead" Margin="0,10,0,6"/>
@@ -182,7 +191,7 @@
             <TabItem Header="Files &amp; history">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <TextBlock Text="Captures on this PC" FontWeight="SemiBold" Margin="0,0,0,4"/>
-                    <TextBlock Text="Local captures folder (every capture is kept here)" Margin="0,0,0,2"/>
+                    <TextBlock Text="Local captures folder" Margin="0,0,0,2"/>
                     <DockPanel>
                         <Button x:Name="CacheOpen" DockPanel.Dock="Right" Content="📂" ToolTip="Open the folder" Margin="6,0,0,0"/>
                         <TextBlock x:Name="CachePath" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
@@ -199,8 +208,9 @@
                     <ComboBox x:Name="KeepCopiesBox" Width="320" HorizontalAlignment="Left">
                         <ComboBoxItem Tag="Always" Content="Always"/>
                         <ComboBoxItem Tag="OnlyIfUploadFails" Content="Only if the upload fails"/>
+                        <ComboBoxItem Tag="Never" Content="Never (only in Peergos or on the clipboard)"/>
                     </ComboBox>
-                    <TextBlock Style="{StaticResource Hint}" Text="'Only if the upload fails' deletes the copy in the captures folder as soon as the capture is in Peergos; the history keeps its link. Captures that are only copied to the clipboard or kept on this PC stay. The mirror folder below is a separate choice."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="'Only if the upload fails' deletes the copy in the captures folder as soon as the capture is in Peergos; the history keeps its link. Captures that are only copied to the clipboard stay. 'Never' lets those go too: they are only on the clipboard (pasting the file works until Peergos Snap restarts) and not in the history. A capture whose upload failed is always kept, so nothing is lost; so is one you keep or save from the question after a recording. The mirror folder below is a separate choice."/>
                     <CheckBox x:Name="DiscardPerm" Content="Discarded captures are deleted at once, never kept (no Recycle Bin)"/>
                     <TextBlock Style="{StaticResource Hint}" Text="On by default: 'Discard' leaves nothing behind – on this PC, in the mirror folder, in Peergos or in the history. Off moves discarded files to the Recycle Bin instead."/>
                     <TextBlock Text="Delete local copies older than (days, 0 = keep forever)"/>
@@ -263,7 +273,7 @@
                     <TextBlock Text="Pause / resume recording"/>
                     <TextBox x:Name="HkPause" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
                     <TextBlock x:Name="HkPauseErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
-                    <TextBlock Text="Switch output (secret link ↔ clipboard)"/>
+                    <TextBlock Text="Switch what happens after a capture (goes round the three choices)"/>
                     <TextBox x:Name="HkOutput" Width="240" HorizontalAlignment="Left" IsReadOnly="True"/>
                     <TextBlock x:Name="HkOutputErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
                 </StackPanel></ScrollViewer>

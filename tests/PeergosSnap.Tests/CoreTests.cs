@@ -357,7 +357,9 @@ public class SettingsTests
         Assert.Equal("png", s.ImageFormat);
         Assert.Equal("mp4", s.VideoFormat);
         Assert.Equal(0, s.CaptureDelayMs);
-        Assert.Equal(OutputMode.SecretLink, s.Output);
+        Assert.Equal(OutputMode.UploadAndMedia, s.Output);
+        Assert.Equal(TrayMode.Picture, s.Mode);
+        Assert.True(s.ShutterSound);
         Assert.Equal(0, s.OverlayDimPercent);
         Assert.True(s.RecordCursor);
         Assert.True(s.InstallUpdatesAutomatically);
@@ -380,7 +382,7 @@ public class SettingsTests
         {
             File.WriteAllText(file, "{ not json");
             var s = Settings.Load(file);
-            Assert.Equal(CaptureKind.Picture, s.DefaultKind);
+            Assert.Equal(TrayMode.Picture, s.Mode);
             Assert.Single(Directory.GetFiles(dir, "settings.json.corrupt-*"));
         }
         finally { Directory.Delete(dir, true); }

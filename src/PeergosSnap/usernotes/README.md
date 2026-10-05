@@ -1,4 +1,4 @@
-# User notes module (1.4.0)
+# User notes module (1.5.1)
 
 A small, reusable "User notes" window: testers keep a list of wanted changes, tick some, and turn them into a
 **prompt** for an AI coding session (Full or Short) or plain **user feedback**. Statuses (open → queued → sent → done)

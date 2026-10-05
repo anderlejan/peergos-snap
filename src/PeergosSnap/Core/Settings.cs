@@ -6,11 +6,16 @@ using System.Text.Json.Serialization;
 namespace PeergosSnap.Core;
 
 public enum CaptureKind { Picture, Video }
-public enum OutputMode { SecretLink, DirectMedia }
+/// <summary>What the tray menu shows first and what a left click on the tray icon does (since 2.4; before, only
+/// Picture or Video).</summary>
+public enum TrayMode { Picture, Video, Files }
+/// <summary>What happens with a finished capture. UploadAndMedia (since 2.4, the default) copies the picture or video
+/// itself and uploads it too.</summary>
+public enum OutputMode { SecretLink, DirectMedia, UploadAndMedia }
 /// <summary>What the Delete key (and the highlighted button) does in the history.</summary>
 public enum HistoryDelete { Both, Local, Peergos, Entry }
-/// <summary>Which captures keep their copy in the local captures folder.</summary>
-public enum LocalCopies { Always, OnlyIfUploadFails }
+/// <summary>Which captures keep their copy in the local captures folder (Never since 2.4).</summary>
+public enum LocalCopies { Always, OnlyIfUploadFails, Never }
 
 /// <summary>All user settings. Saved as JSON; secrets are protected with Windows DPAPI (current user).</summary>
 public sealed class Settings
@@ -31,7 +36,9 @@ public sealed class Settings
     public bool FolderRemovalNoticeShown { get; set; }
 
     // Capture
-    public CaptureKind DefaultKind { get; set; } = CaptureKind.Picture;
+    /// <summary>What the tray menu shows first and what a left click on the icon does. Stored as "DefaultKind", its
+    /// name before 2.4 (when it was only Picture or Video), so older settings keep their choice.</summary>
+    [JsonPropertyName("DefaultKind")] public TrayMode Mode { get; set; } = TrayMode.Picture;
     public string ImageFormat { get; set; } = "png";
     public string VideoFormat { get; set; } = "mp4";
     public int FrameRate { get; set; } = 30;
@@ -42,6 +49,8 @@ public sealed class Settings
     public bool AskBeforePictureUpload { get; set; }
     /// <summary>Countdown before a picture is taken (the screen is then frozen for selecting) or before a video starts. 0 = none.</summary>
     public int DelaySeconds { get; set; }
+    /// <summary>Since 2.4: a camera sound (a telephoto lens focusing, then the shutter) when a picture is taken.</summary>
+    public bool ShutterSound { get; set; } = true;
 
     // Overlay
     public int OverlayDimPercent { get; set; }
@@ -51,7 +60,8 @@ public sealed class Settings
     public int CaptureDelayMs { get; set; }
 
     // Output
-    public OutputMode Output { get; set; } = OutputMode.SecretLink;
+    /// <summary>Since 2.4 the default copies the picture or video itself and uploads it too (Copy link on its card).</summary>
+    public OutputMode Output { get; set; } = OutputMode.UploadAndMedia;
     public bool MirrorEnabled { get; set; }
     public string MirrorFolder { get; set; } = "";
     public bool FallbackToClipboard { get; set; } = true;
@@ -62,7 +72,8 @@ public sealed class Settings
     /// <summary>Set once the flat captures folder of 2.0 was sorted into subfolders.</summary>
     public bool CapturesTidied { get; set; }
 
-    /// <summary>Since 2.2: keep the copy in the captures folder always (default), or only when the upload failed.</summary>
+    /// <summary>Since 2.2: keep the copy in the captures folder always (default), or only when the upload failed; since
+    /// 2.4 also never (only a capture whose upload failed is kept then, as it would be lost otherwise).</summary>
     public LocalCopies KeepLocalCopies { get; set; } = LocalCopies.Always;
     /// <summary>Since 2.2: discarded captures are deleted at once (default) instead of going to the Recycle Bin.</summary>
     public bool DiscardPermanently { get; set; } = true;
@@ -207,6 +218,9 @@ public sealed class Settings
         DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
         DirectLastFriend ??= "";
         AnnotateSize = Math.Clamp(AnnotateSize, 0, 2);
+        if (!Enum.IsDefined(Mode)) Mode = TrayMode.Picture;
+        if (!Enum.IsDefined(Output)) Output = OutputMode.UploadAndMedia;
+        if (!Enum.IsDefined(KeepLocalCopies)) KeepLocalCopies = LocalCopies.Always;
         if (string.IsNullOrWhiteSpace(AnnotateColor) || !AnnotateColor.StartsWith('#')) AnnotateColor = "#E53935";
     }
 }

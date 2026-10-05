@@ -6,7 +6,10 @@ const { UserNotesStore, saveText } = require('./usernotes-store');
 let failed = 0;
 const check = (name, cond) => { if (!cond) failed++; console.log((cond ? 'PASS ' : 'FAIL ') + name); };
 
-check('version 1.5.0', C.MODULE_VERSION === '1.5.0');
+check('version 1.5.1', C.MODULE_VERSION === '1.5.1');
+// The notes may go to any AI: the module's texts never name a particular one (1.5.1).
+check('texts name no particular AI', ['usernotes-ui.js', 'usernotes-core.js'].every(f =>
+  !/\b(Claude|ChatGPT|GPT-\d|Gemini|Copilot|Mistral|Llama)\b/.test(fs.readFileSync(path.join(__dirname, f), 'utf8'))));
 check('font size clamps to the steps', C.clampFontSize(97) === 100 && C.clampFontSize(500) === 160 && C.clampFontSize('x') === 100 && C.clampFontSize(84) === 80);
 check('font size steps and resets', C.stepFontSize(100, 1) === 110 && C.stepFontSize(100, -1) === 90 && C.stepFontSize(160, 1) === 160 && C.stepFontSize(80, -1) === 80 && C.stepFontSize(130, 0) === 100);
 const m = C.migrate({ notes: [{ id: '1', title: 'Old', status: 'prompted', promptedAt: '2026-01-01T00:00:00Z' }, { title: 'X', status: '??' }] });

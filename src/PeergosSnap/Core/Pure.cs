@@ -384,3 +384,43 @@ public static class PeergosFolders
         return false;
     }
 }
+
+/// <summary>What happens with a finished capture: the output modes and the copies kept on this PC.</summary>
+public static class OutputLogic
+{
+    public static bool Uploads(OutputMode m) => m != OutputMode.DirectMedia;
+    public static bool CopiesMedia(OutputMode m) => m != OutputMode.SecretLink;
+
+    /// <summary>Whether the captures folder keeps a fresh capture once it was delivered. A capture whose upload failed
+    /// (or was not possible) is always kept: it would be lost otherwise.</summary>
+    public static bool KeepLocal(LocalCopies policy, bool uploaded, bool uploadFailed) => policy switch
+    {
+        LocalCopies.OnlyIfUploadFails => !uploaded,
+        LocalCopies.Never => uploadFailed,
+        _ => true,
+    };
+
+    /// <summary>The output hotkey goes round the three modes.</summary>
+    public static OutputMode Next(OutputMode m) => m switch
+    {
+        OutputMode.UploadAndMedia => OutputMode.SecretLink,
+        OutputMode.SecretLink => OutputMode.DirectMedia,
+        _ => OutputMode.UploadAndMedia,
+    };
+
+    /// <summary>The mode in a few words, as the tray menu shows it ("After a picture: copy + upload").</summary>
+    public static string Short(OutputMode m) => m switch
+    {
+        OutputMode.SecretLink => "secret link",
+        OutputMode.DirectMedia => "copy only",
+        _ => "copy + upload",
+    };
+
+    /// <summary>The mode in a sentence, for its menu entry and the card after the output hotkey.</summary>
+    public static string Describe(OutputMode m, string what) => m switch
+    {
+        OutputMode.SecretLink => "Upload and copy the secret link",
+        OutputMode.DirectMedia => $"Copy the {what} only (no upload)",
+        _ => $"Upload and copy the {what}",
+    };
+}
