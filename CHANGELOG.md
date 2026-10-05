@@ -26,6 +26,8 @@
   half-runs: it says which files cannot be deleted in Peergos now and offers *Sign in to Peergos…*, *Delete on this PC
   only* (the entries stay for later) or Cancel. A refused delete says why and keeps the entry. The open history looks
   at Peergos again when you sign in or out, and shows *Peergos ?* while that is not known.
+- **Fixed: signing out while direct sharing runs.** Signing out of Peergos (or switching the account) while direct
+  sharing was running could freeze Peergos Snap. It now stops direct sharing and carries on.
 - **Direct window: everything by default.** It opens with *All friends* and *All months*; choosing a friend or month
   narrows the list. *Send to* in the drop area chooses the receiver when several friends are shown.
 - **One main folder in Peergos.** Direct sharing now uses *PeergosSnap/Direct/(friend)/(month)* inside the app's

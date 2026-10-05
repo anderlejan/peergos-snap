@@ -48,16 +48,18 @@ public sealed class DirectService : IDisposable
         if (!s.PeergosConfigured) return "Not signed in to Peergos";
         if (!Uploader.BridgeAvailable) return "The Peergos uploader is missing from the installation";
         Task<bool> wait;
+        Process? old = null;
         lock (gate)
         {
             if (process is { HasExited: false } && ready != null && runningAs == s.Username.Trim().ToLowerInvariant())
                 wait = ready.Task;
             else
             {
-                StopLocked();
+                old = Detach();
                 wait = StartLocked(s);
             }
         }
+        Shutdown(old);
         var done = await Task.WhenAny(wait, Task.Delay(TimeSpan.FromMinutes(3)));
         if (done != wait || !wait.Result)
         {
@@ -210,13 +212,26 @@ public sealed class DirectService : IDisposable
 
     public void Stop()
     {
-        lock (gate) StopLocked();
+        Process? old;
+        lock (gate) old = Detach();
+        Shutdown(old);
     }
 
-    void StopLocked()
+    /// <summary>Takes the bridge out of the session (under <see cref="gate"/>): an exit from here on is expected.</summary>
+    Process? Detach()
     {
         var p = process;
-        process = null; // an exit from here on is expected
+        process = null;
+        return p;
+    }
+
+    /// <summary>
+    /// Ends a detached bridge - never while holding <see cref="gate"/>. Waiting for the exit can run the Exited handler
+    /// (<see cref="OnExit"/>, which takes the gate) on this thread while a pool thread already inside that handler holds
+    /// the process object's lock and waits for the gate: signing out while direct sharing ran froze the app that way.
+    /// </summary>
+    static void Shutdown(Process? p)
+    {
         if (p == null) return;
         try
         {
