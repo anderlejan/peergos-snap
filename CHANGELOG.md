@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.0 – 2026-10-05
+## 2.4.0 – 2026-10-06
 
 - **After a capture: copy it and upload it (the new default).** The picture or video is on the clipboard at once and is
   uploaded to Peergos at the same time; its card has *Copy link* for the secret link, and the history keeps the link.

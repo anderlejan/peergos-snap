@@ -58,6 +58,9 @@ public sealed class TrayController : IDisposable
         // The menu is built when it opens. WinForms decides before this event to cancel opening a menu that has no
         // items, so the very first right click showed nothing: opening is allowed again once it is built.
         tray.ContextMenuStrip.Opening += (_, e) => { menuOpenedAt = WinForms.Cursor.Position; BuildMenu(); e.Cancel = false; };
+        // A mode entry keeps the menu open. The menu's ItemClicked comes before it closes; the entry's own Click
+        // comes too late to stop that.
+        tray.ContextMenuStrip.ItemClicked += (_, e) => { if (e.ClickedItem?.Tag is TrayMode) keepMenuOpen = true; };
         tray.ContextMenuStrip.Closing += (_, e) =>
         {
             if (keepMenuOpen && e.CloseReason == WinForms.ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
@@ -364,12 +367,16 @@ public sealed class TrayController : IDisposable
         // The modes: what the top shows and what a left click on the icon does. Choosing one keeps the menu open.
         m.Items.Add(new WinForms.ToolStripSeparator());
         m.Items.Add(new WinForms.ToolStripLabel("Mode"));
-        void AddMode(string text, TrayMode which, string tip) => m.Items.Add(MenuEntry("    " + text, () =>
+        void AddMode(string text, TrayMode which, string tip)
         {
-            keepMenuOpen = true;
-            if (Settings.Mode != which) UpdateSettings(s => s.Mode = which);
-            System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(RebuildOpenMenu));
-        }, check: mode == which, tip: tip));
+            var item = MenuEntry("    " + text, () =>
+            {
+                if (Settings.Mode != which) UpdateSettings(s => s.Mode = which);
+                System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(RebuildOpenMenu));
+            }, check: mode == which, tip: tip);
+            item.Tag = which; // keeps the menu open (ItemClicked above)
+            m.Items.Add(item);
+        }
         AddMode("Pictures", TrayMode.Picture, "The menu shows the picture actions; a left click on the icon takes a picture.");
         AddMode("Videos", TrayMode.Video, "The menu shows the video actions; a left click on the icon starts or stops a video.");
         AddMode("Files", TrayMode.Files, "The menu shows the upload actions; a left click on the icon asks which files to upload.");
@@ -1161,7 +1168,7 @@ public sealed class TrayController : IDisposable
             if (File.Exists(file)) File.Delete(file);
             record.File = null;
             history.Save();
-            Log.Info("local copy not kept (uploaded): " + file);
+            Log.Info("local copy not kept (Settings → Files & history): " + file);
         }
         catch (Exception e) { Log.Error("drop local copy " + file, e); }
     }
