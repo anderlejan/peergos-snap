@@ -15,8 +15,12 @@ public sealed class ShareConfirmWindow : Window
     public string? Friend { get; private set; }
     public bool OpenDirect { get; private set; }
     public bool OpenSettings { get; private set; }
+    /// <summary>Sending pictures: the "draw first" box was offered (since 2.6), and whether it was ticked.</summary>
+    public bool CanDraw { get; private set; }
+    public bool DrawFirst { get; private set; }
 
-    public ShareConfirmWindow(IReadOnlyList<string> paths, bool send, IReadOnlyList<string> friends, string lastFriend, bool signedIn)
+    public ShareConfirmWindow(IReadOnlyList<string> paths, bool send, IReadOnlyList<string> friends, string lastFriend, bool signedIn,
+        bool drawFirst = false)
     {
         Title = send ? "Peergos Snap – send to a friend" : "Peergos Snap – upload to Peergos";
         SizeToContent = SizeToContent.WidthAndHeight;
@@ -47,6 +51,7 @@ public sealed class ShareConfirmWindow : Window
         var note = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Fg3");
         ComboBox? to = null;
+        CheckBox? draw = null;
         var extra = new Button { Padding = new Thickness(14, 5, 14, 5), Margin = new Thickness(0, 0, 8, 0), Visibility = Visibility.Collapsed };
 
         if (send)
@@ -71,6 +76,19 @@ public sealed class ShareConfirmWindow : Window
                 root.Children.Add(row);
                 go.Content = $"Send to {to.SelectedItem}";
                 to.SelectionChanged += (_, _) => go.Content = $"Send to {to.SelectedItem}";
+                // Pictures can get arrows, numbers or a note first (as "Draw first" in the direct window).
+                int pictures = files.Count(f => FileKinds.Of(f) == FileKind.Picture);
+                if (pictures > 0)
+                {
+                    CanDraw = true;
+                    draw = new CheckBox
+                    {
+                        Content = pictures == 1 ? "Draw on the picture first" : $"Draw on the {pictures} pictures first (one after the other)",
+                        IsChecked = drawFirst, Margin = new Thickness(0, 0, 0, 10),
+                        ToolTip = "The drawing editor opens with the picture: add arrows, numbers or a note – Send to … then sends the drawn copy",
+                    };
+                    root.Children.Add(draw);
+                }
                 note.Text = "Your friend sees it within seconds and keeps their own copy." + (folders.Count > 0 ? " A folder travels as one ZIP file; your friend opens it as a folder with one click." : "");
             }
         }
@@ -93,6 +111,7 @@ public sealed class ShareConfirmWindow : Window
         go.Click += (_, _) =>
         {
             Friend = to?.SelectedItem as string;
+            DrawFirst = draw?.IsChecked == true;
             Confirmed = true;
             Close();
         };

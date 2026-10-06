@@ -27,6 +27,9 @@ public static class AppPaths
     public static string WebViewDir => Path.Combine(LocalDir, "WebView2");
     /// <summary>Pictures shared directly with friends, as received or sent (friend\month\name).</summary>
     public static string DirectDir => Path.Combine(LocalDir, "Direct");
+    /// <summary>Since 2.6: files looked at in the direct window while "Also keep received files on this PC" is off –
+    /// temporary, emptied when the window closes and at every start (it is in the work folder).</summary>
+    public static string DirectViewDir => Path.Combine(WorkDir, "direct-view");
     public static string DirectStateFile => Path.Combine(DataDir, "direct.json");
 
     public static string AppDir => AppContext.BaseDirectory;

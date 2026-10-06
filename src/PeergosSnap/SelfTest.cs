@@ -42,6 +42,14 @@ public static class SelfTest
             catch (Exception e) { Check("shutter sound bundled", false, e.Message); }
             Check("help bundled", File.Exists(Path.Combine(AppPaths.AppDir, "help", "index.html")) &&
                                   File.Exists(Path.Combine(AppPaths.AppDir, "help", "help.js")));
+            // Windows' packaging API checks the menu package's description against its rules while writing it.
+            if (Services.ExplorerPackage.Supported)
+            {
+                var msix = Path.Combine(Path.GetTempPath(), $"psnap-selftest-{Guid.NewGuid():N}.msix");
+                try { Services.ExplorerPackage.Make(msix); Check("explorer menu package", new FileInfo(msix).Length > 1000, $"{new FileInfo(msix).Length} bytes"); }
+                catch (Exception e) { Check("explorer menu package", false, e.Message); }
+                finally { try { File.Delete(msix); } catch { } }
+            }
 
             // Picture
             var screen = Native.MonitorAt(0, 0);

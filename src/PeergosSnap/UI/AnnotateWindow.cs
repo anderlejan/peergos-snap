@@ -166,6 +166,19 @@ public sealed class AnnotateWindow : Window
         UpdateButtons();
     }
 
+    /// <summary>Whether the file opens as a picture in the editor – one with a picture's name may be something else
+    /// (a wrong extension); then it is used as it is instead.</summary>
+    public static bool CanOpen(string file)
+    {
+        try { return LoadPicture(file).PixelWidth > 0; }
+        catch (Exception e) when (e is NotSupportedException or FileFormatException or IOException or UnauthorizedAccessException
+                                      or ArgumentException or InvalidOperationException or System.Runtime.InteropServices.COMException or OverflowException)
+        {
+            Log.Info($"not a picture the editor can open: {file} ({e.GetType().Name})");
+            return false;
+        }
+    }
+
     /// <summary>Read through a stream, not a URI: WPF keeps pictures loaded from a URI in a cache, and the file is
     /// about to change.</summary>
     static BitmapSource LoadPicture(string file)

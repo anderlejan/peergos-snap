@@ -52,7 +52,9 @@ public static class DirectLogic
         return n.Length is > 0 and <= 64 && n.All(c => c is >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_') ? n : null;
     }
 
-    public static List<DirectItem> ParseItems(JsonElement items)
+    /// <summary>The bridge's items. Their small pictures (Peergos keeps one with a picture or video, since 2.6) go into
+    /// <paramref name="thumbs"/> by path – not into the item, which is compared often.</summary>
+    public static List<DirectItem> ParseItems(JsonElement items, IDictionary<string, string>? thumbs = null)
     {
         var list = new List<DirectItem>();
         if (items.ValueKind != JsonValueKind.Array) return list;
@@ -63,11 +65,41 @@ public static class DirectLogic
             var stars = i.TryGetProperty("stars", out var st) && st.ValueKind == JsonValueKind.Array
                 ? st.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
                 : [];
-            list.Add(new DirectItem(S("name"), S("path"), S("from"), N("size"),
+            var item = new DirectItem(S("name"), S("path"), S("from"), N("size"),
                 DateTimeOffset.FromUnixTimeMilliseconds(N("modified")).LocalDateTime, S("label"),
-                i.TryGetProperty("pinned", out var p) && p.ValueKind == JsonValueKind.True, stars));
+                i.TryGetProperty("pinned", out var p) && p.ValueKind == JsonValueKind.True, stars);
+            list.Add(item);
+            if (thumbs != null && S("thumb") is { Length: > 0 } t && ThumbBytes(t) != null) thumbs[item.Path] = t;
         }
         return list;
+    }
+
+    /// <summary>The picture inside a thumbnail "data:image/jpeg;base64,…" (also webp or png), or null.</summary>
+    public static byte[]? ThumbBytes(string? dataUrl)
+    {
+        if (string.IsNullOrEmpty(dataUrl) || !dataUrl.StartsWith("data:image/", StringComparison.Ordinal)) return null;
+        int comma = dataUrl.IndexOf(";base64,", StringComparison.Ordinal);
+        if (comma < 0) return null;
+        try
+        {
+            var b = Convert.FromBase64String(dataUrl[(comma + 8)..]);
+            return b.Length > 0 ? b : null;
+        }
+        catch (FormatException) { return null; }
+    }
+
+    /// <summary>The friend the tray menu acts for: the one chosen (Other → Friend) while still a friend, else the only
+    /// friend; null when there are several and none is chosen (each action then asks whom).</summary>
+    public static string? ChosenFriend(IReadOnlyList<string> friends, string? chosen) =>
+        friends.FirstOrDefault(f => string.Equals(f, chosen, StringComparison.OrdinalIgnoreCase)) ?? (friends.Count == 1 ? friends[0] : null);
+
+    /// <summary>What arrived, in words: "a picture", "a video", "a folder" (a ZIP file), "a file", "3 pictures",
+    /// "2 videos", "4 files".</summary>
+    public static string What(IReadOnlyList<DirectItem> items)
+    {
+        if (items.Count == 1)
+            return items[0].IsImage ? "a picture" : items[0].IsVideo ? "a video" : items[0].IsArchive ? "a folder" : "a file";
+        return $"{items.Count} " + (items.All(i => i.IsImage) ? "pictures" : items.All(i => i.IsVideo) ? "videos" : "files");
     }
 
     public static DirectFriends ParseFriends(JsonElement r)

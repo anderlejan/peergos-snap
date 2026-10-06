@@ -15,8 +15,15 @@ public sealed class TrayController : IDisposable
     public Settings Settings { get; private set; }
     readonly WinForms.NotifyIcon tray = new();
     readonly HotkeyManager hotkeys = new();
-    readonly Icon iconIdle, iconRec, iconPaused, iconBusy;
+    readonly Icon iconIdle, iconRec, iconPaused, iconBusy, iconNew;
     readonly DispatcherTimer watch = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    /// <summary>What a friend sent that was not looked at yet: the icon shows a dot (flashing, Settings → Direct) and its
+    /// tooltip says what came, until the direct window shows it.</summary>
+    (string Friend, string What, string Path, DateTime At)? unseen;
+    readonly DispatcherTimer flash = new() { Interval = TimeSpan.FromMilliseconds(600) };
+    bool flashOn;
+    /// <summary>The friend a video is recorded for (Direct to a friend in Videos): it goes to them when it stops.</summary>
+    string? recordingFor;
     Recorder? recorder;
     RecordingControls? controls;
     RegionFrame? frame;
@@ -51,6 +58,8 @@ public sealed class TrayController : IDisposable
         iconRec = MakeIcon(Color.FromArgb(43, 138, 110), Color.Red);
         iconPaused = MakeIcon(Color.FromArgb(43, 138, 110), Color.Orange);
         iconBusy = MakeIcon(Color.FromArgb(40, 110, 200), null);
+        iconNew = MakeIcon(Color.FromArgb(43, 138, 110), Color.FromArgb(255, 179, 0));
+        flash.Tick += (_, _) => { flashOn = !flashOn; ShowIdleIcon(); };
 
         tray.Icon = iconIdle;
         tray.Visible = true;
@@ -299,13 +308,28 @@ public sealed class TrayController : IDisposable
 
     bool? appliedExplorerMenu;
 
+    /// <summary>The menu package was added or removed (Settings → General): the classic entries follow.</summary>
+    public void RefreshExplorerMenu()
+    {
+        appliedExplorerMenu = null;
+        ApplySettings();
+    }
+
     void ApplySettings()
     {
         ToastWindow.SuccessSeconds = Settings.ToastSeconds;
-        if (appliedExplorerMenu != Settings.ExplorerMenu)
+        if (unseen != null)
         {
-            appliedExplorerMenu = Settings.ExplorerMenu;
-            try { ExplorerMenu.Sync(Settings.ExplorerMenu, Environment.ProcessPath ?? Path.Combine(AppPaths.AppDir, "PeergosSnap.exe")); }
+            if (Settings.DirectFlash) flash.Start(); else flash.Stop();
+            ShowIdleIcon();
+        }
+        // On Windows 11 with the menu package the packaged entry (at the top) is the menu: then no classic entries, or
+        // Windows would list Peergos Snap twice under "Show more options".
+        bool classic = Settings.ExplorerMenu && !(Settings.ExplorerMenuTop && ExplorerPackage.Registered());
+        if (appliedExplorerMenu != classic)
+        {
+            appliedExplorerMenu = classic;
+            try { ExplorerMenu.Sync(classic, Environment.ProcessPath ?? Path.Combine(AppPaths.AppDir, "PeergosSnap.exe")); }
             catch (Exception e)
             {
                 Log.Error("explorer menu", e);
@@ -343,11 +367,17 @@ public sealed class TrayController : IDisposable
         var mode = Settings.Mode;
         var delaySuffix = Settings.DelaySeconds > 0 ? $" (after {Settings.DelaySeconds} s)" : "";
 
+        // What a friend sent and nobody looked at yet comes first.
+        if (unseen is { } u)
+        {
+            m.Items.Add(MenuEntry($"New from {u.Friend}: {u.What} – show", ShowUnseen, tip: "Opens the direct window at it"));
+            m.Items.Add(new WinForms.ToolStripSeparator());
+        }
         // Top: what to do now – a countdown or a recording first, then the actions of the mode chosen below.
         if (countdownCts != null) m.Items.Add(MenuEntry("Cancel the countdown", () => countdownCts?.Cancel()));
         if (rec)
         {
-            m.Items.Add(MenuEntry("Stop recording", () => _ = StopRecording(), Settings.HotkeyVideo));
+            m.Items.Add(MenuEntry("Stop recording" + (recordingFor != null ? $" (it goes to {recordingFor})" : ""), () => _ = StopRecording(), Settings.HotkeyVideo));
             m.Items.Add(MenuEntry(recorder!.Paused ? "Resume recording" : "Pause recording", () => _ = TogglePause(), Settings.HotkeyPause));
             m.Items.Add(MenuEntry("Cancel recording", () => _ = CancelRecording()));
             if (mode != TrayMode.Video) m.Items.Add(new WinForms.ToolStripSeparator());
@@ -358,21 +388,24 @@ public sealed class TrayController : IDisposable
                 if (!rec) m.Items.Add(MenuEntry("Record video" + delaySuffix, () => _ = ToggleRecording(), Settings.HotkeyVideo));
                 m.Items.Add(MenuEntry("Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
                 m.Items.Add(MenuEntry("Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
-                m.Items.Add(DirectMenu(rec));
+                m.Items.Add(DirectMenu(rec, mode));
                 m.Items.Add(OutputMenu("video"));
                 break;
             case TrayMode.Files:
                 m.Items.Add(MenuEntry("Upload files…", () => _ = ChooseAndUploadFiles(), enabled: uploads == 0,
                     tip: "Each file gets its own secret link; the links are copied."));
+                m.Items.Add(DirectMenu(rec, mode));
+                break;
+            case TrayMode.Folders:
                 m.Items.Add(MenuEntry("Upload a folder…", () => _ = ChooseAndUploadFolder(), enabled: uploads == 0,
                     tip: "The folder and its subfolders get one secret link, which is copied."));
-                m.Items.Add(DirectMenu(rec));
+                m.Items.Add(DirectMenu(rec, mode));
                 break;
             default:
                 m.Items.Add(MenuEntry("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
                 if (!Settings.AnnotateAfterPicture)
                     m.Items.Add(MenuEntry("Take picture and draw on it" + delaySuffix, () => _ = CapturePicture(annotate: true), enabled: !rec));
-                m.Items.Add(DirectMenu(rec));
+                m.Items.Add(DirectMenu(rec, mode));
                 m.Items.Add(OutputMenu("picture"));
                 break;
         }
@@ -392,20 +425,24 @@ public sealed class TrayController : IDisposable
         }
         AddMode("Pictures", TrayMode.Picture, "The menu shows the picture actions; a left click on the icon takes a picture.");
         AddMode("Videos", TrayMode.Video, "The menu shows the video actions; a left click on the icon starts or stops a video.");
-        AddMode("Files", TrayMode.Files, "The menu shows the upload actions; a left click on the icon asks which files to upload.");
+        AddMode("Files", TrayMode.Files, "The menu shows the file actions; a left click on the icon asks which files to upload.");
+        AddMode("Folders", TrayMode.Folders, "The menu shows the folder actions; a left click on the icon asks which folder to upload.");
 
         // Bottom: the windows and settings.
         m.Items.Add(new WinForms.ToolStripSeparator());
         m.Items.Add(MenuEntry("History…", () => ShowHistory()));
         if (lastLink != null) m.Items.Add(MenuEntry("Copy last link", () => ClipboardService.SetText(lastLink)));
         m.Items.Add(MenuEntry("Settings…", ShowSettings));
-        if (mode != TrayMode.Files) m.Items.Add(DelayMenu());
-        var other = new List<WinForms.ToolStripItem> { MenuEntry("Open captures folder", () => Open(AppPaths.CacheDir)) };
+        if (TrayMenuLogic.ShowsDelay(mode)) m.Items.Add(DelayMenu());
+        var other = new List<WinForms.ToolStripItem> { FriendMenu(), MenuEntry("Open captures folder", () => Open(AppPaths.CacheDir)) };
         if (Settings.ShowUserNotes) other.Add(MenuEntry("User notes…", ShowNotes));
         other.Add(MenuEntry("Help", () => ShowHelp("")));
         m.Items.Add(SubMenu("Other", other.ToArray()));
         m.Items.Add(new WinForms.ToolStripSeparator());
         m.Items.Add(MenuEntry("Quit", () => System.Windows.Application.Current.Shutdown()));
+        m.Items.Add(new WinForms.ToolStripSeparator());
+        // Clicking it closes the menu like any entry – without doing anything.
+        m.Items.Add(MenuEntry("Cancel", () => { }, tip: "Closes this menu (Esc or a click elsewhere does the same)"));
     }
 
     static WinForms.ToolStripMenuItem MenuEntry(string text, Action a, string? keys = null, bool check = false, bool enabled = true, string? tip = null)
@@ -434,31 +471,72 @@ public sealed class TrayController : IDisposable
         return menu;
     }
 
-    /// <summary>Direct to a friend ▸ (in every mode): a picture, files or a folder straight to a friend's screen, the
-    /// "draw first" switch, and the direct window. With several friends each has a submenu.</summary>
-    WinForms.ToolStripMenuItem DirectMenu(bool rec)
+    /// <summary>Direct to a friend ▸ : the one action that fits the mode – a picture, a video, files or a folder straight
+    /// to a friend's screen – for the friend chosen in Other → Friend (or the only one); with several friends and none
+    /// chosen, a submenu of friends. In Pictures also the "draw first" switch; always the direct window.</summary>
+    WinForms.ToolStripMenuItem DirectMenu(bool rec, TrayMode mode)
     {
         var items = new List<WinForms.ToolStripItem>();
         var friends = direct.Friends;
-        var draw = Settings.DirectDrawFirst ? " (draw first)" : "";
-        foreach (var f in friends)
+        var chosen = DirectLogic.ChosenFriend(friends, Settings.DirectFriend);
+        bool enabled = !rec || TrayMenuLogic.DirectAllowedWhileRecording(mode);
+        string? tip = mode switch
         {
-            var friend = f;
-            bool one = friends.Count == 1;
-            var picture = MenuEntry((one ? $"Take a picture for {friend}" : "Take a picture") + draw,
-                () => _ = CapturePicture(toFriend: friend, annotate: Settings.DirectDrawFirst), enabled: !rec);
-            var files = MenuEntry(one ? $"Send files to {friend}…" : "Send files…", () => _ = ChooseAndSend(friend, folder: false));
-            var folder = MenuEntry(one ? $"Send a folder to {friend}…" : "Send a folder…", () => _ = ChooseAndSend(friend, folder: true),
-                tip: "A folder travels as one ZIP file; your friend opens it as a folder with one click.");
-            if (one) items.AddRange([picture, files, folder]);
-            else items.Add(SubMenu(friend, picture, files, folder));
+            TrayMode.Video => "Record as usual; when you stop, the video goes straight to them.",
+            TrayMode.Folders => "A folder travels as one ZIP file; your friend opens it as a folder with one click.",
+            _ => null,
+        };
+        void Run(string who)
+        {
+            switch (mode)
+            {
+                case TrayMode.Video: _ = StartRecording(toFriend: who); break;
+                case TrayMode.Files: _ = ChooseAndSend(who, folder: false); break;
+                case TrayMode.Folders: _ = ChooseAndSend(who, folder: true); break;
+                default: _ = CapturePicture(toFriend: who, annotate: Settings.DirectDrawFirst); break;
+            }
         }
-        if (items.Count > 0) items.Add(new WinForms.ToolStripSeparator());
-        if (friends.Count > 0)
+        if (chosen != null)
+            items.Add(MenuEntry(TrayMenuLogic.DirectEntry(mode, chosen, Settings.DirectDrawFirst), () => Run(chosen), enabled: enabled, tip: tip));
+        else if (friends.Count > 0)
+        {
+            var (verb, after) = TrayMenuLogic.DirectAction(mode);
+            var each = friends.Select(f => (WinForms.ToolStripItem)MenuEntry(f + after, () => Run(f), enabled: enabled)).ToArray();
+            var sub = SubMenu(verb, each);
+            sub.ToolTipText = (tip != null ? tip + " " : "") + "Choose a friend in Other → Friend to skip this list.";
+            items.Add(sub);
+        }
+        if (TrayMenuLogic.ShowsDrawSwitch(mode, friends.Count))
+        {
+            items.Add(new WinForms.ToolStripSeparator());
             items.Add(MenuEntry("Draw on pictures before sending them", () => UpdateSettings(s => s.DirectDrawFirst = !s.DirectDrawFirst),
                 check: Settings.DirectDrawFirst, tip: "The drawing editor opens with the picture; Done sends it."));
+        }
+        if (items.Count > 0) items.Add(new WinForms.ToolStripSeparator());
         items.Add(MenuEntry(friends.Count == 0 ? "Add a friend…" : "Open the direct window", () => direct.ShowWindow(null, null)));
         return SubMenu("Direct to a friend", items.ToArray());
+    }
+
+    /// <summary>Other → Friend ▸ : whom Direct to a friend acts for – then each action is one click, without a list of
+    /// friends.</summary>
+    WinForms.ToolStripMenuItem FriendMenu()
+    {
+        var friends = direct.Friends;
+        var chosen = DirectLogic.ChosenFriend(friends, Settings.DirectFriend);
+        var items = new List<WinForms.ToolStripItem>();
+        foreach (var f in friends)
+        {
+            var who = f;
+            items.Add(MenuEntry(who, () => UpdateSettings(s => s.DirectFriend = who), check: string.Equals(who, chosen, StringComparison.OrdinalIgnoreCase)));
+        }
+        if (friends.Count > 1)
+            items.Add(MenuEntry("Ask each time", () => UpdateSettings(s => s.DirectFriend = ""), check: chosen == null,
+                tip: "Direct to a friend shows the list of friends for each action"));
+        if (items.Count > 0) items.Add(new WinForms.ToolStripSeparator());
+        items.Add(MenuEntry("Add a friend…", () => direct.ShowWindow(null, null, friendsPanel: true)));
+        var menu = SubMenu(chosen != null ? $"Friend: {chosen}" : "Friend", items.ToArray());
+        menu.ToolTipText = "Whom Direct to a friend sends to";
+        return menu;
     }
 
     async Task ChooseAndSend(string friend, bool folder)
@@ -509,12 +587,12 @@ public sealed class TrayController : IDisposable
             var sent = await direct.SendAsync(friend, all, t => Notify(ToastKind.Busy, t, ""));
             UpdateSettings(s => s.DirectLastFriend = friend);
             Notify(ToastKind.Ok, $"Sent to {friend}", (sent.Count == 1 ? sent[0].Name : $"{sent.Count} files") + $" – {friend} sees {(sent.Count == 1 ? "it" : "them")} now.",
-                extra: ("Open", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)));
+                extra: ("Show", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)));
         }
         catch (Exception e) when (e is DirectException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
             Log.Error("send to " + friend, e);
-            Notify(ToastKind.Error, $"Not sent to {friend}", e.Message);
+            Notify(ToastKind.Error, $"Not sent to {friend}", e.Message, extra: ("Try again", () => _ = SendPathsAsync(friend, paths)));
         }
         finally
         {
@@ -522,7 +600,7 @@ public sealed class TrayController : IDisposable
                 try { File.Delete(z); }
                 catch { }
             uploads--;
-            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : IdleIcon;
             UpdateTip();
         }
     }
@@ -556,14 +634,36 @@ public sealed class TrayController : IDisposable
     async Task ConfirmShare(List<string> paths, bool send)
     {
         Log.Info($"explorer: {(send ? "send" : "upload")} {paths.Count} item(s)");
-        var w = new ShareConfirmWindow(paths, send, direct.Friends, Settings.DirectLastFriend, Settings.PeergosConfigured);
+        var w = new ShareConfirmWindow(paths, send, direct.Friends, DirectLogic.ChosenFriend(direct.Friends, Settings.DirectFriend) ?? Settings.DirectLastFriend,
+            Settings.PeergosConfigured, Settings.DirectDrawFirst);
         w.ShowDialog();
         if (w.OpenDirect) { direct.ShowWindow(null, null); return; }
         if (w.OpenSettings) { ShowSettings(0); return; }
         if (!w.Confirmed) { Log.Info("explorer: cancelled"); return; }
         if (send && w.Friend is { } friend)
         {
-            await SendPathsAsync(friend, paths);
+            var rest = paths.ToList();
+            if (w.CanDraw && w.DrawFirst != Settings.DirectDrawFirst) UpdateSettings(s => s.DirectDrawFirst = w.DrawFirst);
+            if (w.DrawFirst)
+            {
+                // Each picture opens in the drawing editor first ("Send to …" sends the drawn copy); a file that only
+                // looks like a picture (a wrong extension) goes as it is.
+                var notPictures = new List<string>();
+                foreach (var p in paths.Where(p => File.Exists(p) && FileKinds.Of(p) == FileKind.Picture).ToList())
+                {
+                    if (!AnnotateWindow.CanOpen(p)) { notPictures.Add(Path.GetFileName(p)); continue; }
+                    rest.Remove(p);
+                    try { await DrawAndSendAsync(p, friend, Path.GetFileNameWithoutExtension(p)); }
+                    catch (Exception e)
+                    {
+                        Log.Error("explorer: draw " + p, e);
+                        Notify(ToastKind.Warn, "The drawing editor failed", $"{e.Message}\n{Path.GetFileName(p)} was not sent.");
+                    }
+                }
+                if (notPictures.Count > 0)
+                    Notify(ToastKind.Warn, "Not drawn on", $"{string.Join(", ", notPictures)} could not be opened as a picture – sent as it is.");
+            }
+            if (rest.Count > 0) await SendPathsAsync(friend, rest);
             return;
         }
         var files = paths.Where(File.Exists).ToList();
@@ -694,8 +794,10 @@ public sealed class TrayController : IDisposable
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; }
         if (recorder != null) await StopRecording();
+        else if (unseen != null) ShowUnseen(); // the dot on the icon: a click shows what came
         else if (Settings.Mode == TrayMode.Video) await StartRecording();
         else if (Settings.Mode == TrayMode.Files) await ChooseAndUploadFiles();
+        else if (Settings.Mode == TrayMode.Folders) await ChooseAndUploadFolder();
         else await CapturePicture();
     }
 
@@ -906,7 +1008,7 @@ public sealed class TrayController : IDisposable
         var list = files.Where(File.Exists).Select(f => (f, Path.GetFileName(f))).ToList();
         if (list.Count == 0) return;
         var what = list.Count == 1 ? Path.GetFileName(list[0].f) : $"{list.Count} files";
-        var put = await PutAsync(list, null, what);
+        var put = await PutAsync(list, null, what, () => UploadFilesAsync(files));
         if (put == null) return;
         var links = new List<string>();
         foreach (var f in put.Files)
@@ -936,7 +1038,7 @@ public sealed class TrayController : IDisposable
             return;
         var name = Path.GetFileName(root);
         var list = files.Select(f => (f, Path.GetRelativePath(root, f))).ToList();
-        var put = await PutAsync(list, name.Length > 0 ? name : "Folder", $"the folder {name}");
+        var put = await PutAsync(list, name.Length > 0 ? name : "Folder", $"the folder {name}", () => UploadFolderAsync(folder));
         if (put == null) return;
         if (put.Folder != null)
             history.Add(new HistoryRecord
@@ -947,7 +1049,7 @@ public sealed class TrayController : IDisposable
         UploadDone(put, put.FolderLink != null ? [put.FolderLink] : [], $"Folder {name}", files.Count, null);
     }
 
-    async Task<PutResult?> PutAsync(List<(string, string)> files, string? folderName, string what)
+    async Task<PutResult?> PutAsync(List<(string, string)> files, string? folderName, string what, Func<Task> again)
     {
         uploads++;
         tray.Icon = recorder == null ? iconBusy : tray.Icon;
@@ -966,7 +1068,7 @@ public sealed class TrayController : IDisposable
                 var why = r.Error ?? put.Failed.FirstOrDefault() ?? "Unknown error";
                 (string, Action)? signIn = null;
                 if (Uploader.NeedsSignIn(why)) { UpdateSettings(s => s.Session = ""); signIn = ("Sign in", ShowSettings); }
-                Notify(ToastKind.Error, "Upload failed – nothing was uploaded", why, extra: signIn);
+                Notify(ToastKind.Error, "Upload failed – nothing was uploaded", why, extra: signIn ?? ("Try again", () => _ = again()));
                 return null;
             }
             return put;
@@ -974,13 +1076,13 @@ public sealed class TrayController : IDisposable
         catch (Exception e)
         {
             Log.Error("upload files", e);
-            Notify(ToastKind.Error, "Upload failed", e.Message);
+            Notify(ToastKind.Error, "Upload failed", e.Message, extra: ("Try again", () => _ = again()));
             return null;
         }
         finally
         {
             uploads--;
-            if (recorder == null) tray.Icon = uploads > 0 ? iconBusy : iconIdle;
+            if (recorder == null) tray.Icon = uploads > 0 ? iconBusy : IdleIcon;
             UpdateTip();
         }
     }
@@ -1037,7 +1139,7 @@ public sealed class TrayController : IDisposable
         {
             card.Close();
             countdownCts = null;
-            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : IdleIcon;
             UpdateTip();
         }
     }
@@ -1068,7 +1170,9 @@ public sealed class TrayController : IDisposable
         else await StartRecording();
     }
 
-    public async Task StartRecording()
+    /// <summary>Records a video; with <paramref name="toFriend"/> (Direct to a friend in Videos) it goes straight to
+    /// that friend when it stops.</summary>
+    public async Task StartRecording(string? toFriend = null)
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; }
         if (recorder != null || stopping) return;
@@ -1094,6 +1198,7 @@ public sealed class TrayController : IDisposable
         {
             recorder = new Recorder(rect, Settings.Clone());
             recorder.Start();
+            recordingFor = toFriend;
         }
         catch (Exception e)
         {
@@ -1146,13 +1251,14 @@ public sealed class TrayController : IDisposable
         watch.Stop();
         controls?.Close(); controls = null;
         frame?.Close(); frame = null;
-        tray.Icon = uploads > 0 ? iconBusy : iconIdle;
+        tray.Icon = uploads > 0 ? iconBusy : IdleIcon;
     }
 
     public async Task CancelRecording()
     {
         if (recorder == null || stopping) return;
         stopping = true;
+        recordingFor = null;
         try
         {
             CloseRecordingUi();
@@ -1166,6 +1272,8 @@ public sealed class TrayController : IDisposable
         if (recorder == null || stopping) return;
         stopping = true;
         var rec = recorder;
+        var forFriend = recordingFor;
+        recordingFor = null;
         string? cached = null;
         try
         {
@@ -1188,6 +1296,13 @@ public sealed class TrayController : IDisposable
             UpdateTip();
 
             Log.Info("video sound: " + rec.SoundNote);
+            if (forFriend != null)
+            {
+                // Recorded for a friend: it goes to them at once, like a picture taken for them.
+                Log.Info($"video {cached} -> {forFriend}");
+                await SendDirect(forFriend, cached, record);
+                return;
+            }
             var dlg = new FinishRecordingDialog(cached, rec.Elapsed, Settings, soundNote: Settings.RecordSound ? rec.SoundNote : "");
             dlg.ShowDialog();
             Log.Info("video " + cached + " -> " + dlg.Choice);
@@ -1295,33 +1410,37 @@ public sealed class TrayController : IDisposable
         }
     }
 
-    /// <summary>A picture taken for a friend goes straight into the folder shared with them.</summary>
+    /// <summary>A picture taken (or a video recorded) for a friend goes straight into the folder shared with them.</summary>
     async Task SendDirect(string friend, string file, HistoryRecord record)
     {
+        bool video = CaptureFiles.IsVideo(file);
+        string what = video ? "video" : "picture";
         uploads++;
         tray.Icon = iconBusy;
-        Notify(ToastKind.Busy, $"Sending the picture to {friend}…", Path.GetFileName(file), null, file);
+        Notify(ToastKind.Busy, $"Sending the {what} to {friend}…", Path.GetFileName(file), null, file);
         try
         {
-            await direct.SendAsync(friend, [file]);
+            var sent = await direct.SendAsync(friend, [file]);
             record.Label = record.Label.Length > 0 ? record.Label : $"Sent to {friend}";
             history.Save();
-            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file, extra: ("Open", () => direct.ShowWindow(friend, null)),
-                history: () => ShowHistory(record.Id));
+            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file,
+                extra: ("Show", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)), history: () => ShowHistory(record.Id));
             if (!OutputLogic.KeepLocal(Settings.KeepLocalCopies, uploaded: true, uploadFailed: false)) DropLocalCopy(record, file);
         }
         catch (DirectException e)
         {
-            if (Settings.FallbackToClipboard && TryClipboard(file, "Picture"))
-                Notify(ToastKind.Warn, $"Not sent to {friend} – the picture is on the clipboard instead", e.Message + "\nA copy is kept in the captures folder.", null, file,
-                    history: () => ShowHistory(record.Id));
+            (string, Action) again = ("Try again", () => _ = SendDirect(friend, file, record));
+            if (Settings.FallbackToClipboard && TryClipboard(file, video ? "Video" : "Picture"))
+                Notify(ToastKind.Warn, $"Not sent to {friend} – the {what} is on the clipboard instead", e.Message + "\nA copy is kept in the captures folder.", null, file,
+                    extra: again, history: () => ShowHistory(record.Id));
             else
-                Notify(ToastKind.Error, $"Not sent to {friend}", e.Message + "\nA copy is kept in the captures folder.", null, file, history: () => ShowHistory(record.Id));
+                Notify(ToastKind.Error, $"Not sent to {friend}", e.Message + "\nA copy is kept in the captures folder.", null, file,
+                    extra: again, history: () => ShowHistory(record.Id));
         }
         finally
         {
             uploads--;
-            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : IdleIcon;
             UpdateTip();
         }
     }
@@ -1329,7 +1448,7 @@ public sealed class TrayController : IDisposable
     /// <summary>Settings → Files & history → "Keep a copy on this PC: only if the upload fails" or "never": the copy in
     /// the captures folder is deleted once the capture is in Peergos (or, with "never", on the clipboard). The mirror
     /// folder is a separate choice and keeps its copy.</summary>
-    void DropLocalCopy(HistoryRecord record, string file)
+    void DropLocalCopy(HistoryRecord record, string file, bool again = true)
     {
         try
         {
@@ -1337,6 +1456,13 @@ public sealed class TrayController : IDisposable
             record.File = null;
             history.Save();
             Log.Info("local copy not kept (Settings → Files & history): " + file);
+        }
+        catch (IOException) when (again)
+        {
+            // Still in use for a moment (a virus scanner, a preview): once more a little later.
+            var later = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            later.Tick += (_, _) => { later.Stop(); DropLocalCopy(record, file, again: false); };
+            later.Start();
         }
         catch (Exception e) { Log.Error("drop local copy " + file, e); }
     }
@@ -1429,7 +1555,7 @@ public sealed class TrayController : IDisposable
         finally
         {
             uploads--;
-            if (recorder == null) tray.Icon = uploads > 0 ? iconBusy : iconIdle;
+            if (recorder == null) tray.Icon = uploads > 0 ? iconBusy : IdleIcon;
             UpdateTip();
         }
         if (r.Ok && r.Link != null)
@@ -1472,6 +1598,8 @@ public sealed class TrayController : IDisposable
             UpdateSettings(s => s.Session = "");
             signIn = ("Sign in", ShowSettings);
         }
+        // "Try again" uploads the same capture once more (signing in comes first when that was the problem).
+        signIn ??= ("Try again", () => _ = Deliver(file, mode, record, mirror: false, fresh: fresh));
         if (mediaCopied)
             Notify(ToastKind.Warn, $"Upload failed – the {lower} is on the clipboard", why + "\nA copy is kept in the captures folder.",
                 null, file, extra: signIn, discard: discard, history: inHistory);
@@ -1549,24 +1677,65 @@ public sealed class TrayController : IDisposable
     /// <summary>Shows the app's notification card. Busy and success cards follow the Notifications setting;
     /// warnings and errors are always shown.</summary>
     public void Notify(ToastKind kind, string title, string text, string? link = null, string? file = null, int? percent = null,
-        (string, Action)? extra = null, Action? discard = null, Action? history = null)
+        (string, Action)? extra = null, Action? discard = null, Action? history = null, (string, Action)[]? more = null,
+        System.Windows.Media.ImageSource? image = null)
     {
         if (kind != ToastKind.Busy) Log.Info($"notify: {title} – {text}");
         if (!Settings.Notifications && kind is ToastKind.Ok or ToastKind.Busy && extra == null) return;
-        try { ToastWindow.Show(kind, title, text, link, file, percent, extra, discard, history); }
+        try { ToastWindow.Show(kind, title, text, link, file, percent, extra, discard, history, more, image); }
         catch (Exception e) { Log.Error("toast", e); }
+    }
+
+    // ---------- what friends sent ----------
+
+    /// <summary>A friend sent something: remembered until it is looked at (the direct window shows it).</summary>
+    public void Arrived(string friend, string what, string path)
+    {
+        unseen = (friend, what, path, DateTime.Now);
+        flashOn = true;
+        if (Settings.DirectFlash) flash.Start();
+        ShowIdleIcon();
+        UpdateTip();
+    }
+
+    /// <summary>What arrived was looked at: the icon is quiet again.</summary>
+    public void Seen()
+    {
+        if (unseen == null) return;
+        unseen = null;
+        flash.Stop();
+        ShowIdleIcon();
+        UpdateTip();
+    }
+
+    /// <summary>The direct window at the newest file that was not looked at yet.</summary>
+    void ShowUnseen()
+    {
+        if (unseen is not { } u) return;
+        direct.ShowWindow(u.Friend, u.Path);
+        Seen();
+    }
+
+    /// <summary>The icon while no recording, upload or countdown shows its own: with a dot while something new waits
+    /// (flashing unless Settings → Direct says otherwise).</summary>
+    Icon IdleIcon => unseen != null && (flashOn || !Settings.DirectFlash) ? iconNew : iconIdle;
+
+    void ShowIdleIcon()
+    {
+        if (recorder == null && uploads == 0 && countdownCts == null) tray.Icon = IdleIcon;
     }
 
     void UpdateTip()
     {
-        bool files = Settings.Mode == TrayMode.Files;
-        string click = Settings.Mode switch { TrayMode.Video => "record video", TrayMode.Files => "upload files", _ => "take picture" };
+        bool capture = TrayMenuLogic.ShowsDelay(Settings.Mode);
         string t = recorder != null
-            ? (recorder.Paused ? "Peergos Snap – recording paused" : "Peergos Snap – recording… click to stop")
-            : $"Peergos Snap – click: {click}"
-              + (Settings.DelaySeconds > 0 && !files ? $" after {Settings.DelaySeconds} s" : "")
-              + (files ? "" : $" · {OutputLogic.Short(Settings.Output)}");
-        tray.Text = t.Length > 127 ? t[..127] : t;
+            ? (recorder.Paused ? "Peergos Snap – recording paused"
+                : "Peergos Snap – recording" + (recordingFor != null ? $" for {recordingFor}" : "") + "… click to stop")
+            : unseen is { } u ? TrayMenuLogic.ArrivedTip(u.Friend, u.What, u.At)
+            : $"Peergos Snap – click: {TrayMenuLogic.Click(Settings.Mode)}"
+              + (Settings.DelaySeconds > 0 && capture ? $" after {Settings.DelaySeconds} s" : "")
+              + (capture ? $" · {OutputLogic.Short(Settings.Output)}" : "");
+        tray.Text = TrayMenuLogic.Fit(t);
     }
 
     static void Open(string target)

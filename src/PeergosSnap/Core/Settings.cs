@@ -7,8 +7,8 @@ namespace PeergosSnap.Core;
 
 public enum CaptureKind { Picture, Video }
 /// <summary>What the tray menu shows first and what a left click on the tray icon does (since 2.4; before, only
-/// Picture or Video).</summary>
-public enum TrayMode { Picture, Video, Files }
+/// Picture or Video; Folders since 2.6).</summary>
+public enum TrayMode { Picture, Video, Files, Folders }
 /// <summary>What happens with a finished capture. UploadAndMedia (since 2.4, the default) copies the picture or video
 /// itself and uploads it too.</summary>
 public enum OutputMode { SecretLink, DirectMedia, UploadAndMedia }
@@ -110,6 +110,11 @@ public sealed class Settings
     public string DirectLastFriend { get; set; } = "";
     /// <summary>Since 2.5: a picture taken for a friend opens in the drawing editor before it is sent ("Draw first").</summary>
     public bool DirectDrawFirst { get; set; }
+    /// <summary>Since 2.6: the friend chosen in the tray menu (Other → Friend); Direct to a friend acts for them.
+    /// "" = none chosen: with several friends each action then asks whom.</summary>
+    public string DirectFriend { get; set; } = "";
+    /// <summary>Since 2.6: the tray icon flashes until what a friend sent was looked at (off: a steady dot).</summary>
+    public bool DirectFlash { get; set; } = true;
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";
@@ -135,6 +140,9 @@ public sealed class Settings
     /// <summary>Since 2.5: Peergos Snap in Explorer's right-click menu of files and folders (for this Windows user only;
     /// every upload or send is confirmed first).</summary>
     public bool ExplorerMenu { get; set; }
+    /// <summary>Since 2.6: on Windows 11 the entry is at the top of Explorer's menu, not only under "Show more
+    /// options" (needs the menu package the installer registers).</summary>
+    public bool ExplorerMenuTop { get; set; } = true;
 
     [JsonIgnore] public string Session { get => Unprotect(SessionProtected); set => SessionProtected = Protect(value); }
     [JsonIgnore] public string LegacyAccountPassword { get => Unprotect(AccountPasswordProtected); set => AccountPasswordProtected = Protect(value); }
@@ -226,6 +234,7 @@ public sealed class Settings
         ToastSeconds = Math.Clamp(ToastSeconds, 0, 120);
         DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
         DirectLastFriend ??= "";
+        DirectFriend = DirectLogic.NormaliseUser(DirectFriend) ?? "";
         AnnotateSize = Math.Clamp(AnnotateSize, 0, 2);
         if (!Enum.IsDefined(Mode)) Mode = TrayMode.Picture;
         if (!Enum.IsDefined(Output)) Output = OutputMode.UploadAndMedia;

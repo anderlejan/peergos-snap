@@ -25,8 +25,8 @@ public sealed class DirectService : IDisposable
     int nextId;
     string runningAs = "";
 
-    /// <summary>friend, month, all items of that month (both sides).</summary>
-    public event Action<string, string, List<DirectItem>>? Changed;
+    /// <summary>friend, month, all items of that month (both sides), and their small pictures by path.</summary>
+    public event Action<string, string, List<DirectItem>, Dictionary<string, string>>? Changed;
     /// <summary>A problem while checking a friend's folder (said once, until it changes).</summary>
     public event Action<string, string>? Problem;
     /// <summary>The session ended without being asked to (crash, network); with the reason.</summary>
@@ -136,8 +136,9 @@ public sealed class DirectService : IDisposable
                     case "changed":
                         var friend = m.GetProperty("friend").GetString() ?? "";
                         var month = m.GetProperty("month").GetString() ?? "";
-                        var items = DirectLogic.ParseItems(m.GetProperty("items"));
-                        _ = ui.BeginInvoke(() => Changed?.Invoke(friend, month, items));
+                        var thumbs = new Dictionary<string, string>(StringComparer.Ordinal);
+                        var items = DirectLogic.ParseItems(m.GetProperty("items"), thumbs);
+                        _ = ui.BeginInvoke(() => Changed?.Invoke(friend, month, items, thumbs));
                         break;
                     case "problem":
                         var f2 = m.TryGetProperty("friend", out var fe) ? fe.GetString() ?? "" : "";

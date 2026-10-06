@@ -98,48 +98,21 @@
                 </Grid>
             </DockPanel>
             <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="{DynamicResource Line}" ResizeBehavior="PreviousAndNext"/>
-            <!-- right: the file – viewing on top, the preview, then its details and what to do with it -->
+            <!-- right: the file – what to do with it on top (always in reach, as in the history), then the picture, video
+                 or file, its details at the bottom -->
             <DockPanel Grid.Column="2">
-                <Border DockPanel.Dock="Top" Padding="10,8,4,2" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
+                <Border DockPanel.Dock="Top" Background="{DynamicResource Bg2}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="10,8,4,2">
                     <DockPanel>
-                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                            <Button AutomationProperties.Name="View" x:Name="ViewBtn" ToolTip="Full screen, as in the history: the wheel zooms where the pointer is, the view follows the mouse, ← → go through the pictures and videos (double-click the picture)">
-                                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/><TextBlock Text="View"/></StackPanel>
-                            </Button>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
                             <ToggleButton x:Name="StarBtn" Content="☆ Star" ToolTip="Star it – your friend sees your star"/>
                             <ToggleButton x:Name="PinBtn" Content="📌 Pin" ToolTip="Pinned files stay at the top, for both of you"/>
                         </StackPanel>
-                        <WrapPanel x:Name="ZoomBar">
-                            <Button x:Name="ZoomOutBtn" Content="−" ToolTip="Zoom out (−, or the mouse wheel over the picture)" MinWidth="34"/>
-                            <TextBlock x:Name="ZoomText" Width="58" TextAlignment="Center" VerticalAlignment="Center" Margin="0,0,6,6"/>
-                            <Button x:Name="ZoomInBtn" Content="+" ToolTip="Zoom in (+, or the mouse wheel over the picture: it zooms where the pointer is)" MinWidth="34"/>
-                            <Button x:Name="FitBtn" Content="Fit" ToolTip="The whole picture (F)"/>
-                            <Button x:Name="ActualBtn" Content="100 %" ToolTip="Actual size (0)"/>
-                        </WrapPanel>
-                    </DockPanel>
-                </Border>
-                <Border DockPanel.Dock="Bottom" Padding="12,8,12,6" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Background="{DynamicResource Bg2}">
-                    <StackPanel>
-                        <Border x:Name="ConfirmBar" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
-                                Background="{DynamicResource Bg}" Padding="12" Margin="0,0,0,8">
-                            <DockPanel>
-                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}" Margin="8,0,6,0"/>
-                                    <Button x:Name="ConfirmNo" Content="Cancel" Margin="0"/>
-                                </StackPanel>
-                                <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                            </DockPanel>
-                        </Border>
-                        <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock x:Name="FactsText" TextWrapping="Wrap" Foreground="{DynamicResource Fg2}" Margin="0,2,0,0"/>
-                        <TextBlock x:Name="WhereText" TextWrapping="Wrap" Foreground="{DynamicResource Fg3}" Margin="0,2,0,8"/>
-                        <DockPanel Margin="0,0,0,8">
-                            <TextBlock Text="Label" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBox x:Name="LabelBox" ToolTip="A name or note for this file – your friend sees it too"/>
-                        </DockPanel>
                         <WrapPanel x:Name="Actions">
                             <Button AutomationProperties.Name="Open" x:Name="OpenBtn" ToolTip="Open it in its app (Enter)">
                                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8E5;"/><TextBlock Text="Open"/></StackPanel>
+                            </Button>
+                            <Button AutomationProperties.Name="View" x:Name="ViewBtn" ToolTip="Full screen, as in the history: the wheel zooms where the pointer is, the view follows the mouse, ← → go through the pictures and videos (double-click the picture)">
+                                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE740;"/><TextBlock Text="View"/></StackPanel>
                             </Button>
                             <Button AutomationProperties.Name="Folder" x:Name="FolderBtn" ToolTip="Show the file on this PC in its folder">
                                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE838;"/><TextBlock Text="Folder"/></StackPanel>
@@ -170,7 +143,38 @@
                                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE74D;"/><TextBlock Text="Delete"/></StackPanel>
                             </Button>
                         </WrapPanel>
+                    </DockPanel>
+                </Border>
+                <Border x:Name="ConfirmBar" DockPanel.Dock="Top" Visibility="Collapsed" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource Acc2}"
+                        Background="{DynamicResource Bg2}" Padding="12" Margin="10,8,10,0">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button x:Name="ConfirmYes" Content="Yes, delete" Style="{DynamicResource AccentButtonStyle}" Margin="8,0,6,0"/>
+                            <Button x:Name="ConfirmNo" Content="Cancel" Margin="0"/>
+                        </StackPanel>
+                        <TextBlock x:Name="ConfirmText" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Border>
+                <Border DockPanel.Dock="Bottom" Padding="12,8,12,8" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Background="{DynamicResource Bg2}">
+                    <StackPanel>
+                        <TextBlock x:Name="NameText" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="FactsText" TextWrapping="Wrap" Foreground="{DynamicResource Fg2}" Margin="0,2,0,0"/>
+                        <TextBlock x:Name="WhereText" TextWrapping="Wrap" Foreground="{DynamicResource Fg3}" Margin="0,2,0,8"/>
+                        <DockPanel>
+                            <TextBlock Text="Label" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBox x:Name="LabelBox" ToolTip="A name or note for this file – your friend sees it too"/>
+                        </DockPanel>
                     </StackPanel>
+                </Border>
+                <!-- the zoom of a picture, right above it -->
+                <Border DockPanel.Dock="Top" Padding="10,6,4,0">
+                    <WrapPanel x:Name="ZoomBar">
+                        <Button x:Name="ZoomOutBtn" Content="−" ToolTip="Zoom out (−, or the mouse wheel over the picture)" MinWidth="34"/>
+                        <TextBlock x:Name="ZoomText" Width="58" TextAlignment="Center" VerticalAlignment="Center" Margin="0,0,6,6"/>
+                        <Button x:Name="ZoomInBtn" Content="+" ToolTip="Zoom in (+, or the mouse wheel over the picture: it zooms where the pointer is)" MinWidth="34"/>
+                        <Button x:Name="FitBtn" Content="Fit" ToolTip="The whole picture (F)"/>
+                        <Button x:Name="ActualBtn" Content="100 %" ToolTip="Actual size (0)"/>
+                    </WrapPanel>
                 </Border>
                 <Grid x:Name="Stage" Background="{DynamicResource Bg3}">
                     <!-- a picture: zoom with the wheel where the pointer is, drag to move, double-click for full screen -->

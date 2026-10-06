@@ -135,8 +135,9 @@
                         <RadioButton x:Name="KindPicture" Content="Pictures – a click takes a picture" GroupName="kind"/>
                         <RadioButton x:Name="KindVideo" Content="Videos – a click starts / stops a video" GroupName="kind"/>
                         <RadioButton x:Name="KindFiles" Content="Files – a click asks which files to upload" GroupName="kind"/>
+                        <RadioButton x:Name="KindFolders" Content="Folders – a click asks which folder to upload" GroupName="kind"/>
                     </StackPanel>
-                    <TextBlock Style="{StaticResource Hint}" Text="The same three are at the bottom of the tray menu (Mode). The hotkeys work in every mode."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="The same four are at the bottom of the tray menu (Mode). Each mode's menu shows only its own actions – also under Direct to a friend: a picture, a video, files or a folder for your friend. The hotkeys work in every mode."/>
                     <TextBlock Text="Picture format"/>
                     <ComboBox x:Name="ImageFormat" Width="160" HorizontalAlignment="Left"><ComboBoxItem Content="png"/><ComboBoxItem Content="jpg"/></ComboBox>
                     <TextBlock Text="Video format"/>
@@ -257,7 +258,9 @@
                     <CheckBox x:Name="DirectFront" Content="Show the direct window when a friend sends something"/>
                     <TextBlock Style="{StaticResource Hint}" Text="It comes to the front without taking the keyboard from the app you are typing in. Off: only a notification card."/>
                     <CheckBox x:Name="DirectKeepOnPc" Content="Also keep received files on this PC"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Every file you receive is copied into your Peergos (PeergosSnap/Direct/(friend)/(month)/received). On: it is also downloaded to this PC when it arrives. Off: it stays only in your Peergos and is downloaded when you open it."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Every file you receive is copied into your Peergos (PeergosSnap/Direct/(friend)/(month)/received). On: it is also downloaded to this PC when it arrives and stays there. Off: nothing is kept on this PC – pictures are shown straight from Peergos (with the small picture Peergos keeps of each), and a file you open, play or save goes through a temporary folder that is emptied when the direct window closes. A change works at once."/>
+                    <CheckBox x:Name="DirectFlash" Content="Flash the tray icon until I look at what a friend sent"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="The icon gets a dot, its tooltip says who sent what, and a click on it shows it. Off: the dot stays without flashing. Either way it goes when the direct window shows it."/>
                     <CheckBox x:Name="DirectDrawFirst" Content="Draw on a picture before it goes to a friend"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Take picture in the direct window (and Direct to a friend in the tray menu) then opens the drawing editor with the picture: add arrows, numbers or a note, and Done sends it. The direct window has the same switch next to Take picture."/>
                     <TextBlock Text="Check for new pictures every (seconds, 2 to 60)"/>
@@ -320,7 +323,17 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <CheckBox x:Name="Autostart" Content="Start Peergos Snap when I sign in to Windows"/>
                     <CheckBox x:Name="ExplorerMenuBox" Content="Add Peergos Snap to Explorer's right-click menu of files and folders"/>
-                    <TextBlock Style="{StaticResource Hint}" Text="Right-click a file, picture, video or folder → Peergos Snap → upload it and copy the link, or send it to a friend. Peergos Snap always asks first, so nothing leaves this PC by accident. On Windows 11 the menu is under 'Show more options' (or Shift + right-click). Only for your Windows account; uninstalling removes it."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Right-click a file, picture, video or folder → Peergos Snap → upload it and copy the link, or send it to a friend (pictures can get a drawing first). Peergos Snap always asks first, so nothing leaves this PC by accident. Only for your Windows account; uninstalling removes it."/>
+                    <CheckBox x:Name="ExplorerTopBox" Margin="24,0,0,0" Content="On Windows 11 at the top of the menu – not under 'Show more options'"/>
+                    <StackPanel Orientation="Horizontal" Margin="24,4,0,0">
+                        <Button x:Name="ExplorerSetupBtn" Content="Set it up…" Visibility="Collapsed"/>
+                    </StackPanel>
+                    <TextBlock x:Name="ExplorerTopInfo" Style="{StaticResource Hint}" Margin="24,2,0,8"/>
+                    <TextBlock Text="Tray icon" FontWeight="SemiBold" Margin="0,10,0,2"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="TrayIconBtn" Content="Always show the icon…"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,8" Text="Windows decides which tray icons stay visible and which go behind the ^ arrow – an app cannot change that itself. The button opens Windows' taskbar settings: under 'Other system tray icons' switch Peergos Snap on."/>
                     <TextBlock Text="Settings file" FontWeight="SemiBold" Margin="0,10,0,2"/>
                     <StackPanel Orientation="Horizontal">
                         <Button x:Name="ExportBtn" Content="Export settings…"/>

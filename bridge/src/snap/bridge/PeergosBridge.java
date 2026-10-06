@@ -480,8 +480,15 @@ public class PeergosBridge {
     static FileWrapper upload(FileWrapper dir, String name, Path file, NetworkAccess network, Crypto crypto,
                               java.util.function.LongConsumer onBytes) throws Exception {
         long size = Files.size(file);
-        FileWrapper updated = dir.uploadOrReplaceFile(name, new FileAsyncReader(file.toFile()), size,
-                network, crypto, () -> false, onBytes::accept).join();
+        FileAsyncReader reader = new FileAsyncReader(file.toFile());
+        FileWrapper updated;
+        try {
+            updated = dir.uploadOrReplaceFile(name, reader, size, network, crypto, () -> false, onBytes::accept).join();
+        } finally {
+            // Closed at once: Windows keeps an open file in use, and the app may delete it right after sending it
+            // (the direct session runs on; the one-time uploader ends anyway).
+            reader.close();
+        }
         return updated.getChild(name, crypto.hasher, network).join()
                 .orElseThrow(() -> new IllegalStateException("Upload finished but the file is missing"));
     }

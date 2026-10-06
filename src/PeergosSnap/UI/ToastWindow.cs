@@ -104,9 +104,11 @@ public sealed class ToastWindow : Window
     }
 
     /// <summary>Shows (or updates) the single notification card. <paramref name="history"/> opens the capture's entry in
-    /// the history.</summary>
+    /// the history; <paramref name="more"/> are buttons after <paramref name="extra"/>; <paramref name="image"/> is the
+    /// card's picture when there is no file for it (e.g. one that is not kept on this PC).</summary>
     public static ToastWindow Show(ToastKind kind, string heading, string body, string? link = null, string? file = null, int? percent = null,
-        (string Label, Action Run)? extra = null, Action? discard = null, Action? history = null)
+        (string Label, Action Run)? extra = null, Action? discard = null, Action? history = null, (string Label, Action Run)[]? more = null,
+        ImageSource? image = null)
     {
         var t = current ??= new ToastWindow();
         var sc = Theme.Current;
@@ -121,7 +123,7 @@ public sealed class ToastWindow : Window
         t.progress.Visibility = kind == ToastKind.Busy ? Visibility.Visible : Visibility.Collapsed;
         t.progress.IsIndeterminate = percent == null;
         if (percent is { } pc) t.progress.Value = pc;
-        t.thumb.Source = LoadThumb(file);
+        t.thumb.Source = image ?? LoadThumb(file);
         t.thumb.Visibility = t.thumb.Source == null ? Visibility.Collapsed : Visibility.Visible;
 
         t.actions.Children.Clear();
@@ -133,6 +135,7 @@ public sealed class ToastWindow : Window
             t.actions.Children.Add(b);
         }
         if (extra is { } x) Action(x.Label, x.Run);
+        foreach (var (label, run) in more ?? []) Action(label, run);
         if (link != null) Action("Open link", () => Open(link));
         // The file may be gone by the time the button is clicked (discarded, or not kept after the upload).
         if (file != null && File.Exists(file)) Action("Show file", () => { if (File.Exists(file)) Process.Start("explorer.exe", "/select,\"" + file + "\""); });

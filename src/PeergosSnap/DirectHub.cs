@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows.Threading;
@@ -27,6 +28,11 @@ public sealed class DirectHub : IDisposable
     DateTime retryAt = DateTime.MaxValue;
     DirectWindow? window;
     bool starting;
+    /// <summary>The small pictures Peergos keeps with pictures and videos ("data:image/jpeg;base64,…" by path): shown
+    /// in the list and on the cards without downloading anything.</summary>
+    readonly Dictionary<string, string> thumbs = new(StringComparer.Ordinal);
+    /// <summary>Files sent from this PC since the start: shown from where they are instead of a copy.</summary>
+    readonly Dictionary<string, string> sentFrom = new(StringComparer.Ordinal);
 
     public event Action? Updated;
     public DirectFriends? FriendsState { get; private set; }
@@ -172,8 +178,9 @@ public sealed class DirectHub : IDisposable
 
     // ---------- arriving pictures ----------
 
-    void OnChanged(string friend, string month, List<DirectItem> list)
+    void OnChanged(string friend, string month, List<DirectItem> list, Dictionary<string, string> listThumbs)
     {
+        foreach (var (path, t) in listThumbs) thumbs[path] = t;
         if (month != watchMonth) return;
         items[friend] = list;
         if (!introduced.Contains(friend))
@@ -195,31 +202,112 @@ public sealed class DirectHub : IDisposable
     async Task Receive(string friend, List<DirectItem> arrived)
     {
         // The file is already copied into my Peergos (by the bridge); "Also keep received files on this PC" downloads it too.
-        string? thumb = null;
+        string? kept = null;
         if (app.Settings.DirectKeepOnPc)
             foreach (var a in arrived)
             {
                 try
                 {
                     var local = await LocalFileAsync(friend, a);
-                    if (a.IsImage) thumb ??= local;
+                    if (a.IsImage) kept ??= local;
                 }
                 catch (DirectException e) { Log.Error($"direct: download {a.Path}: {e.Message}"); }
             }
-        var newest = DirectLogic.Sort(arrived).First();
-        var what = arrived.Count == 1 ? (newest.IsImage ? "a picture" : "a file")
-            : $"{arrived.Count} {(arrived.All(a => a.IsImage) ? "pictures" : "files")}";
+        var sorted = DirectLogic.Sort(arrived).ToList();
+        var newest = sorted[0];
+        var what = DirectLogic.What(arrived);
+        // The card's picture: the copy just downloaded, else the small picture Peergos keeps with it (nothing on disk).
+        var image = kept != null ? ThumbFiles.Load(kept, 160)
+            : sorted.Select(a => Thumb(a.Path)).FirstOrDefault(t => t != null) is { } t ? ThumbFiles.FromBytes(DirectLogic.ThumbBytes(t), 160) : null;
+        app.Arrived(friend, what, newest.Path);
+        (string, Action)[] more = arrived.Count == 1
+            ? [("Open", () => _ = OpenAsync(friend, newest)), ("Get a link", () => _ = LinkAsync(friend, arrived))]
+            : [("Get links", () => _ = LinkAsync(friend, arrived))];
         app.Notify(ToastKind.Ok, $"{friend} sent {what}", arrived.Count == 1 ? newest.Name : string.Join(", ", arrived.Select(a => a.Name).Take(3)),
-            null, thumb, extra: ("Open", () => ShowWindow(friend, newest.Path)));
+            extra: ("Show", () => { app.Seen(); ShowWindow(friend, newest.Path); }), more: more, image: image);
         if (app.Settings.DirectBringToFront) ShowWindow(friend, newest.Path, activate: false);
+    }
+
+    /// <summary>"Open" on the card: the file in its app (a temporary copy when received files are not kept here).</summary>
+    async Task OpenAsync(string friend, DirectItem item)
+    {
+        app.Seen();
+        try
+        {
+            var f = await FileAsync(friend, item);
+            Process.Start(new ProcessStartInfo(f) { UseShellExecute = true });
+        }
+        catch (Exception e) when (e is DirectException or System.ComponentModel.Win32Exception or IOException)
+        {
+            app.Notify(ToastKind.Warn, $"Could not open {item.Name}", e.Message, extra: ("Show", () => ShowWindow(friend, item.Path)));
+        }
+    }
+
+    /// <summary>"Get a link" on the card: a copy goes to your own Peergos folder with a secret link (copied), as in the
+    /// direct window – for someone who is not your friend in Peergos.</summary>
+    async Task LinkAsync(string friend, IReadOnlyList<DirectItem> list)
+    {
+        app.Seen();
+        if (!app.Settings.PeergosConfigured) return;
+        var files = new List<string>();
+        foreach (var it in list)
+        {
+            try { files.Add(await FileAsync(friend, it)); }
+            catch (DirectException e)
+            {
+                app.Notify(ToastKind.Warn, $"Could not get {it.Name}", e.Message);
+                return;
+            }
+        }
+        await app.UploadFilesAsync(files);
+    }
+
+    /// <summary>The small picture Peergos keeps with a picture or video, or null.</summary>
+    public string? Thumb(string path) => thumbs.TryGetValue(path, out var t) ? t : null;
+
+    /// <summary>Settings → Direct → "Also keep received files on this PC".</summary>
+    public bool KeepOnPc => app.Settings.DirectKeepOnPc;
+
+    /// <summary>The copy on this PC when there is one: kept in the direct folder, or – sent from here since the start –
+    /// the file it was sent from.</summary>
+    public string? KeptFile(string friend, DirectItem item)
+    {
+        var kept = DirectLogic.CacheFile(AppPaths.DirectDir, friend, item);
+        if (File.Exists(kept) && new FileInfo(kept).Length == item.Size) return kept;
+        return sentFrom.TryGetValue(item.Path, out var from) && File.Exists(from) && new FileInfo(from).Length == item.Size ? from : null;
+    }
+
+    /// <summary>A file on this PC to open, play, copy or send on: the kept copy; else – with "Also keep received files
+    /// on this PC" – downloaded into the direct folder; else a temporary copy in the view folder, which is emptied when
+    /// the direct window closes and at every start.</summary>
+    public async Task<string> FileAsync(string friend, DirectItem item)
+    {
+        if (KeptFile(friend, item) is { } have) return have;
+        if (KeepOnPc) return await LocalFileAsync(friend, item);
+        return await DownloadOnce(item, DirectLogic.CacheFile(AppPaths.DirectViewDir, friend, item));
+    }
+
+    /// <summary>A picture's bytes straight from Peergos, for showing it without writing it to this PC.</summary>
+    public async Task<byte[]> BytesAsync(DirectItem item)
+    {
+        var r = await service.CallAsync("get", new() { ["path"] = item.Path, ["inline"] = true }, TimeSpan.FromMinutes(10));
+        return Convert.FromBase64String(r.GetProperty("data").GetString() ?? "");
+    }
+
+    /// <summary>The direct window closed: its temporary copies go (one still open in another app goes at the next start).</summary>
+    public void ClearViewFiles()
+    {
+        try { if (Directory.Exists(AppPaths.DirectViewDir)) Directory.Delete(AppPaths.DirectViewDir, true); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Log.Info("direct: view copies left until the next start: " + e.Message); }
     }
 
     readonly Dictionary<string, Task<string>> downloading = [];
 
-    /// <summary>The picture on this PC (downloaded once into the direct folder; one download per file at a time).</summary>
-    public Task<string> LocalFileAsync(string friend, DirectItem item)
+    /// <summary>The file kept on this PC (downloaded once into the direct folder; one download per file at a time).</summary>
+    public Task<string> LocalFileAsync(string friend, DirectItem item) => DownloadOnce(item, DirectLogic.CacheFile(AppPaths.DirectDir, friend, item));
+
+    Task<string> DownloadOnce(DirectItem item, string file)
     {
-        var file = DirectLogic.CacheFile(AppPaths.DirectDir, friend, item);
         if (File.Exists(file) && new FileInfo(file).Length == item.Size) return Task.FromResult(file);
         if (downloading.TryGetValue(file, out var running)) return running;
         var t = Download(item, file);
@@ -244,7 +332,7 @@ public sealed class DirectHub : IDisposable
     public async Task<(List<DirectItem> Items, List<string> Months)> ListAsync(string friend, string month)
     {
         var r = await service.CallAsync("list", new() { ["friend"] = friend, ["month"] = month });
-        var list = DirectLogic.ParseItems(r.GetProperty("items"));
+        var list = DirectLogic.ParseItems(r.GetProperty("items"), thumbs);
         var months = r.TryGetProperty("months", out var m) && m.ValueKind == JsonValueKind.Array
             ? m.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
             : [];
@@ -262,17 +350,24 @@ public sealed class DirectHub : IDisposable
         foreach (var f in files)
         {
             progress?.Invoke($"Sending {Path.GetFileName(f)} to {friend}…");
-            var r = await service.CallAsync("send", new() { ["friend"] = friend, ["file"] = f, ["month"] = DirectLogic.MonthOf(DateTime.Now) },
-                TimeSpan.FromMinutes(30));
+            // A picture or video takes its small picture along: the friend sees it without downloading the file.
+            var thumb = await ThumbFiles.DataUrlAsync(f);
+            var args = new Dictionary<string, object?> { ["friend"] = friend, ["file"] = f, ["month"] = DirectLogic.MonthOf(DateTime.Now) };
+            if (thumb != null) args["thumb"] = thumb;
+            var r = await service.CallAsync("send", args, TimeSpan.FromMinutes(30));
             var item = DirectLogic.ParseItems(JsonDocument.Parse("[" + r.GetProperty("item").GetRawText() + "]").RootElement)[0];
-            // Keep a copy for the preview, so it does not have to come back from Peergos.
-            try
-            {
-                var local = DirectLogic.CacheFile(AppPaths.DirectDir, friend, item);
-                Directory.CreateDirectory(Path.GetDirectoryName(local)!);
-                File.Copy(f, local, true);
-            }
-            catch (Exception e) { Log.Error("direct: keep sent copy", e); }
+            if (thumb != null) thumbs[item.Path] = thumb;
+            sentFrom[item.Path] = f;
+            // With "Also keep received files on this PC" a copy is kept for the preview, so it does not have to come
+            // back from Peergos; without it nothing is copied (the file it was sent from is shown while it exists).
+            if (KeepOnPc)
+                try
+                {
+                    var local = DirectLogic.CacheFile(AppPaths.DirectDir, friend, item);
+                    Directory.CreateDirectory(Path.GetDirectoryName(local)!);
+                    File.Copy(f, local, true);
+                }
+                catch (Exception e) { Log.Error("direct: keep sent copy", e); }
             seen.Add(item.Path);
             if (item.Month == watchMonth)
             {
@@ -309,6 +404,9 @@ public sealed class DirectHub : IDisposable
         await service.CallAsync("delete", new() { ["path"] = item.Path });
         items[friend] = Items(friend).Where(i => i.Path != item.Path).ToList();
         try { File.Delete(DirectLogic.CacheFile(AppPaths.DirectDir, friend, item)); } catch { }
+        try { File.Delete(DirectLogic.CacheFile(AppPaths.DirectViewDir, friend, item)); } catch { }
+        thumbs.Remove(item.Path);
+        sentFrom.Remove(item.Path);
         Updated?.Invoke();
     }
 
@@ -369,15 +467,16 @@ public sealed class DirectHub : IDisposable
 
     // ---------- window ----------
 
-    public void ShowWindow(string? friend, string? path, bool activate = true)
+    public void ShowWindow(string? friend, string? path, bool activate = true, bool friendsPanel = false)
     {
         if (window is not { IsLoaded: true })
         {
             window = new DirectWindow(this, app);
             window.Closed += (_, _) => { window = null; if (!Wanted) service.Stop(); };
         }
-        // Without a friend: everything (all friends, all months); sending goes to the last friend sent to.
-        window.ShowFor(friend, path, activate);
+        // Without a friend: everything (all friends, all months); sending goes to the friend chosen in the tray menu,
+        // else the last friend sent to.
+        window.ShowFor(friend, path, activate, friendsPanel);
         if (!service.Running && !starting) _ = StartAsync();
     }
 

@@ -53,7 +53,7 @@ import java.util.concurrent.TimeoutException;
  * stdout: one JSON line per answer {"id":"1","ok":true,...} | {"id":"1","ok":false,"error":"..."}
  *         and events {"event":"ready"|"changed"|"problem", ...}
  * commands: friends · discover · add {user} · accept {user} · decline {user} · open {friend} · list {friend, month}
- *           send {friend, file, [name], [month]} · get {path, to} · delete {path}
+ *           send {friend, file, [name], [month], [thumb]} · get {path, to | inline} · delete {path}
  *           meta {path, [label], [pin], [star]} · watch {friends:"a,b", month, [interval]} · quit
  * </pre>
  * While watching, the folders of the watched friends are checked every few seconds; a "changed" event with the full
@@ -220,7 +220,15 @@ final class DirectServe {
                 return map("friend", friend, "month", month, "items", list(friend, month), "months", months(friend));
             }
             case "send": return map("item", send(c));
-            case "get": return map("file", get(direct(Json.str(c, "path")), Path.of(Objects.requireNonNull(Json.str(c, "to"), "to"))).toString());
+            case "get": {
+                String path = direct(Json.str(c, "path"));
+                // "inline": the bytes in the answer (base64) – for showing a picture without writing it to disk.
+                if (Json.bool(c, "inline")) {
+                    FileWrapper f = await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Not found: " + path));
+                    return map("data", Base64.getEncoder().encodeToString(read(f, 40_000_000)));
+                }
+                return map("file", get(path, Path.of(Objects.requireNonNull(Json.str(c, "to"), "to"))).toString());
+            }
             case "delete": {
                 String path = direct(Json.str(c, "path"));
                 // Only my own copies: what I sent, or my copy of what I received. The friend's copy is theirs.
@@ -478,6 +486,14 @@ final class DirectServe {
                             return await(shared.get(n).copyTo(in, ctx), WRITE);
                         });
                         copied.add(friend + "/" + n);
+                        // My copy keeps the small picture of the original (when the copy did not take it along).
+                        String thumb = thumbOf(shared.get(n));
+                        if (thumb != null) {
+                            FileWrapper in = PeergosBridge.ensureFolder(ctx, "/" + me, ROOT + "/" + friend + "/" + month + "/" + RECEIVED, net, crypto);
+                            Optional<FileWrapper> mine = await(in.getChild(n, crypto.hasher, net));
+                            if (mine.isPresent() && mine.get().getFileProperties().thumbnail.isEmpty())
+                                setThumb(mine.get(), thumb);
+                        }
                     } catch (Exception e) {
                         System.err.println("direct: copy " + friend + "/" + month + "/" + n + ": " + message(e)); // tried again at the next check
                     }
@@ -505,12 +521,36 @@ final class DirectServe {
         for (Object[] f : found) {
             FileProperties fp = ((FileWrapper) f[0]).getFileProperties();
             Map<String, Object> m = meta.getOrDefault(f[2] + "/" + fp.name, Map.of());
-            items.add(map("name", fp.name, "path", f[1] + "/" + fp.name, "from", f[2], "size", fp.size,
+            Map<String, Object> item = map("name", fp.name, "path", f[1] + "/" + fp.name, "from", f[2], "size", fp.size,
                     "modified", fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000,
                     "label", m.getOrDefault("label", ""), "pinned", m.getOrDefault("pinned", false),
-                    "stars", m.getOrDefault("stars", List.of())));
+                    "stars", m.getOrDefault("stars", List.of()));
+            String thumb = thumbOf((FileWrapper) f[0]);
+            if (thumb != null)
+                item.put("thumb", thumb);
+            items.add(item);
         }
         return items;
+    }
+
+    /** The small picture Peergos keeps with a file ("data:image/…;base64,…"), or null. */
+    static String thumbOf(FileWrapper f) {
+        try {
+            return f.getFileProperties().thumbnail.isPresent() ? f.getBase64Thumbnail() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Gives a file a small picture (a JPEG or WebP data URL) – only my own files can be changed. */
+    void setThumb(FileWrapper f, String thumb) {
+        if (thumb == null || !(thumb.startsWith("data:image/jpeg;base64,") || thumb.startsWith("data:image/webp;base64,")))
+            return;
+        try {
+            await(f.updateThumbnail(thumb, net), WRITE);
+        } catch (Exception e) {
+            System.err.println("direct: thumbnail " + f.getFileProperties().name + ": " + message(e));
+        }
     }
 
     /** One user's meta file: {"v":2,"items":{"SENDER/NAME":{"label":"…","labelAt":ms,"pin":true,"pinAt":ms,"star":true}}}. */
@@ -564,6 +604,7 @@ final class DirectServe {
         Path file = Path.of(Objects.requireNonNull(Json.str(c, "file"), "file"));
         String month = month(Json.str(c, "month"));
         String wanted = Json.str(c, "name");
+        String thumb = Json.str(c, "thumb"); // a JPEG data URL made by the app: the friend sees the file without downloading it
         if (wanted == null || wanted.isBlank())
             wanted = file.getFileName().toString();
         wanted = wanted.replace('/', '_').replace('\\', '_');
@@ -575,7 +616,8 @@ final class DirectServe {
         String name = retry(() -> {
             FileWrapper dir = PeergosBridge.ensureFolder(ctx, "/" + me, rel, net, crypto);
             String n = PeergosBridge.uniqueName(dir, finalWanted, net, crypto);
-            PeergosBridge.upload(dir, n, file, net, crypto);
+            FileWrapper up = PeergosBridge.upload(dir, n, file, net, crypto);
+            setThumb(up, thumb);
             return n;
         });
         // Only this file, read-only, only with this friend.
@@ -607,8 +649,12 @@ final class DirectServe {
     }
 
     byte[] read(FileWrapper f) throws Exception {
+        return read(f, 4_000_000);
+    }
+
+    byte[] read(FileWrapper f, long limit) throws Exception {
         long size = f.getSize();
-        if (size > 4_000_000)
+        if (size > limit)
             throw new IllegalStateException("too large");
         byte[] all = new byte[(int) size];
         AsyncReader in = await(f.getInputStream(net, crypto, x -> {}));

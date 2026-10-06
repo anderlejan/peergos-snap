@@ -151,6 +151,75 @@ public static class ThumbFiles
         return bi;
     }
 
+    /// <summary>A picture from bytes in memory (nothing on disk), or null when they are not a picture.</summary>
+    public static BitmapImage? FromBytes(byte[]? data, int width)
+    {
+        if (data == null || data.Length == 0) return null;
+        try
+        {
+            var bi = new BitmapImage();
+            bi.BeginInit();
+            bi.CacheOption = BitmapCacheOption.OnLoad;
+            bi.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            if (width > 0) bi.DecodePixelWidth = width;
+            bi.StreamSource = new MemoryStream(data);
+            bi.EndInit();
+            bi.Freeze();
+            return bi;
+        }
+        catch (Exception e) when (e is NotSupportedException or FileFormatException or ArgumentException or InvalidOperationException or IOException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The small picture Peergos keeps with a file (since 2.6): a JPEG of a picture, or of a video's still, at most
+    /// 256 pixels on its longer side, as "data:image/jpeg;base64,…". It lets the friend's app – and Peergos in the
+    /// browser – show the file without downloading it. Null when none can be made.
+    /// </summary>
+    public static async Task<string?> DataUrlAsync(string file)
+    {
+        try
+        {
+            var source = FileKinds.Of(file) switch
+            {
+                FileKind.Picture => file,
+                FileKind.Video => await VideoThumbOf(file),
+                _ => null,
+            };
+            if (source == null) return null;
+            return await Task.Run(() => JpegDataUrl(File.ReadAllBytes(source), 256));
+        }
+        catch (Exception e)
+        {
+            Log.Error("thumbnail " + file, e);
+            return null;
+        }
+    }
+
+    static string? JpegDataUrl(byte[] data, int longest)
+    {
+        var frame = BitmapDecoder.Create(new MemoryStream(data), BitmapCreateOptions.IgnoreColorProfile, BitmapCacheOption.OnLoad).Frames[0];
+        if (frame.PixelWidth == 0 || frame.PixelHeight == 0) return null;
+        double scale = Math.Min(1.0, (double)longest / Math.Max(frame.PixelWidth, frame.PixelHeight));
+        int w = Math.Max(1, (int)Math.Round(frame.PixelWidth * scale)), h = Math.Max(1, (int)Math.Round(frame.PixelHeight * scale));
+        // On white, so that a transparent picture does not turn black in the JPEG.
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(Brushes.White, null, new System.Windows.Rect(0, 0, w, h));
+            dc.DrawImage(frame, new System.Windows.Rect(0, 0, w, h));
+        }
+        var bmp = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+        bmp.Render(visual);
+        var enc = new JpegBitmapEncoder { QualityLevel = 72 };
+        enc.Frames.Add(BitmapFrame.Create(bmp));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return "data:image/jpeg;base64," + Convert.ToBase64String(ms.ToArray());
+    }
+
     /// <summary>A small picture of a video (made once with the bundled FFmpeg, kept with the app's data).</summary>
     public static async Task<string?> VideoThumb(HistoryRecord r)
     {

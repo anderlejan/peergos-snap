@@ -31,16 +31,16 @@ public static class SettingsTransfer
             ["Subfolders", "KeepLocalCopies", "DiscardPermanently", "CacheKeepDays", "MirrorEnabled", "RememberApp", "HistoryDeleteAction", "DeleteBothRemovesEntry", "ConfirmHistoryDelete"]),
         new("drawing", "Drawing", "the editor's colour and line size",
             ["AnnotateColor", "AnnotateSize"]),
-        new("direct", "Direct", "receiving, showing the window, keeping received files, how often to check, drawing first",
-            ["DirectReceive", "DirectBringToFront", "DirectKeepOnPc", "DirectCheckSeconds", "DirectDrawFirst"]),
+        new("direct", "Direct", "receiving, showing the window, keeping received files, how often to check, drawing first, the flashing icon",
+            ["DirectReceive", "DirectBringToFront", "DirectKeepOnPc", "DirectCheckSeconds", "DirectDrawFirst", "DirectFlash"]),
         new("hotkeys", "Hotkeys", "the four hotkeys",
             ["HotkeyPicture", "HotkeyVideo", "HotkeyPause", "HotkeyToggleOutput"]),
         new("appearance", "Appearance", "colour scheme and font size",
             ["ColorScheme", "FontPercent"]),
         new("general", "General", "updates, User notes in the menu, Explorer's right-click menu",
-            ["CheckForUpdates", "InstallUpdatesAutomatically", "ShowUserNotes", "ExplorerMenu"]),
-        new("personal", "Personal details", "your Peergos server, username and folder, your direct friends, the mirror folder, the source location for AI prompts – never your sign-in",
-            ["Server", "Username", "AccountFolder", "DirectFriends", "DirectLastFriend", "MirrorFolder", "PromptSourceLocation"], Personal: true),
+            ["CheckForUpdates", "InstallUpdatesAutomatically", "ShowUserNotes", "ExplorerMenu", "ExplorerMenuTop"]),
+        new("personal", "Personal details", "your Peergos server, username and folder, your direct friends and the one chosen, the mirror folder, the source location for AI prompts – never your sign-in",
+            ["Server", "Username", "AccountFolder", "DirectFriends", "DirectLastFriend", "DirectFriend", "MirrorFolder", "PromptSourceLocation"], Personal: true),
     ];
 
     /// <summary>Never exported or imported: the sign-in and other secrets, and what the app notes for itself.</summary>

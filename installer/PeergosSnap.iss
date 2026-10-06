@@ -72,15 +72,25 @@ Root: HKCU; Subkey: "Software\Classes\*\shell\PeergosSnap"; Flags: uninsdeleteke
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\PeergosSnap"; Flags: uninsdeletekey dontcreatekey
 
 [Run]
+; Windows 11: Peergos Snap at the top of Explorer's right-click menu – a small unsigned package that names the installed
+; program as the menu's handler. Windows accepts it only from an administrator, so only an install for all users adds it
+; (Settings → General can add it later).
+Filename: "{app}\PeergosSnap.exe"; Parameters: "--explorer-package install"; StatusMsg: "Adding Peergos Snap to Windows 11's right-click menu…"; Flags: runhidden waituntilterminated; Check: IsAdminInstallMode and IsWindows11
 Filename: "{app}\PeergosSnap.exe"; Parameters: "--tray"; Description: "Start Peergos Snap now"; Flags: nowait postinstall
 
 [UninstallRun]
 Filename: "{app}\PeergosSnap.exe"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitApp"
+Filename: "{app}\PeergosSnap.exe"; Parameters: "--explorer-package remove"; Flags: runhidden waituntilterminated; RunOnceId: "ExplorerMenuPackage"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 
 [Code]
+function IsWindows11: Boolean;
+begin
+  Result := GetWindowsVersion >= $0A0055F0; { 10.0.22000 }
+end;
+
 procedure QuitRunningCopy();
 var
   Code: Integer;

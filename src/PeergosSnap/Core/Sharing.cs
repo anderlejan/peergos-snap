@@ -138,7 +138,14 @@ public static class FolderPack
 
     public static Contents Read(string zip)
     {
-        using var a = ZipFile.OpenRead(zip);
+        using var s = File.OpenRead(zip);
+        return Read(s);
+    }
+
+    /// <summary>The same for a ZIP file in memory (one not kept on this PC).</summary>
+    public static Contents Read(Stream zip)
+    {
+        using var a = new ZipArchive(zip, ZipArchiveMode.Read, leaveOpen: true);
         var names = a.Entries.Select(e => e.FullName.Replace('\\', '/').TrimStart('/')).Where(n => n.Length > 0).ToList();
         var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var n in names)

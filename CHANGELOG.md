@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.6.0 – 2026-10-06
+
+- **Each mode shows only its own actions.** *Direct to a friend* offers the action that fits the mode: *Take a picture
+  for …* (with the *Draw on pictures before sending them* switch) in Pictures, the new *Record a video for …* in Videos
+  (the video goes to your friend as soon as you stop it), *Send files to …* in Files and *Send a folder to …* in
+  Folders. The Delay submenu is only in Pictures and Videos.
+- **A new mode: Folders.** *Upload a folder…* and *Send a folder to …*; a left click on the icon asks which folder to
+  upload. *Files* now has only the file actions.
+- **Choose the friend you are sharing with.** *Other ▸ Friend* in the tray menu: *Direct to a friend* then acts for
+  them with one click (with several friends, *Ask each time* lists them for each action). The direct window and
+  Explorer's question start with that friend too.
+- **The icon tells you what arrived.** When a friend sends something, the tray icon gets a flashing yellow dot until
+  you look; hovering over it says who sent what and when, a click shows it in the direct window, and the menu starts
+  with *New from … – show*. Settings → Direct can make the dot stay without flashing. Settings → General → *Always
+  show the icon…* opens the Windows setting that keeps the icon next to the clock (Windows does not let an app do it
+  itself).
+- **Cards with the next step.** What a friend sent: *Show*, *Open* and *Get a link*, with its picture. A failed upload
+  or send: *Try again*.
+- **Nothing kept on this PC unless you want it.** With *Also keep received files on this PC* off, the direct window
+  shows pictures straight from Peergos without saving them; playing a video or opening a file uses a temporary copy
+  that is removed when the window closes. Every picture and video sent now takes a small picture of itself along
+  (stored with the file in Peergos), so the list, the cards – and Peergos in the browser – show it without
+  downloading anything. The setting works at once.
+- **The direct window's buttons are on top**, above the preview, as in the history; the details are below it.
+- **Windows 11: Peergos Snap at the top of the right-click menu** – no more *Show more options*. The installer adds a
+  small Windows package naming Peergos Snap as the menu's handler (for an installation for all users; Settings →
+  General → *Set it up…* adds it otherwise). The handler runs outside Explorer; the question before anything leaves
+  the PC is the same. *On Windows 11 at the top of the menu* in Settings → General switches back to the classic place.
+- **Explorer: draw on a picture before sending it** – *Draw on the picture first* in the question. A file whose name
+  says picture but that is none is sent as it is.
+- **Cancel** at the bottom of the tray menu closes it.
+- Fixed: a picture or video sent directly to a friend stayed in use for a while, so *Keep a copy on this PC: Never*
+  could not remove it.
+
 ## 2.5.0 – 2026-10-06
 
 - **The direct window shows every file better.** Pictures zoom as in the history: the mouse wheel zooms where the

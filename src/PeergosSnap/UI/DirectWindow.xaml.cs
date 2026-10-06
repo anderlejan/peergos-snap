@@ -14,19 +14,20 @@ using PeergosSnap.Services;
 namespace PeergosSnap.UI;
 
 /// <summary>One file in the direct window's list (and in its full-screen view).</summary>
-public sealed class DirectRow(DirectItem item, string friend, string me, string? localFile, bool showFriend, Func<DirectRow, Task<string?>> fetch)
-    : INotifyPropertyChanged, IViewable
+public sealed class DirectRow(DirectItem item, string friend, string me, string? keptFile, bool showFriend, Func<DirectRow, Task<string?>> fetch,
+    Func<DirectItem, string?> peergosThumb) : INotifyPropertyChanged, IViewable
 {
     /// <summary>The friend this file is shared with (sender or receiver).</summary>
     public string Friend { get; } = friend;
     public DirectItem Item { get; } = item;
     public event PropertyChangedEventHandler? PropertyChanged;
-    string? local = localFile;
-    ImageSource? thumb;
+    string? local = keptFile;
+    ImageSource? thumb, remote;
     string? thumbOf;
     bool loadingThumb;
 
-    /// <summary>The copy on this PC (downloaded once), or null.</summary>
+    /// <summary>The copy on this PC: kept (in the direct folder, or the file it was sent from) or – while received
+    /// files are not kept – a temporary one for viewing; null until it is needed.</summary>
     public string? LocalFile
     {
         get => local;
@@ -38,22 +39,31 @@ public sealed class DirectRow(DirectItem item, string friend, string me, string?
         }
     }
 
+    /// <summary>The copy stays on this PC (Folder shows it); false for a temporary one.</summary>
+    public bool Kept { get; set; } = keptFile != null;
+
     public bool FromMe => string.Equals(Item.From, me, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>A picture's own, a video's still (made once); loaded once per file (the list is refreshed often).</summary>
+    /// <summary>A kept picture's own, a kept video's still (made once); otherwise the small picture Peergos keeps with
+    /// the file – nothing is downloaded for it. Loaded once per file (the list is refreshed often).</summary>
     public ImageSource? Thumb
     {
         get
         {
-            if (LocalFile is not { } f) return null;
-            if (thumbOf == f) return thumb;
-            if (Item.IsImage)
+            if (Kept && LocalFile is { } f)
             {
-                thumb = ThumbFiles.Load(f, 180);
-                thumbOf = f;
+                if (thumbOf != f)
+                {
+                    if (Item.IsImage)
+                    {
+                        thumb = ThumbFiles.Load(f, 180);
+                        thumbOf = f;
+                    }
+                    else if (Item.IsVideo && !loadingThumb) _ = LoadVideoThumb(f);
+                }
+                if (thumbOf == f && thumb != null) return thumb;
             }
-            else if (Item.IsVideo && !loadingThumb) _ = LoadVideoThumb(f);
-            return thumbOf == f ? thumb : null;
+            return remote ??= ThumbFiles.FromBytes(DirectLogic.ThumbBytes(peergosThumb(Item)), 180);
         }
     }
 
@@ -85,7 +95,7 @@ public sealed class DirectRow(DirectItem item, string friend, string me, string?
     public string ViewLine => Line2;
     public bool IsVideo => Item.IsVideo;
     public string? OpenFile => LocalFile;
-    public bool CanDraw => Item.IsImage && LocalFile != null;
+    public bool CanDraw => Item.IsImage;
     public string NoPreview => $"{Item.Name}\n{FileKinds.Describe(Item.Name)} – no preview. Enter opens it in its app.";
 
     public async Task<string?> PictureAsync()
@@ -138,11 +148,14 @@ public partial class DirectWindow : Window
         Theme.Attach(this);
         hub.Updated += HubUpdated;
         app.SettingsChanged += SettingsChanged;
+        // Looking at this window is looking at what friends sent: the tray icon stops flashing.
+        Activated += (_, _) => app.Seen();
         Closed += (_, _) =>
         {
             hub.Updated -= HubUpdated;
             app.SettingsChanged -= SettingsChanged;
             StopPlayer();
+            hub.ClearViewFiles(); // the temporary copies of files not kept on this PC
         };
 
         FriendBox.SelectionChanged += (_, _) => { if (!loadingFriend && FriendBox.SelectedItem is string f) SelectFriend(f == AllFriends ? null : f); };
@@ -281,6 +294,13 @@ public partial class DirectWindow : Window
         if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(() => SettingsChanged(before)); return; }
         DrawFirstBox.IsChecked = app.Settings.DirectDrawFirst;
         BringFront.IsChecked = app.Settings.DirectBringToFront;
+        if (before.DirectKeepOnPc != app.Settings.DirectKeepOnPc)
+        {
+            // In effect at once: what is shown, the Folder button and the list's pictures follow the new choice.
+            shownFile = null;
+            _ = ShowCurrent();
+            _ = FetchThumbs();
+        }
     }
 
     // ---------- showing ----------
@@ -288,7 +308,7 @@ public partial class DirectWindow : Window
     /// <summary>Shows the window: everything (all friends, all months) unless a friend is named. With a path, that file
     /// is selected (the filters open up when they would hide it). Without <paramref name="activate"/> it comes to the
     /// front but does not take the keyboard from the app the user is typing in.</summary>
-    public void ShowFor(string? who, string? path, bool activate)
+    public void ShowFor(string? who, string? path, bool activate, bool friendsPanel = false)
     {
         wantedPath = path;
         if (!IsVisible)
@@ -316,7 +336,7 @@ public partial class DirectWindow : Window
         FillMonths();
         Rebuild();
         _ = LoadOlder(false);
-        if (hub.Friends.Count == 0) _ = ToggleFriends(true);
+        if (hub.Friends.Count == 0 || friendsPanel) _ = ToggleFriends(true);
     }
 
     void HubUpdated()
@@ -347,9 +367,11 @@ public partial class DirectWindow : Window
             SendToBox.Items.Clear();
             foreach (var f in list) SendToBox.Items.Add(f);
         }
-        // Send to: the friend shown, else the one chosen before, else the last one sent to, else the first.
+        // Send to: the friend shown, else the one chosen here before, else the one chosen in the tray menu (Other →
+        // Friend), else the last one sent to, else the first.
         SendToBox.SelectedItem = friend ?? (keep != null && list.Contains(keep) ? keep
-            : list.Contains(app.Settings.DirectLastFriend) ? app.Settings.DirectLastFriend : list.FirstOrDefault());
+            : DirectLogic.ChosenFriend(list, app.Settings.DirectFriend)
+              ?? (list.Contains(app.Settings.DirectLastFriend) ? app.Settings.DirectLastFriend : list.FirstOrDefault()));
         loadingFriend = false;
         Title = friend == null ? "Peergos Snap – Direct" : $"Peergos Snap – Direct with {friend}";
         UpdateDropZone();
@@ -478,8 +500,7 @@ public partial class DirectWindow : Window
             foreach (var it in list.DistinctBy(i => i.Path))
             {
                 if (known.TryGetValue(it, out var same) && same.Friend == f) { rows.Add(same); continue; }
-                var local = DirectLogic.CacheFile(AppPaths.DirectDir, f, it);
-                rows.Add(new DirectRow(it, f, Me, File.Exists(local) ? local : null, all, Fetch));
+                rows.Add(new DirectRow(it, f, Me, hub.KeptFile(f, it), all, Fetch, i => hub.Thumb(i.Path)));
             }
         }
         var sorted = DirectLogic.Sort(rows.Select(r => r.Item)).Select(i => rows.First(r => r.Item == i)).ToList();
@@ -511,8 +532,9 @@ public partial class DirectWindow : Window
 
     bool fetching;
 
-    /// <summary>Downloads the pictures and short videos of the list that are not on this PC yet (one after the other),
-    /// for their thumbnails.</summary>
+    /// <summary>With "Also keep received files on this PC": downloads the pictures and short videos of the list that are
+    /// not on this PC yet (one after the other), for their thumbnails. Without it nothing is downloaded – the list shows
+    /// the small pictures Peergos keeps with the files.</summary>
     async Task FetchThumbs()
     {
         if (fetching) return;
@@ -523,11 +545,14 @@ public partial class DirectWindow : Window
 
     async Task FetchThumbsOnce()
     {
-        foreach (var r in rows.Where(r => r.LocalFile == null && (r.Item.IsImage && r.Item.Size < 40_000_000 || r.Item.IsVideo && r.Item.Size < 100_000_000)).ToList())
+        if (!hub.KeepOnPc) return;
+        foreach (var r in rows.Where(r => !r.Kept && (r.Item.IsImage && r.Item.Size < 40_000_000 || r.Item.IsVideo && r.Item.Size < 100_000_000)).ToList())
         {
             try
             {
+                if (!hub.KeepOnPc) return; // switched off meanwhile
                 r.LocalFile = await hub.LocalFileAsync(r.Friend, r.Item);
+                r.Kept = true;
                 if (!rows.Contains(r)) continue; // the list changed meanwhile
                 if (Current == r) await ShowCurrent();
             }
@@ -535,15 +560,18 @@ public partial class DirectWindow : Window
         }
     }
 
-    /// <summary>The file on this PC (downloaded first when needed), or null with the reason in the status line.</summary>
+    /// <summary>The file on this PC (downloaded first when needed – kept, or a temporary copy when received files are
+    /// not kept here), or null with the reason in the status line.</summary>
     async Task<string?> Fetch(DirectRow r)
     {
         if (r.LocalFile is { } have && File.Exists(have)) return have;
         try
         {
             Status($"Loading {r.Item.Name}…");
-            r.LocalFile = await hub.LocalFileAsync(r.Friend, r.Item);
+            r.LocalFile = await hub.FileAsync(r.Friend, r.Item);
+            r.Kept = hub.KeptFile(r.Friend, r.Item) != null;
             Status(hub.Status);
+            if (Current == r) UpdateActions(r);
             return r.LocalFile;
         }
         catch (DirectException e)
@@ -556,6 +584,7 @@ public partial class DirectWindow : Window
     async Task ShowCurrent()
     {
         ConfirmBar.Visibility = Visibility.Collapsed;
+        ViewerNote.Margin = new Thickness(20);
         var r = Current;
         shownItem = r?.Item;
         showing = true;
@@ -597,7 +626,10 @@ public partial class DirectWindow : Window
         var when = it.Modified.ToString("d MMMM yyyy, HH:mm", CultureInfo.InvariantCulture);
         var who = r.FromMe ? $"You sent it to {r.Friend} on {when}" : $"{it.From} sent it on {when}";
         var where = r.FromMe ? $"it is in your Peergos (shared with {r.Friend})" : "your copy is in your Peergos";
-        WhereText.Text = $"{who} – {where}" + (r.LocalFile != null ? " and on this PC." : "; not on this PC yet (it loads when you open it).");
+        var here = r.Kept ? " and on this PC."
+            : hub.KeepOnPc ? "; not on this PC yet (it loads when you open it)."
+            : "; it is not kept on this PC (Settings → Direct) – opening it uses a temporary copy.";
+        WhereText.Text = $"{who} – {where}" + here;
     }
 
     void ShowNothing(string note)
@@ -618,24 +650,42 @@ public partial class DirectWindow : Window
         PlayerBar.Visibility = BigPlayBtn.Visibility = Visibility.Collapsed;
         Viewer.Visibility = Visibility.Visible;
         ZoomBar.IsEnabled = true;
-        if (r.LocalFile == null)
-        {
-            Picture.Source = null;
-            shownFile = null;
-            ViewerNote.Text = "Loading the picture…";
-            if (await Fetch(r) == null) { ViewerNote.Text = "Could not load it – see below."; return; }
-            if (Current != r) return;
-            ShowFacts(r, null);
-        }
-        if (shownFile == r.LocalFile && Picture.Source is BitmapSource same)
+        // Not kept on this PC: shown straight from Peergos, from memory – nothing is written to disk.
+        bool fromMemory = r.LocalFile == null && !hub.KeepOnPc && r.Item.Size <= 30_000_000;
+        var key = fromMemory ? "peergos:" + r.Item.Path : r.LocalFile;
+        if (key != null && shownFile == key && Picture.Source is BitmapSource same)
         {
             ShowFacts(r, $"{same.PixelWidth} × {same.PixelHeight}");
             return; // same picture: keep it and its zoom
         }
-        var img = await Task.Run(() => LoadFull(r.LocalFile!));
+        Picture.Source = null;
+        shownFile = null;
+        BitmapSource? img;
+        if (fromMemory)
+        {
+            ViewerNote.Text = "Loading the picture…";
+            byte[]? bytes = null;
+            try { bytes = await hub.BytesAsync(r.Item); }
+            catch (Exception e) when (e is DirectException or FormatException) { Status("Could not load it: " + e.Message); }
+            if (Current != r) return;
+            if (bytes == null) { ViewerNote.Text = "Could not load it – see below."; return; }
+            img = await Task.Run(() => ThumbFiles.FromBytes(bytes, 0));
+        }
+        else
+        {
+            if (r.LocalFile == null)
+            {
+                ViewerNote.Text = "Loading the picture…";
+                if (await Fetch(r) == null) { ViewerNote.Text = "Could not load it – see below."; return; }
+                if (Current != r) return;
+                ShowFacts(r, null);
+            }
+            key = r.LocalFile;
+            img = await Task.Run(() => LoadFull(r.LocalFile!));
+        }
         if (Current != r) return;
         Picture.Source = img;
-        shownFile = img == null ? null : r.LocalFile;
+        shownFile = img == null ? null : key;
         ViewerNote.Text = img == null ? "This picture cannot be shown – Open shows it in its app." : "";
         if (img == null) return;
         ShowFacts(r, $"{img.PixelWidth} × {img.PixelHeight}");
@@ -643,6 +693,18 @@ public partial class DirectWindow : Window
         Picture.Height = img.PixelHeight;
         UpdateLayout();
         ZoomAt(fitScale = FitScale(allowLarger: false), null);
+    }
+
+    /// <summary>A still in the picture area, fitted (a video's, before it plays).</summary>
+    void ShowStill(ImageSource? still)
+    {
+        if (still is not BitmapSource b) return;
+        Picture.Source = b;
+        Picture.Width = b.PixelWidth;
+        Picture.Height = b.PixelHeight;
+        UpdateLayout();
+        ZoomAt(fitScale = FitScale(allowLarger: true), null);
+        ZoomText.Text = ""; // the still is fitted, not zoomed
     }
 
     /// <summary>A video: its still with ▶ (it plays here), its length and picture size.</summary>
@@ -663,7 +725,16 @@ public partial class DirectWindow : Window
         MarkPlaying();
         if (r.LocalFile == null)
         {
-            if (r.Item.Size > 300_000_000) { ViewerNote.Text = $"A large video ({HistoryLogic.Size(r.Item.Size)}) – ▶ loads and plays it."; return; }
+            if (!hub.KeepOnPc || r.Item.Size > 300_000_000)
+            {
+                // Not loaded yet: the still Peergos keeps with it; ▶ loads and plays it (a temporary copy when received
+                // files are not kept on this PC).
+                ShowStill(r.Thumb);
+                ViewerNote.Margin = new Thickness(20, 190, 20, 20); // under the big play button
+                ViewerNote.Text = Picture.Source != null ? ""
+                    : r.Item.Size > 300_000_000 ? $"A large video ({HistoryLogic.Size(r.Item.Size)}) – ▶ loads and plays it." : "▶ loads and plays it.";
+                return;
+            }
             ViewerNote.Text = "Loading the video…";
             if (await Fetch(r) == null) { ViewerNote.Text = "Could not load it – see below."; return; }
             if (Current != r) return;
@@ -677,16 +748,16 @@ public partial class DirectWindow : Window
         if (facts.Duration is { } d) measure.Add(VideoFacts.Length(d));
         ShowFacts(r, measure.Count > 0 ? string.Join(" · ", measure) : null);
         TimeText.Text = facts.Duration is { } len ? "0:00 / " + VideoFacts.Length(len) : "";
+        if (!r.Kept)
+        {
+            ShowStill(r.Thumb); // a temporary copy: no still is made and kept for it
+            return;
+        }
         if (await ThumbFiles.VideoThumbOf(file) is { } still && Current == r && playerFile == null)
         {
             var img = await Task.Run(() => ThumbFiles.Load(still, 0));
             if (Current != r || playerFile != null || img == null) return;
-            Picture.Source = img;
-            Picture.Width = img.PixelWidth;
-            Picture.Height = img.PixelHeight;
-            UpdateLayout();
-            ZoomAt(fitScale = FitScale(allowLarger: true), null);
-            ZoomText.Text = ""; // the still is fitted, not zoomed
+            ShowStill(img);
         }
     }
 
@@ -770,16 +841,30 @@ public partial class DirectWindow : Window
         FileGlyph.Text = FileKinds.Glyph(it.Kind);
         FileTitle.Text = it.Name;
         FileFacts.Text = FileKinds.Describe(it.Name) + (it.Size > 0 ? " · " + HistoryLogic.Size(it.Size) : "");
+        bool temporary = !r.Kept && !hub.KeepOnPc;
         FileHint.Text = it.IsArchive
-            ? "Open as folder unpacks it next to its copy on this PC; Unpack to… puts it where you choose."
+            ? (temporary ? "Open as folder unpacks it into a temporary folder; Unpack to… keeps it where you choose."
+                : "Open as folder unpacks it next to its copy on this PC; Unpack to… puts it where you choose.")
             : "Open shows it in its app; Save as… keeps a copy where you like.";
         FileList.Text = "";
         if (!it.IsArchive || it.Size > 200_000_000) return;
-        var f = r.LocalFile ?? await Fetch(r);
-        if (f == null || Current != r) return;
         try
         {
-            var c = await Task.Run(() => FolderPack.Read(f));
+            FolderPack.Contents c;
+            if (r.LocalFile == null && temporary)
+            {
+                // What is inside, read from memory (nothing written to disk); a large one only when opened.
+                if (it.Size > 20_000_000) return;
+                var bytes = await hub.BytesAsync(it);
+                if (Current != r) return;
+                c = await Task.Run(() => FolderPack.Read(new MemoryStream(bytes)));
+            }
+            else
+            {
+                var f = r.LocalFile ?? await Fetch(r);
+                if (f == null || Current != r) return;
+                c = await Task.Run(() => FolderPack.Read(f));
+            }
             if (Current != r) return;
             FileFacts.Text = $"{FileKinds.Describe(it.Name)} · {(c.Files == 1 ? "1 file" : $"{c.Files} files")}"
                              + (c.Folders > 0 ? $" in {(c.Folders == 1 ? "1 folder" : $"{c.Folders} folders")}" : "")
@@ -787,10 +872,11 @@ public partial class DirectWindow : Window
             FileList.Text = string.Join("\n", c.Top.Take(14)) + (c.Top.Count > 14 ? $"\n… and {c.Top.Count - 14} more" : "");
             ShowFacts(r, $"{c.Files} files");
         }
-        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is InvalidDataException or IOException or UnauthorizedAccessException or FormatException)
         {
             FileHint.Text = "This ZIP file cannot be read: " + e.Message;
         }
+        catch (DirectException e) { Status("Could not load it: " + e.Message); }
     }
 
     void UpdateActions(DirectRow? r)
@@ -799,6 +885,8 @@ public partial class DirectWindow : Window
         foreach (var b in new UIElement[] { StarBtn, PinBtn, LabelBox, OpenBtn, FolderBtn, SaveBtn, CopyBtn, DrawBtn, UnpackBtn, UnpackToBtn, ForwardBtn, LinkBtn, DeleteBtn, ViewBtn })
             b.IsEnabled = any;
         DrawBtn.Visibility = r?.Item.IsImage == true ? Visibility.Visible : Visibility.Collapsed;
+        // Folder only for a copy that stays on this PC (not for a temporary one).
+        FolderBtn.Visibility = r != null && (r.Kept || hub.KeepOnPc) ? Visibility.Visible : Visibility.Collapsed;
         UnpackBtn.Visibility = UnpackToBtn.Visibility = r?.Item.IsArchive == true ? Visibility.Visible : Visibility.Collapsed;
         ForwardBtn.Visibility = hub.Friends.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         ViewBtn.IsEnabled = r != null && (r.Item.IsImage || r.Item.IsVideo);
@@ -1040,7 +1128,8 @@ public partial class DirectWindow : Window
             // Named after the file (the copy on this PC may carry a prefix: "mine-…" for what you sent).
             var folder = await Task.Run(() => FolderPack.Unpack(f, parent, r.Item.Name));
             if (!choose) unpacked[f] = folder;
-            Status("Unpacked into " + folder);
+            Status(choose || r.Kept ? "Unpacked into " + folder
+                : "Unpacked into a temporary folder (it goes when this window closes) – Unpack to… keeps it where you choose");
             Shell(folder);
         }
         catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)

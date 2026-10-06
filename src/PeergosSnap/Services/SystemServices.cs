@@ -94,6 +94,18 @@ public sealed class SingleInstance : IDisposable
         });
     }
 
+    /// <summary>Whether Peergos Snap is running for this Windows user (without starting a copy).</summary>
+    public static bool IsRunning()
+    {
+        try
+        {
+            if (!Mutex.TryOpenExisting(MutexName, out var m)) return false;
+            m.Dispose();
+            return true;
+        }
+        catch (UnauthorizedAccessException) { return true; }
+    }
+
     public static bool Send(string cmd)
     {
         try

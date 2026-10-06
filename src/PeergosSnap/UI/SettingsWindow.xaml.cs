@@ -52,6 +52,7 @@ public partial class SettingsWindow : Window
             KindPicture.IsChecked = S.Mode == TrayMode.Picture;
             KindVideo.IsChecked = S.Mode == TrayMode.Video;
             KindFiles.IsChecked = S.Mode == TrayMode.Files;
+            KindFolders.IsChecked = S.Mode == TrayMode.Folders;
             OutUploadMedia.IsChecked = S.Output == OutputMode.UploadAndMedia;
             OutLink.IsChecked = S.Output == OutputMode.SecretLink;
             OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
@@ -87,6 +88,7 @@ public partial class SettingsWindow : Window
         KindPicture.IsChecked = S.Mode == TrayMode.Picture;
         KindVideo.IsChecked = S.Mode == TrayMode.Video;
         KindFiles.IsChecked = S.Mode == TrayMode.Files;
+        KindFolders.IsChecked = S.Mode == TrayMode.Folders;
         ShutterSoundBox.IsChecked = S.ShutterSound;
         Select(ImageFormat, S.ImageFormat);
         Select(VideoFormat, S.VideoFormat);
@@ -134,9 +136,12 @@ public partial class SettingsWindow : Window
         DirectReceive.IsChecked = S.DirectReceive;
         DirectFront.IsChecked = S.DirectBringToFront;
         DirectKeepOnPc.IsChecked = S.DirectKeepOnPc;
+        DirectFlash.IsChecked = S.DirectFlash;
         DirectSeconds.Text = S.DirectCheckSeconds.ToString();
         DirectDrawFirst.IsChecked = S.DirectDrawFirst;
         ExplorerMenuBox.IsChecked = S.ExplorerMenu;
+        ExplorerTopBox.IsChecked = S.ExplorerMenuTop;
+        ShowExplorerTop();
         DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…"
             : "Sharing directly with " + string.Join(", ", S.DirectFriends) + ".";
 
@@ -212,6 +217,7 @@ public partial class SettingsWindow : Window
         KindPicture.Checked += (_, _) => Change(s => s.Mode = TrayMode.Picture);
         KindVideo.Checked += (_, _) => Change(s => s.Mode = TrayMode.Video);
         KindFiles.Checked += (_, _) => Change(s => s.Mode = TrayMode.Files);
+        KindFolders.Checked += (_, _) => Change(s => s.Mode = TrayMode.Folders);
         ShutterSoundBox.Click += (_, _) => Change(s => s.ShutterSound = ShutterSoundBox.IsChecked == true);
         ShutterPlay.Click += (_, _) => PeergosSnap.Services.ShutterSound.Play();
         ImageFormat.SelectionChanged += (_, _) => Change(s => s.ImageFormat = Sel(ImageFormat));
@@ -288,6 +294,7 @@ public partial class SettingsWindow : Window
         DirectReceive.Click += (_, _) => Change(s => s.DirectReceive = DirectReceive.IsChecked == true);
         DirectFront.Click += (_, _) => Change(s => s.DirectBringToFront = DirectFront.IsChecked == true);
         DirectKeepOnPc.Click += (_, _) => Change(s => s.DirectKeepOnPc = DirectKeepOnPc.IsChecked == true);
+        DirectFlash.Click += (_, _) => Change(s => s.DirectFlash = DirectFlash.IsChecked == true);
         DirectDrawFirst.Click += (_, _) => Change(s => s.DirectDrawFirst = DirectDrawFirst.IsChecked == true);
         DirectSeconds.TextChanged += (_, _) =>
         {
@@ -327,7 +334,24 @@ public partial class SettingsWindow : Window
             catch (Exception e) { MessageBox.Show(this, e.Message, "Peergos Snap"); }
         };
         ShowNotes.Click += (_, _) => Change(s => s.ShowUserNotes = ShowNotes.IsChecked == true);
-        ExplorerMenuBox.Click += (_, _) => Change(s => s.ExplorerMenu = ExplorerMenuBox.IsChecked == true);
+        ExplorerMenuBox.Click += (_, _) => { Change(s => s.ExplorerMenu = ExplorerMenuBox.IsChecked == true); ShowExplorerTop(); };
+        ExplorerTopBox.Click += (_, _) => { Change(s => s.ExplorerMenuTop = ExplorerTopBox.IsChecked == true); ShowExplorerTop(); };
+        ExplorerSetupBtn.Click += async (_, _) =>
+        {
+            // Registering an unsigned package needs administrator rights: Windows asks once.
+            ExplorerSetupBtn.IsEnabled = false;
+            try
+            {
+                var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, $"{Services.ExplorerPackage.Argument} install")
+                    { UseShellExecute = true, Verb = "runas" });
+                if (p != null) await p.WaitForExitAsync();
+            }
+            catch (System.ComponentModel.Win32Exception) { } // the administrator question was declined
+            finally { ExplorerSetupBtn.IsEnabled = true; }
+            app.RefreshExplorerMenu();
+            ShowExplorerTop();
+        };
+        TrayIconBtn.Click += (_, _) => Shell("ms-settings:taskbar");
         ExportBtn.Click += (_, _) => new SettingsTransferWindow(app, null, null) { Owner = this }.ShowDialog();
         ImportBtn.Click += (_, _) => ImportSettings();
         OpenNotes.Click += (_, _) => app.ShowNotes();
@@ -573,6 +597,18 @@ public partial class SettingsWindow : Window
             if (!r.Ok && Uploader.NeedsSignIn(r.Error)) { Change(s => s.Session = ""); UpdateAccountPanels(); SignInResult.Text = r.Error; }
         }
         finally { TestBtn.IsEnabled = true; }
+    }
+
+    /// <summary>Windows 11's menu: whether the package is there, and what to do when it is not.</summary>
+    void ShowExplorerTop()
+    {
+        bool supported = Services.ExplorerPackage.Supported, ready = supported && Services.ExplorerPackage.Registered();
+        ExplorerTopBox.IsEnabled = S.ExplorerMenu && supported;
+        ExplorerSetupBtn.Visibility = S.ExplorerMenu && S.ExplorerMenuTop && supported && !ready ? Visibility.Visible : Visibility.Collapsed;
+        ExplorerTopInfo.Text = !supported ? "Only Windows 11 has this; on Windows 10 Peergos Snap is in the classic menu."
+            : ready && !S.ExplorerMenuTop ? "Switched off: Peergos Snap is under 'Show more options' (or Shift + right-click)."
+            : ready ? "Ready: right-click a file or folder – Peergos Snap is at the top of the menu."
+            : "This needs a small Windows package naming Peergos Snap as the menu's handler. The installer adds it when Peergos Snap is installed for all users; Set it up… adds it now (Windows asks for administrator rights once). Until then the menu is under 'Show more options' (or Shift + right-click).";
     }
 
     static void Shell(string target)
