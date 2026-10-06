@@ -186,6 +186,9 @@
                     <RadioButton x:Name="OutMedia" Content="Copy the picture / video itself to the clipboard (no upload)" GroupName="out"/>
                     <CheckBox x:Name="Fallback" Content="If the upload fails, copy the picture / video to the clipboard instead" Margin="0,10,0,6"/>
                     <CheckBox x:Name="Notifications" Content="Show notifications"/>
+                    <TextBlock Text="Notification cards stay for" Margin="0,8,0,0"/>
+                    <ComboBox x:Name="ToastBox" Width="240" HorizontalAlignment="Left"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="For cards that say something worked. Warnings and errors stay at least 14 seconds, and a card about something still running stays until it is done. With the mouse on a card it stays open. 'Until I close them' keeps every card until you click ✕ or one of its buttons."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Files &amp; history">
@@ -255,6 +258,8 @@
                     <TextBlock Style="{StaticResource Hint}" Text="It comes to the front without taking the keyboard from the app you are typing in. Off: only a notification card."/>
                     <CheckBox x:Name="DirectKeepOnPc" Content="Also keep received files on this PC"/>
                     <TextBlock Style="{StaticResource Hint}" Text="Every file you receive is copied into your Peergos (PeergosSnap/Direct/(friend)/(month)/received). On: it is also downloaded to this PC when it arrives. Off: it stays only in your Peergos and is downloaded when you open it."/>
+                    <CheckBox x:Name="DirectDrawFirst" Content="Draw on a picture before it goes to a friend"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Take picture in the direct window (and Direct to a friend in the tray menu) then opens the drawing editor with the picture: add arrows, numbers or a note, and Done sends it. The direct window has the same switch next to Take picture."/>
                     <TextBlock Text="Check for new pictures every (seconds, 2 to 60)"/>
                     <TextBox x:Name="DirectSeconds" Width="120" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DirectSecondsErr" Style="{StaticResource Err}" Visibility="Collapsed" Text="A whole number from 2 to 60"/>
@@ -314,6 +319,14 @@
             <TabItem Header="General">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
                     <CheckBox x:Name="Autostart" Content="Start Peergos Snap when I sign in to Windows"/>
+                    <CheckBox x:Name="ExplorerMenuBox" Content="Add Peergos Snap to Explorer's right-click menu of files and folders"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Right-click a file, picture, video or folder → Peergos Snap → upload it and copy the link, or send it to a friend. Peergos Snap always asks first, so nothing leaves this PC by accident. On Windows 11 the menu is under 'Show more options' (or Shift + right-click). Only for your Windows account; uninstalling removes it."/>
+                    <TextBlock Text="Settings file" FontWeight="SemiBold" Margin="0,10,0,2"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button x:Name="ExportBtn" Content="Export settings…"/>
+                        <Button x:Name="ImportBtn" Content="Import settings…"/>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,8" Text="Save all or some of your settings in a file – to keep them, to set up a friend's Peergos Snap the same way, or to show an AI what you use. Your sign-in, passwords and links are never in it; your account name, friends and folders only if you tick 'Personal details'."/>
                     <TextBlock Text="Updates" FontWeight="SemiBold" Margin="0,10,0,2"/>
                     <CheckBox x:Name="AutoCheck" Content="Check for new versions automatically (at start and once a day)"/>
                     <CheckBox x:Name="AutoInstall" Content="Install new versions automatically (never during a recording or upload)"/>

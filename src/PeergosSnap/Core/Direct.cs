@@ -8,6 +8,10 @@ public sealed record DirectItem(string Name, string Path, string From, long Size
     IReadOnlyList<string> Stars)
 {
     public bool IsImage => System.IO.Path.GetExtension(Name).ToLowerInvariant() is ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp";
+    public FileKind Kind => FileKinds.Of(Name);
+    public bool IsVideo => Kind == FileKind.Video;
+    /// <summary>A ZIP file: how folders travel (see <see cref="FolderPack"/>).</summary>
+    public bool IsArchive => Kind == FileKind.Archive;
     /// <summary>The month folder: …/MONTH/NAME or …/MONTH/received/NAME (in the folders of 2.3 and of 2.2).</summary>
     public string Month => DirectLogic.MonthOf(Path);
 }

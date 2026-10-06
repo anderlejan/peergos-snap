@@ -67,6 +67,9 @@ Name: "{autodesktop}\Peergos Snap"; Filename: "{app}\PeergosSnap.exe"; Tasks: de
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "PeergosSnap"; ValueData: """{app}\PeergosSnap.exe"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
+; Explorer's right-click menu (Settings → General writes it): never created here, removed on uninstall.
+Root: HKCU; Subkey: "Software\Classes\*\shell\PeergosSnap"; Flags: uninsdeletekey dontcreatekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\PeergosSnap"; Flags: uninsdeletekey dontcreatekey
 
 [Run]
 Filename: "{app}\PeergosSnap.exe"; Parameters: "--tray"; Description: "Start Peergos Snap now"; Flags: nowait postinstall

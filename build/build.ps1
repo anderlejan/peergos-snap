@@ -5,8 +5,11 @@
   .\build\build.ps1              # development build (allows uncommitted changes, no source zip)
   .\build\build.ps1 -Release     # release build: refuses uncommitted changes, adds the source zip
   .\build\build.ps1 -Upload      # also run a real upload in the self-test (needs PEERGOS_SNAP_TEST_LINK)
+  .\build\build.ps1 -StageOnly   # development: only the packaged, self-tested app in out\stage (no installer,
+                                 # nothing in dist\, so the version's installer name stays free for the release)
 #>
-param([switch]$Release, [switch]$Upload, [switch]$SkipTests)
+param([switch]$Release, [switch]$Upload, [switch]$SkipTests, [switch]$StageOnly)
+if ($Release -and $StageOnly) { throw "-Release builds the installer: leave out -StageOnly" }
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Root = (Resolve-Path "$PSScriptRoot\..").Path
@@ -29,7 +32,7 @@ if ($Release) {
 $Dist = "$Root\dist"
 New-Item -ItemType Directory -Force $Dist | Out-Null
 $SetupName = "PeergosSnap-Setup-$Version.exe"
-if (Test-Path "$Dist\$SetupName") { throw "$SetupName already exists. Installers are never overwritten: bump the version." }
+if (-not $StageOnly -and (Test-Path "$Dist\$SetupName")) { throw "$SetupName already exists. Installers are never overwritten: bump the version." }
 
 # ---------- tools ----------
 $Jdk = @("C:\Program Files\Microsoft\jdk-25.0.3.9-hotspot") + (Get-ChildItem "C:\Program Files\Microsoft\jdk-25*" -Directory -ErrorAction SilentlyContinue | ForEach-Object FullName) |
@@ -133,6 +136,11 @@ $st = @('--selftest', '--report', $report); if ($Upload) { $st += '--upload' }
 $p = Start-Process -FilePath "$Stage\PeergosSnap.exe" -ArgumentList $st -Wait -PassThru
 Get-Content $report | ForEach-Object { Write-Host "  $_" }
 if ($p.ExitCode -ne 0) { throw "self-test failed" }
+
+if ($StageOnly) {
+  Write-Host "`nDone: $Stage (no installer: -StageOnly)" -ForegroundColor Green
+  return
+}
 
 # ---------- installer ----------
 Step "Installer"

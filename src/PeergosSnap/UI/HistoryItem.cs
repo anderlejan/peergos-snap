@@ -8,7 +8,7 @@ using PeergosSnap.Core;
 namespace PeergosSnap.UI;
 
 /// <summary>One row of the History window.</summary>
-public sealed class HistoryItem : INotifyPropertyChanged
+public sealed class HistoryItem : INotifyPropertyChanged, IViewable
 {
     public HistoryRecord Record { get; }
     public bool Local { get; private set; }
@@ -70,6 +70,17 @@ public sealed class HistoryItem : INotifyPropertyChanged
     /// <summary>A picture that can be shown full screen or drawn on.</summary>
     public bool IsViewablePicture => PreviewFile is { } f && PictureTypes.Contains(Path.GetExtension(f).ToLowerInvariant());
     public Visibility VideoBadge => Record.IsVideo && Record.Seconds > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    // ---------- the full-screen viewer ----------
+    public string ViewTitle => Title;
+    public string ViewLine => Line2;
+    public bool IsVideo => Record.IsVideo;
+    public async Task<string?> PictureAsync() => Record.IsVideo ? (Local ? await ThumbFiles.VideoThumb(Record) : null) : PreviewFile;
+    public string NoPreview => Record.IsUpload
+        ? $"{Title}\nNo preview: {(Record.IsFolder ? "a folder" : "not a picture, or the original is gone")}."
+        : "No preview: the file is not on this PC." + (Record.Link != null ? " Open its link instead." : "");
+    public string? OpenFile => PreviewFile;
+    public bool CanDraw => IsViewablePicture && Local && !Record.IsVideo;
     public string Duration => TimeSpan.FromSeconds(Record.Seconds).ToString(Record.Seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss");
     public Visibility LinkBadge => !string.IsNullOrEmpty(Record.Link) && InPeergos != false ? Visibility.Visible : Visibility.Collapsed;
 
@@ -145,19 +156,62 @@ public static class ThumbFiles
     {
         var thumb = Path.Combine(AppPaths.ThumbsDir, r.Id + ".jpg");
         if (File.Exists(thumb)) return thumb;
-        if (r.File == null || !File.Exists(r.File) || !File.Exists(AppPaths.FfmpegExe)) return null;
+        if (r.File == null || !File.Exists(r.File)) return null;
+        return await MakeVideoThumb(r.File, thumb);
+    }
+
+    /// <summary>A small picture of any video file (the direct window's), kept by its path, size and time.</summary>
+    public static async Task<string?> VideoThumbOf(string file)
+    {
+        var fi = new FileInfo(file);
+        if (!fi.Exists) return null;
+        var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{fi.FullName.ToLowerInvariant()}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}")))[..20];
+        var thumb = Path.Combine(AppPaths.ThumbsDir, "v-" + key + ".jpg");
+        return File.Exists(thumb) ? thumb : await MakeVideoThumb(file, thumb);
+    }
+
+    static async Task<string?> MakeVideoThumb(string file, string thumb)
+    {
+        if (!File.Exists(AppPaths.FfmpegExe)) return null;
         await Ffmpeg.WaitAsync();
         try
         {
             Directory.CreateDirectory(AppPaths.ThumbsDir);
-            var psi = new ProcessStartInfo(AppPaths.FfmpegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
-            foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-ss", "0.5", "-i", r.File, "-frames:v", "1", "-vf", "scale=400:-2", thumb })
-                psi.ArgumentList.Add(a);
-            using var p = Process.Start(psi)!;
-            await p.StandardError.ReadToEndAsync();
-            await p.WaitForExitAsync();
-            return File.Exists(thumb) ? thumb : null;
+            // Half a second in (past a black first frame); a shorter video gets its first frame.
+            foreach (var at in new[] { "0.5", "0" })
+            {
+                var psi = new ProcessStartInfo(AppPaths.FfmpegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+                foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-y", "-ss", at, "-i", file, "-frames:v", "1", "-vf", "scale=400:-2", thumb })
+                    psi.ArgumentList.Add(a);
+                using var p = Process.Start(psi)!;
+                await p.StandardError.ReadToEndAsync();
+                await p.WaitForExitAsync();
+                if (File.Exists(thumb)) return thumb;
+            }
+            return null;
         }
         finally { Ffmpeg.Release(); }
+    }
+
+    static readonly Dictionary<string, VideoFacts> Probed = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Length and size of a video (asked FFmpeg once per file).</summary>
+    public static async Task<VideoFacts> ProbeVideo(string file)
+    {
+        var key = file + "|" + (File.Exists(file) ? new FileInfo(file).Length : 0);
+        lock (Probed) if (Probed.TryGetValue(key, out var known)) return known;
+        var facts = new VideoFacts(null, 0, 0);
+        if (File.Exists(file) && File.Exists(AppPaths.FfmpegExe))
+        {
+            var psi = new ProcessStartInfo(AppPaths.FfmpegExe) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true };
+            foreach (var a in new[] { "-hide_banner", "-i", file }) psi.ArgumentList.Add(a);
+            using var p = Process.Start(psi)!;
+            var text = await p.StandardError.ReadToEndAsync(); // without an output FFmpeg only describes the file
+            await p.WaitForExitAsync();
+            facts = VideoFacts.Parse(text);
+        }
+        lock (Probed) Probed[key] = facts;
+        return facts;
     }
 }

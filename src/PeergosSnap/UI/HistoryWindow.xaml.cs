@@ -640,7 +640,7 @@ public partial class HistoryWindow : Window
     void ShowFull(HistoryItem it)
     {
         var shown = List.Items.Cast<HistoryItem>().ToList();
-        var v = new ImageViewerWindow(shown, Math.Max(0, shown.IndexOf(it)), x => _ = Draw(x)) { Owner = this };
+        var v = new ImageViewerWindow(shown, Math.Max(0, shown.IndexOf(it)), x => _ = Draw((HistoryItem)x)) { Owner = this };
         v.Show();
     }
 

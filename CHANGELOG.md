@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.5.0 – 2026-10-06
+
+- **The direct window shows every file better.** Pictures zoom as in the history: the mouse wheel zooms where the
+  pointer is, dragging moves the picture, and *View* (or a double-click) shows it full screen – the view follows the
+  mouse, ← → go through the pictures and videos, *D* draws on it.
+- **Videos play in the direct window.** The list and the preview show a still of each video with its length and
+  picture size; ▶ (or Space) plays it there, with a bar to jump to any moment and the sound on or off.
+- **What a file is, and what to do with it.** Under the preview: what it is (PNG picture, MP4 video, PDF document,
+  ZIP archive …), its size, picture size or length, who sent it when, and where it is (your Peergos, this PC). Then
+  *Open*, *Folder*, *Save as…*, *Copy*, *Draw on it*, *Open as folder* / *Unpack to…* (ZIP files), *Send to…*
+  (another friend), *Get a link* (a copy in your own Peergos with a secret link) and *Delete*. Files without a
+  preview show a card with their kind and size; a ZIP file lists what is inside.
+- **Draw first.** A tick next to *Take picture* (also Settings → Direct and the tray menu) opens the drawing editor
+  with the picture before it goes to your friend: *Send to … ✓*, *Send without drawing* or *Don't send*.
+- **Draw on any picture of the direct window** – one you received or sent – and send the drawn copy back.
+- **Folders to a friend.** *Send a folder…* (or drop a folder) sends it as one ZIP file named like the folder; the
+  friend clicks *Open as folder* (unpacked next to its copy and opened in Explorer) or *Unpack to…*.
+- **Explorer's right-click menu (optional).** Settings → General adds *Peergos Snap* to the right-click menu of files
+  and folders: upload and copy the link, or send to a friend. A question always comes first – what, how much, to whom
+  – so nothing leaves the PC by accident; several selected items get one question. On Windows 11 it is under *Show
+  more options*.
+- **Settings export and import.** Settings → General saves all or some settings in a file and reads them back –
+  to keep them, to set up a friend's Peergos Snap, or to show an AI. The sign-in is never in the file; personal
+  details (account name, friends, folders) only when ticked.
+- **Direct to a friend in every mode** of the tray menu, with *Take a picture for …*, *Send files to …* and *Send a
+  folder to …* for each friend (a submenu each with several friends).
+- **How long cards stay**: Settings → Output → *Notification cards stay for* 4 to 30 seconds, or until closed.
+
 ## 2.4.0 – 2026-10-06
 
 - **After a capture: copy it and upload it (the new default).** The picture or video is on the clipboard at once and is

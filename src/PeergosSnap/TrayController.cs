@@ -297,8 +297,21 @@ public sealed class TrayController : IDisposable
     string appliedHotkeys = "\0";
     string appliedTheme = "\0";
 
+    bool? appliedExplorerMenu;
+
     void ApplySettings()
     {
+        ToastWindow.SuccessSeconds = Settings.ToastSeconds;
+        if (appliedExplorerMenu != Settings.ExplorerMenu)
+        {
+            appliedExplorerMenu = Settings.ExplorerMenu;
+            try { ExplorerMenu.Sync(Settings.ExplorerMenu, Environment.ProcessPath ?? Path.Combine(AppPaths.AppDir, "PeergosSnap.exe")); }
+            catch (Exception e)
+            {
+                Log.Error("explorer menu", e);
+                Notify(ToastKind.Warn, "Explorer's right-click menu could not be changed", e.Message);
+            }
+        }
         var theme = Settings.ColorScheme + "|" + Settings.FontPercent;
         if (theme != appliedTheme)
         {
@@ -345,6 +358,7 @@ public sealed class TrayController : IDisposable
                 if (!rec) m.Items.Add(MenuEntry("Record video" + delaySuffix, () => _ = ToggleRecording(), Settings.HotkeyVideo));
                 m.Items.Add(MenuEntry("Show mouse pointer", () => UpdateSettings(s => s.RecordCursor = !s.RecordCursor), check: Settings.RecordCursor, enabled: !rec));
                 m.Items.Add(MenuEntry("Record sound", () => UpdateSettings(s => s.RecordSound = !s.RecordSound), check: Settings.RecordSound, enabled: !rec));
+                m.Items.Add(DirectMenu(rec));
                 m.Items.Add(OutputMenu("video"));
                 break;
             case TrayMode.Files:
@@ -352,8 +366,7 @@ public sealed class TrayController : IDisposable
                     tip: "Each file gets its own secret link; the links are copied."));
                 m.Items.Add(MenuEntry("Upload a folder…", () => _ = ChooseAndUploadFolder(), enabled: uploads == 0,
                     tip: "The folder and its subfolders get one secret link, which is copied."));
-                m.Items.Add(MenuEntry("Send files to a friend…", () => direct.ShowWindow(null, null),
-                    tip: "Opens the direct window: drop the files there."));
+                m.Items.Add(DirectMenu(rec));
                 break;
             default:
                 m.Items.Add(MenuEntry("Take picture" + delaySuffix, () => _ = CapturePicture(), Settings.HotkeyPicture, enabled: !rec));
@@ -421,18 +434,141 @@ public sealed class TrayController : IDisposable
         return menu;
     }
 
-    /// <summary>Direct to a friend ▸ : a picture straight to a friend's screen, or the direct window.</summary>
+    /// <summary>Direct to a friend ▸ (in every mode): a picture, files or a folder straight to a friend's screen, the
+    /// "draw first" switch, and the direct window. With several friends each has a submenu.</summary>
     WinForms.ToolStripMenuItem DirectMenu(bool rec)
     {
         var items = new List<WinForms.ToolStripItem>();
-        foreach (var f in direct.Friends)
+        var friends = direct.Friends;
+        var draw = Settings.DirectDrawFirst ? " (draw first)" : "";
+        foreach (var f in friends)
         {
             var friend = f;
-            items.Add(MenuEntry($"Send a picture to {friend}", () => _ = CapturePicture(toFriend: friend), enabled: !rec));
+            bool one = friends.Count == 1;
+            var picture = MenuEntry((one ? $"Take a picture for {friend}" : "Take a picture") + draw,
+                () => _ = CapturePicture(toFriend: friend, annotate: Settings.DirectDrawFirst), enabled: !rec);
+            var files = MenuEntry(one ? $"Send files to {friend}…" : "Send files…", () => _ = ChooseAndSend(friend, folder: false));
+            var folder = MenuEntry(one ? $"Send a folder to {friend}…" : "Send a folder…", () => _ = ChooseAndSend(friend, folder: true),
+                tip: "A folder travels as one ZIP file; your friend opens it as a folder with one click.");
+            if (one) items.AddRange([picture, files, folder]);
+            else items.Add(SubMenu(friend, picture, files, folder));
         }
         if (items.Count > 0) items.Add(new WinForms.ToolStripSeparator());
-        items.Add(MenuEntry("Open the direct window", () => direct.ShowWindow(null, null)));
+        if (friends.Count > 0)
+            items.Add(MenuEntry("Draw on pictures before sending them", () => UpdateSettings(s => s.DirectDrawFirst = !s.DirectDrawFirst),
+                check: Settings.DirectDrawFirst, tip: "The drawing editor opens with the picture; Done sends it."));
+        items.Add(MenuEntry(friends.Count == 0 ? "Add a friend…" : "Open the direct window", () => direct.ShowWindow(null, null)));
         return SubMenu("Direct to a friend", items.ToArray());
+    }
+
+    async Task ChooseAndSend(string friend, bool folder)
+    {
+        List<string> paths;
+        if (folder)
+        {
+            var d = new Microsoft.Win32.OpenFolderDialog { Title = $"Folder for {friend} (it travels as one ZIP file)", Multiselect = true };
+            if (d.ShowDialog() != true) return;
+            paths = [.. d.FolderNames];
+        }
+        else
+        {
+            var d = new Microsoft.Win32.OpenFileDialog { Title = $"Files for {friend}", Multiselect = true };
+            if (d.ShowDialog() != true) return;
+            paths = [.. d.FileNames];
+        }
+        await SendPathsAsync(friend, paths);
+    }
+
+    /// <summary>Files and folders straight to a friend (tray menu, Explorer): a folder travels as one ZIP file.</summary>
+    public async Task SendPathsAsync(string friend, IReadOnlyList<string> paths)
+    {
+        var files = paths.Where(File.Exists).ToList();
+        var folders = paths.Where(Directory.Exists).ToList();
+        if (files.Count + folders.Count == 0) return;
+        uploads++;
+        tray.Icon = iconBusy;
+        var packed = new List<string>();
+        var ui = System.Windows.Application.Current.Dispatcher;
+        try
+        {
+            foreach (var f in folders)
+            {
+                var name = Path.GetFileName(f.TrimEnd('\\'));
+                Notify(ToastKind.Busy, $"Packing {name} for {friend}…", "A folder travels as one ZIP file.");
+                int shown = -10;
+                packed.Add(await Task.Run(() => FolderPack.Pack(f, Path.Combine(AppPaths.WorkDir, "direct-folders"), pc =>
+                {
+                    if (pc < shown + 10) return;
+                    shown = pc;
+                    ui.BeginInvoke(() => Notify(ToastKind.Busy, $"Packing {name} for {friend}…", "A folder travels as one ZIP file.", percent: pc));
+                })));
+            }
+            var all = files.Concat(packed).ToList();
+            var what = all.Count == 1 ? Path.GetFileName(all[0]) : $"{all.Count} files";
+            Notify(ToastKind.Busy, $"Sending {what} to {friend}…", "");
+            var sent = await direct.SendAsync(friend, all, t => Notify(ToastKind.Busy, t, ""));
+            UpdateSettings(s => s.DirectLastFriend = friend);
+            Notify(ToastKind.Ok, $"Sent to {friend}", (sent.Count == 1 ? sent[0].Name : $"{sent.Count} files") + $" – {friend} sees {(sent.Count == 1 ? "it" : "them")} now.",
+                extra: ("Open", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)));
+        }
+        catch (Exception e) when (e is DirectException or IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Log.Error("send to " + friend, e);
+            Notify(ToastKind.Error, $"Not sent to {friend}", e.Message);
+        }
+        finally
+        {
+            foreach (var z in packed)
+                try { File.Delete(z); }
+                catch { }
+            uploads--;
+            tray.Icon = recorder != null ? iconRec : uploads > 0 ? iconBusy : iconIdle;
+            UpdateTip();
+        }
+    }
+
+    // ---------- Explorer's right-click menu ----------
+
+    readonly List<(string Command, string Path)> fromExplorer = [];
+    System.Windows.Threading.DispatcherTimer? explorerBatch;
+
+    /// <summary>Explorer starts one copy per selected item: what arrives within a moment is asked about together.</summary>
+    void FromExplorer(string command, string path)
+    {
+        fromExplorer.Add((command, path));
+        if (explorerBatch == null)
+        {
+            explorerBatch = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(700) };
+            explorerBatch.Tick += async (_, _) =>
+            {
+                explorerBatch.Stop();
+                var items = fromExplorer.ToList();
+                fromExplorer.Clear();
+                foreach (var g in items.GroupBy(i => i.Command))
+                    await ConfirmShare(g.Select(i => i.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList(), send: g.Key == ExplorerCommand.Send);
+            };
+        }
+        explorerBatch.Stop();
+        explorerBatch.Start();
+    }
+
+    /// <summary>Asks first (what, how much, to whom), then uploads or sends.</summary>
+    async Task ConfirmShare(List<string> paths, bool send)
+    {
+        Log.Info($"explorer: {(send ? "send" : "upload")} {paths.Count} item(s)");
+        var w = new ShareConfirmWindow(paths, send, direct.Friends, Settings.DirectLastFriend, Settings.PeergosConfigured);
+        w.ShowDialog();
+        if (w.OpenDirect) { direct.ShowWindow(null, null); return; }
+        if (w.OpenSettings) { ShowSettings(0); return; }
+        if (!w.Confirmed) { Log.Info("explorer: cancelled"); return; }
+        if (send && w.Friend is { } friend)
+        {
+            await SendPathsAsync(friend, paths);
+            return;
+        }
+        var files = paths.Where(File.Exists).ToList();
+        if (files.Count > 0) await UploadFilesAsync(files);
+        foreach (var d in paths.Where(Directory.Exists)) await UploadFolderAsync(d);
     }
 
     /// <summary>Delay ▸ : quick choices here, any length in Settings.</summary>
@@ -548,6 +684,9 @@ public sealed class TrayController : IDisposable
             case "--upload-files": _ = ChooseAndUploadFiles(); break;
             case "--upload-folder": _ = ChooseAndUploadFolder(); break;
             case "--quit": System.Windows.Application.Current.Shutdown(); break;
+            default:
+                if (ExplorerCommand.Parse(cmd) is { } ex) FromExplorer(ex.Command, ex.Path);
+                break;
         }
     }
 
@@ -621,7 +760,13 @@ public sealed class TrayController : IDisposable
                 Created = now, Kind = "picture", File = file, Width = rect.Width, Height = rect.Height,
                 Bytes = new FileInfo(file).Length, App = source.App, WindowTitle = source.Title,
             });
-            if (annotate || Settings.AnnotateAfterPicture) DrawOnCapture(file, record);
+            if ((annotate || Settings.AnnotateAfterPicture) && !DrawOnCapture(file, record, toFriend))
+            {
+                // "Draw first" for a friend, closed with "Don't send": nothing leaves the PC.
+                Notify(ToastKind.Ok, $"Not sent to {toFriend}", "The picture is in your captures and the history.", null, file,
+                    history: () => ShowHistory(record.Id));
+                return;
+            }
             if (toFriend != null)
             {
                 await SendDirect(toFriend, file, record);
@@ -654,14 +799,16 @@ public sealed class TrayController : IDisposable
     }
 
     /// <summary>The drawing editor on a fresh capture (not shared yet): "Done" writes the drawing into the file,
-    /// "Skip" leaves it as taken.</summary>
-    void DrawOnCapture(string file, HistoryRecord record)
+    /// "Skip" leaves it as taken. For a friend (<paramref name="sendTo"/>, "Draw first") it returns false when the
+    /// picture must not be sent (Don't send, or closed).</summary>
+    bool DrawOnCapture(string file, HistoryRecord record, string? sendTo = null)
     {
         try
         {
-            var w = new AnnotateWindow(file, AnnotateMode.Capture, this);
+            var w = new AnnotateWindow(file, AnnotateMode.Capture, this, sendTo);
             w.ShowDialog();
-            if (w.Outcome == AnnotateOutcome.Cancelled) return;
+            if (w.Aborted) return false;
+            if (w.Outcome == AnnotateOutcome.Cancelled) return true;
             record.Bytes = new FileInfo(file).Length;
             history.Save();
             Log.Info("picture drawn on: " + file);
@@ -671,6 +818,27 @@ public sealed class TrayController : IDisposable
             Log.Error("annotate", e);
             Notify(ToastKind.Warn, "The drawing editor failed", e.Message + "\nThe picture is used as it was taken.");
         }
+        return true;
+    }
+
+    /// <summary>
+    /// The drawing editor on a picture of the direct window (one received or sent): the drawn copy becomes a new
+    /// capture in the history, and "Send to …" sends it to that friend. The picture itself stays as it is.
+    /// </summary>
+    public async Task DrawAndSendAsync(string picture, string friend, string title)
+    {
+        var w = new AnnotateWindow(picture, AnnotateMode.Send, this, friend);
+        w.ShowDialog();
+        if (w.Outcome == AnnotateOutcome.Cancelled || w.SavedFile == null) return;
+        var record = history.Add(new HistoryRecord
+        {
+            Created = DateTime.Now, Kind = "picture", File = w.SavedFile, Width = w.SavedWidth, Height = w.SavedHeight,
+            Bytes = new FileInfo(w.SavedFile).Length, Label = title + " – drawn on",
+        });
+        Log.Info($"drawn copy for {friend}: {w.SavedFile} ({w.Outcome})");
+        if (w.Outcome == AnnotateOutcome.SavedSend) await SendDirect(friend, w.SavedFile, record);
+        else Notify(ToastKind.Ok, "Drawn picture saved", "It is a new entry in the history; nothing was sent.", null, w.SavedFile,
+            history: () => ShowHistory(record.Id));
     }
 
     /// <summary>

@@ -66,6 +66,9 @@ public sealed class Settings
     public string MirrorFolder { get; set; } = "";
     public bool FallbackToClipboard { get; set; } = true;
     public bool Notifications { get; set; } = true;
+    /// <summary>Since 2.5: how long a card about a success stays, in seconds; 0 = until it is closed. Warnings and
+    /// errors stay at least 14 seconds (see <see cref="ToastLogic"/>).</summary>
+    public int ToastSeconds { get; set; } = 6;
     /// <summary>Delete local copies older than this many days; 0 = keep forever (the default since 2.1).</summary>
     public int CacheKeepDays { get; set; }
     public SubfolderScheme Subfolders { get; set; } = SubfolderScheme.Month;
@@ -105,6 +108,8 @@ public sealed class Settings
     /// <summary>How often the friends' folders are checked for new pictures.</summary>
     public int DirectCheckSeconds { get; set; } = 3;
     public string DirectLastFriend { get; set; } = "";
+    /// <summary>Since 2.5: a picture taken for a friend opens in the drawing editor before it is sent ("Draw first").</summary>
+    public bool DirectDrawFirst { get; set; }
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";
@@ -127,6 +132,9 @@ public sealed class Settings
     public bool ShowUserNotes { get; set; } = true;
     /// <summary>Only for the User notes prompts, only on this PC; empty = a generic description (nothing personal).</summary>
     public string PromptSourceLocation { get; set; } = "";
+    /// <summary>Since 2.5: Peergos Snap in Explorer's right-click menu of files and folders (for this Windows user only;
+    /// every upload or send is confirmed first).</summary>
+    public bool ExplorerMenu { get; set; }
 
     [JsonIgnore] public string Session { get => Unprotect(SessionProtected); set => SessionProtected = Protect(value); }
     [JsonIgnore] public string LegacyAccountPassword { get => Unprotect(AccountPasswordProtected); set => AccountPasswordProtected = Protect(value); }
@@ -215,6 +223,7 @@ public sealed class Settings
         Server = Server.Trim().TrimEnd('/');
         AccountFolder = (AccountFolder ?? "").Trim().Trim('/', '\\');
         DirectCheckSeconds = Math.Clamp(DirectCheckSeconds, 2, 60);
+        ToastSeconds = Math.Clamp(ToastSeconds, 0, 120);
         DirectFriends = (DirectFriends ?? []).Select(DirectLogic.NormaliseUser).Where(u => u != null).Select(u => u!).Distinct().ToList();
         DirectLastFriend ??= "";
         AnnotateSize = Math.Clamp(AnnotateSize, 0, 2);

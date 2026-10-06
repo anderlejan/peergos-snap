@@ -329,6 +329,23 @@ public static class UploadLogic
 }
 
 /// <summary>The full-screen viewer's zoom (unit tested).</summary>
+/// <summary>How long a notification card stays (Settings → Output).</summary>
+public static class ToastLogic
+{
+    /// <summary>The choices offered in Settings; 0 = until the card is closed.</summary>
+    public static readonly int[] Choices = [4, 6, 10, 20, 30, 0];
+
+    /// <summary>
+    /// A card about something still running stays until it is done; one about a success stays the chosen time; a
+    /// warning or error at least 14 seconds (it may need reading twice). 0 = until closed, for every card.
+    /// </summary>
+    public static TimeSpan Duration(bool busy, bool problem, int seconds) =>
+        busy || seconds <= 0 ? TimeSpan.Zero : TimeSpan.FromSeconds(problem ? Math.Max(14, seconds) : seconds);
+
+    public static string Describe(int seconds) =>
+        seconds <= 0 ? "Until I close them" : seconds + " seconds" + (seconds == 6 ? " (default)" : "");
+}
+
 public static class ViewerLogic
 {
     /// <summary>

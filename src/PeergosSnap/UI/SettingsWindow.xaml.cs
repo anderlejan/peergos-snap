@@ -56,6 +56,7 @@ public partial class SettingsWindow : Window
             OutLink.IsChecked = S.Output == OutputMode.SecretLink;
             OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
             ShutterSoundBox.IsChecked = S.ShutterSound;
+            DirectDrawFirst.IsChecked = S.DirectDrawFirst;
             if (!DelayBox.IsKeyboardFocusWithin) DelayBox.Text = S.DelaySeconds.ToString();
         }
         finally { loading = false; }
@@ -117,6 +118,11 @@ public partial class SettingsWindow : Window
         OutMedia.IsChecked = S.Output == OutputMode.DirectMedia;
         Fallback.IsChecked = S.FallbackToClipboard;
         Notifications.IsChecked = S.Notifications;
+        ToastBox.Items.Clear();
+        foreach (var sec in ToastLogic.Choices.Append(S.ToastSeconds).Distinct())
+            ToastBox.Items.Add(new ComboBoxItem { Content = ToastLogic.Describe(sec), Tag = sec });
+        foreach (ComboBoxItem i in ToastBox.Items)
+            if ((int)i.Tag == S.ToastSeconds) ToastBox.SelectedItem = i;
         MirrorOn.IsChecked = S.MirrorEnabled;
         MirrorFolder.Text = S.MirrorFolder;
         CachePath.Text = AppPaths.CacheDir;
@@ -129,6 +135,8 @@ public partial class SettingsWindow : Window
         DirectFront.IsChecked = S.DirectBringToFront;
         DirectKeepOnPc.IsChecked = S.DirectKeepOnPc;
         DirectSeconds.Text = S.DirectCheckSeconds.ToString();
+        DirectDrawFirst.IsChecked = S.DirectDrawFirst;
+        ExplorerMenuBox.IsChecked = S.ExplorerMenu;
         DirectInfo.Text = S.DirectFriends.Count == 0 ? "No friends set up yet: open the direct window and click Friends…"
             : "Sharing directly with " + string.Join(", ", S.DirectFriends) + ".";
 
@@ -257,6 +265,7 @@ public partial class SettingsWindow : Window
         OutMedia.Checked += (_, _) => Change(s => s.Output = OutputMode.DirectMedia);
         Fallback.Click += (_, _) => Change(s => s.FallbackToClipboard = Fallback.IsChecked == true);
         Notifications.Click += (_, _) => Change(s => s.Notifications = Notifications.IsChecked == true);
+        ToastBox.SelectionChanged += (_, _) => { if (ToastBox.SelectedItem is ComboBoxItem { Tag: int sec }) Change(s => s.ToastSeconds = sec); };
         MirrorOn.Click += (_, _) => { ValidateMirror(); };
         MirrorFolder.TextChanged += (_, _) => ValidateMirror();
         MirrorBrowse.Click += (_, _) =>
@@ -279,6 +288,7 @@ public partial class SettingsWindow : Window
         DirectReceive.Click += (_, _) => Change(s => s.DirectReceive = DirectReceive.IsChecked == true);
         DirectFront.Click += (_, _) => Change(s => s.DirectBringToFront = DirectFront.IsChecked == true);
         DirectKeepOnPc.Click += (_, _) => Change(s => s.DirectKeepOnPc = DirectKeepOnPc.IsChecked == true);
+        DirectDrawFirst.Click += (_, _) => Change(s => s.DirectDrawFirst = DirectDrawFirst.IsChecked == true);
         DirectSeconds.TextChanged += (_, _) =>
         {
             bool ok = int.TryParse(DirectSeconds.Text.Trim(), out var sec) && sec is >= 2 and <= 60;
@@ -317,6 +327,9 @@ public partial class SettingsWindow : Window
             catch (Exception e) { MessageBox.Show(this, e.Message, "Peergos Snap"); }
         };
         ShowNotes.Click += (_, _) => Change(s => s.ShowUserNotes = ShowNotes.IsChecked == true);
+        ExplorerMenuBox.Click += (_, _) => Change(s => s.ExplorerMenu = ExplorerMenuBox.IsChecked == true);
+        ExportBtn.Click += (_, _) => new SettingsTransferWindow(app, null, null) { Owner = this }.ShowDialog();
+        ImportBtn.Click += (_, _) => ImportSettings();
         OpenNotes.Click += (_, _) => app.ShowNotes();
         OpenLog.Click += (_, _) => { if (File.Exists(AppPaths.LogFile)) Shell(AppPaths.LogFile); };
         OpenLicenses.Click += (_, _) =>
@@ -324,6 +337,37 @@ public partial class SettingsWindow : Window
             var f = Path.Combine(AppPaths.AppDir, "licenses", "THIRD-PARTY-NOTICES.md");
             Shell(File.Exists(f) ? f : Path.Combine(AppPaths.AppDir, "licenses"));
         };
+    }
+
+    /// <summary>Settings → General → Import settings…: choose a file, then the groups; the page shows the new values.</summary>
+    void ImportSettings()
+    {
+        var d = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import settings", Filter = "Settings file (*.json)|*.json|All files|*.*",
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        };
+        if (d.ShowDialog(this) != true) return;
+        SettingsTransfer.Imported file;
+        try { file = SettingsTransfer.Read(File.ReadAllText(d.FileName)); }
+        catch (Exception e) when (e is FormatException or IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, e.Message, "Peergos Snap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (file.Groups.Count == 0)
+        {
+            MessageBox.Show(this, "The file has no settings Peergos Snap knows.", "Peergos Snap", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var w = new SettingsTransferWindow(app, file, Path.GetFileName(d.FileName)) { Owner = this };
+        w.ShowDialog();
+        if (!w.Imported) return;
+        loading = true;
+        try { Load(); }
+        finally { loading = false; }
+        UpdateAccountPanels();
+        ShowHotkeyErrors();
     }
 
     // ---------- choosing the Peergos folder ----------

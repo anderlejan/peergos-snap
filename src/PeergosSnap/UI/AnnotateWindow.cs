@@ -10,11 +10,12 @@ using WPath = System.Windows.Shapes.Path;
 
 namespace PeergosSnap.UI;
 
-/// <summary>Where the editor was opened: on a fresh capture (the drawing goes into it), or on a capture from the
-/// history (the drawing becomes a new copy, the original stays).</summary>
-public enum AnnotateMode { Capture, Copy }
+/// <summary>Where the editor was opened: on a fresh capture (the drawing goes into it), on a capture from the
+/// history (the drawing becomes a new copy, the original stays), or on a picture of the direct window (a new copy
+/// that can go to the friend).</summary>
+public enum AnnotateMode { Capture, Copy, Send }
 
-public enum AnnotateOutcome { Cancelled, Saved, SavedUpload, SavedCopy }
+public enum AnnotateOutcome { Cancelled, Saved, SavedUpload, SavedCopy, SavedSend }
 
 public enum AnnotateTool { Select, Arrow, Line, Box, Ellipse, Highlight, Pen, Text, Number, Blur }
 
@@ -28,6 +29,8 @@ public sealed class AnnotateWindow : Window
 {
     readonly string file;
     readonly AnnotateMode mode;
+    /// <summary>The friend the picture goes to (Send, and Capture with "Draw first"), or null.</summary>
+    readonly string? sendTo;
     readonly TrayController app;
     readonly BitmapSource source;
     readonly byte[] pixels; // the original in Bgra32, for blur
@@ -64,6 +67,8 @@ public sealed class AnnotateWindow : Window
     readonly Stack<Step> undo = new(), redo = new();
 
     public AnnotateOutcome Outcome { get; private set; } = AnnotateOutcome.Cancelled;
+    /// <summary>"Draw first" for a friend: closed without sending (Don't send, ✕, Esc twice).</summary>
+    public bool Aborted { get; private set; }
     public string? SavedFile { get; private set; }
     public int SavedWidth => pw;
     public int SavedHeight => ph;
@@ -82,11 +87,14 @@ public sealed class AnnotateWindow : Window
         Color.FromRgb(0x1E, 0x88, 0xE5), Color.FromRgb(0x8E, 0x24, 0xAA), Color.FromRgb(0x21, 0x21, 0x21), Color.FromRgb(0xFF, 0xFF, 0xFF),
     ];
 
-    public AnnotateWindow(string file, AnnotateMode mode, TrayController app)
+    public AnnotateWindow(string file, AnnotateMode mode, TrayController app, string? sendTo = null)
     {
         this.file = file;
         this.mode = mode;
         this.app = app;
+        this.sendTo = sendTo;
+        // A picture taken for a friend is only sent with one of the two send buttons.
+        Aborted = mode == AnnotateMode.Capture && sendTo != null;
         source = LoadPicture(file);
         pw = source.PixelWidth;
         ph = source.PixelHeight;
@@ -96,7 +104,8 @@ public sealed class AnnotateWindow : Window
         color = ParseColor(app.Settings.AnnotateColor);
         size = app.Settings.AnnotateSize;
 
-        Title = mode == AnnotateMode.Capture ? "Peergos Snap – draw on the picture" : "Peergos Snap – draw on a copy";
+        Title = sendTo != null ? $"Peergos Snap – draw, then send to {sendTo}"
+            : mode == AnnotateMode.Capture ? "Peergos Snap – draw on the picture" : "Peergos Snap – draw on a copy";
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
         Theme.Attach(this);
@@ -147,8 +156,8 @@ public sealed class AnnotateWindow : Window
         Closing += (_, e) =>
         {
             if (Outcome != AnnotateOutcome.Cancelled || layer.Children.Count == 0) return;
-            var r = MessageBox.Show(this, mode == AnnotateMode.Capture
-                    ? "Close without your drawing? The picture is used as it was taken."
+            var r = MessageBox.Show(this, Aborted ? "Close without sending? The picture stays in your captures, without the drawing."
+                    : mode == AnnotateMode.Capture ? "Close without your drawing? The picture is used as it was taken."
                     : "Close without saving your drawing?", "Peergos Snap", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (r != MessageBoxResult.Yes) e.Cancel = true;
         };
@@ -280,10 +289,23 @@ public sealed class AnnotateWindow : Window
             return b;
         }
         B("Copy", "Copy the picture with the drawing to the clipboard (Ctrl+C)", CopyToClipboard);
-        if (mode == AnnotateMode.Capture)
+        if (mode == AnnotateMode.Capture && sendTo != null)
+        {
+            B("Don't send", "Keep the picture in your captures and send nothing (Esc twice)", () => { Aborted = true; layer.Children.Clear(); Close(); });
+            B("Send without drawing", $"Send the picture to {sendTo} as it was taken",
+                () => { Aborted = false; Outcome = AnnotateOutcome.Cancelled; layer.Children.Clear(); Close(); });
+            B($"Send to {sendTo} ✓", "Put the drawing into the picture and send it (Ctrl+S)", () => { Aborted = false; Finish(AnnotateOutcome.Saved); }, accent: true);
+        }
+        else if (mode == AnnotateMode.Capture)
         {
             B("Skip", "Use the picture as it was taken (Esc twice)", () => { Outcome = AnnotateOutcome.Cancelled; layer.Children.Clear(); Close(); });
             B("Done ✓", "Put the drawing into the picture and go on as usual (Ctrl+S)", () => Finish(AnnotateOutcome.Saved), accent: true);
+        }
+        else if (mode == AnnotateMode.Send)
+        {
+            B("Cancel", "Close without saving", Close);
+            B("Save copy", "Save as a new capture; nothing is sent", () => Finish(AnnotateOutcome.Saved));
+            B($"Send to {sendTo} ✓", $"Save as a new capture and send it to {sendTo} (Ctrl+S)", () => Finish(AnnotateOutcome.SavedSend), accent: true);
         }
         else
         {
@@ -838,7 +860,11 @@ public sealed class AnnotateWindow : Window
                 case Key.Z: Undo(); e.Handled = true; return;
                 case Key.Y: Redo(); e.Handled = true; return;
                 case Key.C: CopyToClipboard(); e.Handled = true; return;
-                case Key.S: Finish(mode == AnnotateMode.Capture ? AnnotateOutcome.Saved : AnnotateOutcome.SavedUpload); e.Handled = true; return;
+                case Key.S:
+                    if (mode == AnnotateMode.Capture) Aborted = false;
+                    Finish(mode switch { AnnotateMode.Capture => AnnotateOutcome.Saved, AnnotateMode.Send => AnnotateOutcome.SavedSend, _ => AnnotateOutcome.SavedUpload });
+                    e.Handled = true;
+                    return;
                 case Key.D0 or Key.NumPad0: ZoomAt(1 / Dpi, null); e.Handled = true; return;
             }
             return;

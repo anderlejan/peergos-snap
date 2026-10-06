@@ -12,7 +12,8 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        var cmd = e.Args.FirstOrDefault(a => a.StartsWith("--")) ?? "";
+        // An item from Explorer's right-click menu comes as "--explorer-send <path>" and travels as one line "command|path".
+        var cmd = ExplorerCommand.FromArgs(e.Args) ?? e.Args.FirstOrDefault(a => a.StartsWith("--")) ?? "";
         // Testing only: PEERGOS_SNAP_DATA gives this copy its own data folders and its own single-instance lock,
         // so it can run next to the installed app without touching the user's settings, notes or captures.
         var sandbox = Environment.GetEnvironmentVariable("PEERGOS_SNAP_DATA");
@@ -33,7 +34,13 @@ public partial class App : Application
         if (!instance.IsFirst)
         {
             // Pass the command to the running copy ("--quit", "--picture", "--video", "--settings", "--notes", "--help", "--history").
-            SingleInstance.Send(cmd == "" || cmd == "--tray" ? "--settings" : cmd);
+            if (ExplorerCommand.Parse(cmd) != null)
+            {
+                // Explorer starts one copy per selected item, perhaps while the first is still starting: keep trying a while.
+                var until = DateTime.Now.AddSeconds(20);
+                while (!SingleInstance.Send(cmd) && DateTime.Now < until) Thread.Sleep(300);
+            }
+            else SingleInstance.Send(cmd == "" || cmd == "--tray" ? "--settings" : cmd);
             instance.Dispose();
             instance = null;
             Shutdown();
@@ -52,7 +59,7 @@ public partial class App : Application
         Log.Info($"start {typeof(App).Assembly.GetName().Version} args=[{string.Join(" ", e.Args)}]");
         tray = new TrayController();
         instance.Listen(tray.Command);
-        if (cmd is "--picture" or "--video" or "--settings" or "--notes" or "--help" or "--history") tray.Command(cmd);
+        if (cmd is "--picture" or "--video" or "--settings" or "--notes" or "--help" or "--history" || ExplorerCommand.Parse(cmd) != null) tray.Command(cmd);
     }
 
     protected override void OnExit(ExitEventArgs e)

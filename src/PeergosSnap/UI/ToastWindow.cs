@@ -20,6 +20,8 @@ public enum ToastKind { Ok, Busy, Warn, Error }
 public sealed class ToastWindow : Window
 {
     static ToastWindow? current;
+    /// <summary>How long a card about a success stays (Settings → Output), in seconds; 0 = until it is closed.</summary>
+    public static int SuccessSeconds { get; set; } = 6;
     readonly Border bar = new() { Width = 5, CornerRadius = new CornerRadius(3, 0, 0, 3) };
     readonly Image thumb = new() { Width = 64, Height = 48, Stretch = Stretch.UniformToFill, Margin = new Thickness(10, 10, 0, 10), VerticalAlignment = VerticalAlignment.Top };
     readonly TextBlock title = new() { FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
@@ -139,12 +141,7 @@ public sealed class ToastWindow : Window
         t.actions.Visibility = t.actions.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         t.hide.Stop();
-        t.hide.Interval = kind switch
-        {
-            ToastKind.Busy => TimeSpan.Zero,
-            ToastKind.Ok => TimeSpan.FromSeconds(6),
-            _ => TimeSpan.FromSeconds(14),
-        };
+        t.hide.Interval = ToastLogic.Duration(kind == ToastKind.Busy, kind is ToastKind.Warn or ToastKind.Error, SuccessSeconds);
         if (t.hide.Interval > TimeSpan.Zero) t.hide.Start();
         if (!t.IsVisible) t.Show();
         t.Place();

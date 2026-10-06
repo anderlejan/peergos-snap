@@ -8,15 +8,29 @@ using PeergosSnap.Core;
 
 namespace PeergosSnap.UI;
 
+/// <summary>Something the full-screen viewer shows: a capture of the history, or a file of the direct window.</summary>
+public interface IViewable
+{
+    string ViewTitle { get; }
+    string ViewLine { get; }
+    bool IsVideo { get; }
+    /// <summary>The picture to show – for a video a still of it – or null (then <see cref="NoPreview"/> says why).</summary>
+    Task<string?> PictureAsync();
+    string NoPreview { get; }
+    /// <summary>What Enter opens in its app, or null.</summary>
+    string? OpenFile { get; }
+    bool CanDraw { get; }
+}
+
 /// <summary>
-/// Full-screen preview of the history's pictures. The mouse wheel zooms where the pointer is; when the picture is
+/// Full-screen preview of the history's pictures, or of the direct window's. The mouse wheel zooms where the pointer is; when the picture is
 /// larger than the screen the view follows the mouse (no dragging). A click zooms in or back to the whole picture.
 /// ← → go to the previous / next capture of the list, Esc or right click closes.
 /// </summary>
 public sealed class ImageViewerWindow : Window
 {
-    readonly IReadOnlyList<HistoryItem> items;
-    readonly Action<HistoryItem>? onDraw;
+    readonly IReadOnlyList<IViewable> items;
+    readonly Action<IViewable>? onDraw;
     int index;
     readonly Canvas canvas = new() { Background = Brushes.Black, ClipToBounds = true };
     readonly Image image = new() { Stretch = Stretch.Fill };
@@ -30,7 +44,7 @@ public sealed class ImageViewerWindow : Window
     Point mouse;
     bool pressed; // a click zooms only when it also began on the picture (not the release of the double-click that opened it)
 
-    public ImageViewerWindow(IReadOnlyList<HistoryItem> items, int index, Action<HistoryItem>? onDraw)
+    public ImageViewerWindow(IReadOnlyList<IViewable> items, int index, Action<IViewable>? onDraw)
     {
         this.items = items;
         this.index = Math.Clamp(index, 0, Math.Max(0, items.Count - 1));
@@ -98,19 +112,19 @@ public sealed class ImageViewerWindow : Window
             case Key.D0 or Key.NumPad0: CenterMouse(); Zoom(1); break;
             case Key.F: Zoom(fit); break;
             case Key.D: Draw(); break;
-            case Key.Enter: if (Current?.PreviewFile is { } f) Open(f); break;
+            case Key.Enter: if (Current?.OpenFile is { } f) Open(f); break;
             default: return;
         }
         e.Handled = true;
     }
 
-    HistoryItem? Current => index >= 0 && index < items.Count ? items[index] : null;
+    IViewable? Current => index >= 0 && index < items.Count ? items[index] : null;
 
     void CenterMouse() => mouse = new Point(canvas.ActualWidth / 2, canvas.ActualHeight / 2);
 
     void Draw()
     {
-        if (onDraw == null || Current is not { IsViewablePicture: true, Local: true } it) return;
+        if (onDraw == null || Current is not { CanDraw: true } it) return;
         Close();
         onDraw(it);
     }
@@ -120,22 +134,23 @@ public sealed class ImageViewerWindow : Window
         if (items.Count == 0) return;
         index = Math.Clamp(i, 0, items.Count - 1);
         var it = items[index];
-        caption.Text = $"{index + 1} / {items.Count} · {it.Title} · {it.Line2}    ← → next · wheel zooms · click zooms in / out · Esc closes";
+        caption.Text = $"{index + 1} / {items.Count} · {it.ViewTitle} · {it.ViewLine}    ← → next · wheel zooms · click zooms in / out · Esc closes";
         picture = null;
         image.Source = null;
         note.Text = "";
-        string? file = it.PreviewFile;
-        if (it.Record.IsVideo && it.Local) file = await ThumbFiles.VideoThumb(it.Record);
+        string? file;
+        try { file = await it.PictureAsync(); }
+        catch (Exception e) { Log.Error("viewer", e); file = null; }
+        if (Current != it) return;
         if (file == null)
         {
-            note.Text = it.Record.IsUpload ? $"{it.Title}\nNo preview: {(it.Record.IsFolder ? "a folder" : "not a picture, or the original is gone")}."
-                : "No preview: the file is not on this PC." + (it.Record.Link != null ? " Open its link instead." : "");
+            note.Text = it.NoPreview;
             return;
         }
         var bmp = await Task.Run(() => ThumbFiles.Load(file, 0));
         if (Current != it) return;
         if (bmp == null) { note.Text = "This picture cannot be shown."; return; }
-        if (it.Record.IsVideo) note.Text = "Video – Enter plays it in your video player";
+        if (it.IsVideo) note.Text = "Video – Enter plays it in your video player";
         picture = bmp;
         image.Source = bmp;
         SizeImage();
