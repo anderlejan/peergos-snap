@@ -347,7 +347,7 @@ public sealed class TrayController : IDisposable
         appliedHotkeys = keys;
         hotkeys.Clear();
         HotkeyErrors.Clear();
-        HotkeyErrors["Picture"] = hotkeys.Register(Settings.HotkeyPicture, () => _ = CapturePicture());
+        HotkeyErrors["Picture"] = hotkeys.Register(Settings.HotkeyPicture, () => _ = CapturePicture(fromHotkey: true));
         HotkeyErrors["Video"] = hotkeys.Register(Settings.HotkeyVideo, () => _ = ToggleRecording());
         HotkeyErrors["Pause"] = hotkeys.Register(Settings.HotkeyPause, () => _ = TogglePause());
         HotkeyErrors["Output"] = hotkeys.Register(Settings.HotkeyToggleOutput, ToggleOutput);
@@ -587,7 +587,7 @@ public sealed class TrayController : IDisposable
             var sent = await direct.SendAsync(friend, all, t => Notify(ToastKind.Busy, t, ""));
             UpdateSettings(s => s.DirectLastFriend = friend);
             Notify(ToastKind.Ok, $"Sent to {friend}", (sent.Count == 1 ? sent[0].Name : $"{sent.Count} files") + $" – {friend} sees {(sent.Count == 1 ? "it" : "them")} now.",
-                extra: ("Show", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)));
+                extra: (CardLogic.View, () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)));
         }
         catch (Exception e) when (e is DirectException or IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -816,7 +816,7 @@ public sealed class TrayController : IDisposable
 
     /// <summary>Takes a picture; with <paramref name="toFriend"/> it goes straight to that friend (direct mode). With
     /// <paramref name="annotate"/> (or Settings → Capture → draw after every picture) the drawing editor opens first.</summary>
-    public async Task CapturePicture(string? toFriend = null, bool annotate = false)
+    public async Task CapturePicture(string? toFriend = null, bool annotate = false, bool fromHotkey = false)
     {
         if (countdownCts != null) { countdownCts.Cancel(); return; } // pressing again cancels the countdown
         if (recorder != null || selecting) return;
@@ -834,6 +834,16 @@ public sealed class TrayController : IDisposable
                 Native.DwmFlush();
                 screen = Native.VirtualScreen();
                 frozen = ScreenCapture.Grab(screen);
+            }
+            else if (fromHotkey && OwnMenuOpen())
+            {
+                // The hotkey pressed while one of Peergos Snap's own menus (or a tooltip) is open: the selection would
+                // close it, so the screen is frozen first and the menu is in the picture. Everything else as before.
+                windows = Native.VisibleWindows();
+                Native.DwmFlush();
+                screen = Native.VirtualScreen();
+                frozen = ScreenCapture.Grab(screen);
+                Log.Info("picture: an own menu is open – the screen is frozen first");
             }
             var r = await Select(CaptureKind.Picture, frozen, windows);
             if (r is not { } rect) return;
@@ -898,6 +908,18 @@ public sealed class TrayController : IDisposable
             Notify(ToastKind.Error, "Capture failed", e.Message);
         }
         finally { frozen?.Dispose(); }
+    }
+
+    /// <summary>One of Peergos Snap's own menus is showing – the tray menu, a right-click menu, an open list of a
+    /// window – or a tooltip of it.</summary>
+    bool OwnMenuOpen()
+    {
+        if (tray.ContextMenuStrip?.Visible == true) return true;
+        foreach (var source in System.Windows.PresentationSource.CurrentSources)
+            if (source is System.Windows.Interop.HwndSource { RootVisual: System.Windows.UIElement root } h
+                && root.GetType().Name == "PopupRoot" && Native.IsWindowVisible(h.Handle))
+                return true;
+        return false;
     }
 
     /// <summary>The drawing editor on a fresh capture (not shared yet): "Done" writes the drawing into the file,
@@ -1008,7 +1030,14 @@ public sealed class TrayController : IDisposable
         var list = files.Where(File.Exists).Select(f => (f, Path.GetFileName(f))).ToList();
         if (list.Count == 0) return;
         var what = list.Count == 1 ? Path.GetFileName(list[0].f) : $"{list.Count} files";
-        var put = await PutAsync(list, null, what, () => UploadFilesAsync(files));
+        // Pictures and videos take their small picture along (kept with them in Peergos; the first 50). Making them
+        // takes a moment for many large files: the card says what is going on from the start.
+        var media = list.Where(x => FileKinds.Of(x.f) is FileKind.Picture or FileKind.Video).Take(50).ToList();
+        if (media.Count > 0) Notify(ToastKind.Busy, $"Uploading {what} to Peergos…", list.Count == 1 ? list[0].Item2 : $"{list.Count} files");
+        var thumbs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (f, _) in media)
+            if (await ThumbFiles.DataUrlAsync(f) is { } t) thumbs[f] = t;
+        var put = await PutAsync(list, null, what, () => UploadFilesAsync(files), thumbs);
         if (put == null) return;
         var links = new List<string>();
         foreach (var f in put.Files)
@@ -1049,7 +1078,8 @@ public sealed class TrayController : IDisposable
         UploadDone(put, put.FolderLink != null ? [put.FolderLink] : [], $"Folder {name}", files.Count, null);
     }
 
-    async Task<PutResult?> PutAsync(List<(string, string)> files, string? folderName, string what, Func<Task> again)
+    async Task<PutResult?> PutAsync(List<(string, string)> files, string? folderName, string what, Func<Task> again,
+        IReadOnlyDictionary<string, string>? thumbs = null)
     {
         uploads++;
         tray.Icon = recorder == null ? iconBusy : tray.Icon;
@@ -1062,7 +1092,7 @@ public sealed class TrayController : IDisposable
             {
                 tray.Text = $"Peergos Snap – uploading {pct}%";
                 Notify(ToastKind.Busy, $"Uploading {what} to Peergos… {pct}%", files.Count == 1 ? Path.GetFileName(files[0].Item1) : $"{files.Count} files", percent: pct);
-            }));
+            }), thumbs);
             if (put.Files.Count == 0)
             {
                 var why = r.Error ?? put.Failed.FirstOrDefault() ?? "Unknown error";
@@ -1423,9 +1453,12 @@ public sealed class TrayController : IDisposable
             var sent = await direct.SendAsync(friend, [file]);
             record.Label = record.Label.Length > 0 ? record.Label : $"Sent to {friend}";
             history.Save();
-            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, file,
-                extra: ("Show", () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)), history: () => ShowHistory(record.Id));
-            if (!OutputLogic.KeepLocal(Settings.KeepLocalCopies, uploaded: true, uploadFailed: false)) DropLocalCopy(record, file);
+            bool stays = OutputLogic.KeepLocal(Settings.KeepLocalCopies, uploaded: true, uploadFailed: false);
+            // A copy about to go is not offered on the card; its picture is shown from memory instead.
+            Notify(ToastKind.Ok, $"Sent to {friend}", $"{friend} sees it now.", null, stays ? file : null,
+                extra: (CardLogic.View, () => direct.ShowWindow(friend, sent.LastOrDefault()?.Path)), history: () => ShowHistory(record.Id),
+                image: stays ? null : CardPicture(file));
+            if (!stays) DropLocalCopy(record, file);
         }
         catch (DirectException e)
         {
@@ -1514,9 +1547,10 @@ public sealed class TrayController : IDisposable
             {
                 // "Never": the clipboard has it; nothing stays on this PC, not even in the history.
                 var copy = clipFile;
+                var picture = CardPicture(file); // before the copy here goes
                 DropLocalCopy(record!, file);
                 history.Remove([record!.Id], dismiss: false);
-                Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint + " Nothing is kept on this PC.", discard: () =>
+                Notify(ToastKind.Ok, $"{what} copied to the clipboard", pasteHint + " Nothing is kept on this PC.", image: picture, discard: () =>
                 {
                     ClipboardService.ClearIfOurs(null, copy);
                     try { if (copy != null) File.Delete(copy); } catch { }
@@ -1545,11 +1579,13 @@ public sealed class TrayController : IDisposable
         BridgeResult r;
         try
         {
+            // Its small picture is kept with it in Peergos: the history and the web app show it without the file.
+            var thumb = await ThumbFiles.DataUrlAsync(file);
             r = await Uploader.UploadAsync(Settings.Clone(), file, pct => dispatcher.BeginInvoke(() =>
             {
                 tray.Text = $"Peergos Snap – uploading {pct}%";
                 Notify(ToastKind.Busy, $"Uploading the {lower} to Peergos… {pct}%", Path.GetFileName(file), null, file, pct);
-            }));
+            }), default, thumb);
         }
         catch (Exception e) { r = new BridgeResult(false, null, null, e.Message); }
         finally
@@ -1569,26 +1605,30 @@ public sealed class TrayController : IDisposable
                 record.Uploaded = DateTime.Now;
                 history.Save();
             }
+            // The copy here goes right after the card when the setting says so: then the card does not offer it (no
+            // "Show file") and shows its picture from memory.
+            bool stays = OutputLogic.KeepLocal(policy, uploaded: true, uploadFailed: false);
+            var cardFile = stays ? file : null;
+            var cardImage = stays ? null : CardPicture(file);
             if (mediaCopied)
                 Notify(ToastKind.Ok, $"{what} copied and uploaded", $"{pasteHint} It is in Peergos too: Copy link puts its secret link on the clipboard.",
-                    link, file, extra: ("Copy link", () => CopyLink(link)), discard: discard, history: inHistory);
+                    link, cardFile, extra: ("Copy link", () => CopyLink(link)), discard: discard, history: inHistory, image: cardImage);
             else
             {
                 try
                 {
                     ClipboardService.OnUi(() => ClipboardService.SetText(link));
                     Notify(ToastKind.Ok, "Link copied to the clipboard", $"{what} uploaded to Peergos ({r.PeergosPath}). Paste the link with Ctrl+V.",
-                        link, file, discard: discard, history: inHistory);
+                        link, cardFile, discard: discard, history: inHistory, image: cardImage);
                 }
                 catch (Exception e)
                 {
                     Log.Error("clipboard link", e);
                     Notify(ToastKind.Warn, $"{what} uploaded, but the clipboard was busy", "Use \"Open link\" or the tray menu → Copy last link.",
-                        link, file, discard: discard, history: inHistory);
+                        link, cardFile, discard: discard, history: inHistory, image: cardImage);
                 }
             }
-            // The card has already shown the picture; the local copy goes now if the setting says so.
-            if (!OutputLogic.KeepLocal(policy, uploaded: true, uploadFailed: false)) DropLocalCopy(record!, file);
+            if (!stays) DropLocalCopy(record!, file);
             return r;
         }
         var why = r.Error ?? "Unknown error";
@@ -1610,6 +1650,13 @@ public sealed class TrayController : IDisposable
             Notify(ToastKind.Error, "Upload failed – nothing was copied", why + "\nA copy is kept in the captures folder.",
                 null, file, extra: signIn, discard: discard, history: inHistory);
         return r;
+    }
+
+    /// <summary>A capture's picture for its card, held in memory (for a copy that is deleted right after).</summary>
+    static System.Windows.Media.ImageSource? CardPicture(string file)
+    {
+        try { return FileKinds.Of(file) == FileKind.Picture ? ThumbFiles.Load(file, 160) : null; }
+        catch { return null; }
     }
 
     /// <summary>Copy link on the card of a capture that was copied and uploaded.</summary>

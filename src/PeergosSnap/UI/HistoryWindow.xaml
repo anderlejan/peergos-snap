@@ -144,6 +144,9 @@
                         <Button x:Name="ShowFileBtn" ToolTip="Show the file in its folder">
                             <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE838;"/><TextBlock Text="Folder"/></StackPanel>
                         </Button>
+                        <Button x:Name="DownloadBtn" Visibility="Collapsed" ToolTip="Download a copy from Peergos to this PC – then Open, Folder and Copy work for it again">
+                            <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE896;"/><TextBlock Text="Download"/></StackPanel>
+                        </Button>
                         <Button x:Name="CopyMediaBtn" ToolTip="Copy the picture or video to the clipboard">
                             <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE8C8;"/><TextBlock x:Name="CopyMediaText" Text="Copy"/></StackPanel>
                         </Button>

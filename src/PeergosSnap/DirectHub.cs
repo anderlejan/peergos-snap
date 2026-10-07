@@ -218,13 +218,23 @@ public sealed class DirectHub : IDisposable
         var what = DirectLogic.What(arrived);
         // The card's picture: the copy just downloaded, else the small picture Peergos keeps with it (nothing on disk).
         var image = kept != null ? ThumbFiles.Load(kept, 160)
-            : sorted.Select(a => Thumb(a.Path)).FirstOrDefault(t => t != null) is { } t ? ThumbFiles.FromBytes(DirectLogic.ThumbBytes(t), 160) : null;
+            : app.Settings.PreviewsFromPeergos && sorted.Select(a => Thumb(a.Path)).FirstOrDefault(t => t != null) is { } t
+                ? ThumbFiles.FromBytes(DirectLogic.ThumbBytes(t), 160) : null;
         app.Arrived(friend, what, newest.Path);
-        (string, Action)[] more = arrived.Count == 1
-            ? [("Open", () => _ = OpenAsync(friend, newest)), ("Get a link", () => _ = LinkAsync(friend, arrived))]
-            : [("Get links", () => _ = LinkAsync(friend, arrived))];
+        // The buttons fit where the files are: on this PC – open them, show them in their folder; only in Peergos –
+        // download them or get a link. Never Open or Show file for a file that is not here (CardLogic).
+        bool onPc = arrived.All(a => KeptFile(friend, a) != null);
+        Action Run(string button) => button switch
+        {
+            CardLogic.View => () => { app.Seen(); ShowWindow(friend, newest.Path); },
+            CardLogic.Open => () => _ = OpenAsync(friend, newest),
+            CardLogic.ShowFile => () => { app.Seen(); ShowKept(friend, newest); },
+            CardLogic.Download => () => _ = KeepAsync(friend, arrived),
+            _ => () => _ = LinkAsync(friend, arrived),
+        };
+        var buttons = CardLogic.Arrival(onPc, arrived.Count).Select(b => (b, Run(b))).ToArray();
         app.Notify(ToastKind.Ok, $"{friend} sent {what}", arrived.Count == 1 ? newest.Name : string.Join(", ", arrived.Select(a => a.Name).Take(3)),
-            extra: ("Show", () => { app.Seen(); ShowWindow(friend, newest.Path); }), more: more, image: image);
+            extra: buttons[0], more: buttons[1..], image: image);
         if (app.Settings.DirectBringToFront) ShowWindow(friend, newest.Path, activate: false);
     }
 
@@ -239,7 +249,7 @@ public sealed class DirectHub : IDisposable
         }
         catch (Exception e) when (e is DirectException or System.ComponentModel.Win32Exception or IOException)
         {
-            app.Notify(ToastKind.Warn, $"Could not open {item.Name}", e.Message, extra: ("Show", () => ShowWindow(friend, item.Path)));
+            app.Notify(ToastKind.Warn, $"Could not open {item.Name}", e.Message, extra: (CardLogic.View, () => ShowWindow(friend, item.Path)));
         }
     }
 
@@ -262,8 +272,71 @@ public sealed class DirectHub : IDisposable
         await app.UploadFilesAsync(files);
     }
 
+    /// <summary>"Download" on the card: the files are kept on this PC (in the direct folder), as with "Also keep received
+    /// files on this PC"; the next card offers to open them or show them in their folder.</summary>
+    async Task KeepAsync(string friend, IReadOnlyList<DirectItem> list)
+    {
+        app.Seen();
+        var got = new List<string>();
+        foreach (var it in list)
+        {
+            try { got.Add(await LocalFileAsync(friend, it)); }
+            catch (DirectException e)
+            {
+                app.Notify(ToastKind.Warn, $"Could not download {it.Name}", e.Message, extra: (CardLogic.View, () => ShowWindow(friend, it.Path)));
+                return;
+            }
+        }
+        Updated?.Invoke();
+        var first = got[0];
+        if (got.Count == 1)
+            app.Notify(ToastKind.Ok, $"Downloaded {list[0].Name}", "It is on this PC now: " + Path.GetDirectoryName(first), null, first,
+                extra: (CardLogic.Open, () => _ = OpenAsync(friend, list[0])));
+        else
+            app.Notify(ToastKind.Ok, $"Downloaded {got.Count} files", "They are on this PC now: " + Path.GetDirectoryName(first), null, first,
+                extra: (CardLogic.View, () => ShowWindow(friend, list[0].Path)));
+    }
+
+    /// <summary>"Show file" on the card: the kept copy in its folder.</summary>
+    void ShowKept(string friend, DirectItem item)
+    {
+        if (KeptFile(friend, item) is { } f) Process.Start("explorer.exe", "/select,\"" + f + "\"");
+    }
+
     /// <summary>The small picture Peergos keeps with a picture or video, or null.</summary>
     public string? Thumb(string path) => thumbs.TryGetValue(path, out var t) ? t : null;
+
+    /// <summary>The small picture of one of my files that is not on this PC (Settings → Files & history → previews from
+    /// Peergos): the one Peergos keeps, else – for a picture – one Peergos makes from it and keeps with it. Into memory
+    /// only; null when there is none.</summary>
+    public async Task<string?> PreviewAsync(DirectItem item)
+    {
+        if (Thumb(item.Path) is { } have) return have;
+        var r = await service.CallAsync("preview", new() { ["path"] = item.Path }, TimeSpan.FromMinutes(5));
+        var t = r.TryGetProperty("thumb", out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        if (DirectLogic.ThumbBytes(t) == null) return null;
+        thumbs[item.Path] = t!;
+        return t;
+    }
+
+    /// <summary>A video's small picture, made here: the video goes into a temporary file that is deleted at once, and
+    /// its still is kept with my copy in Peergos (so this happens only once per video).</summary>
+    public async Task<string?> VideoPreviewAsync(DirectItem item)
+    {
+        if (Thumb(item.Path) is { } have) return have;
+        var dir = Path.Combine(AppPaths.WorkDir, "stills");
+        Directory.CreateDirectory(dir);
+        var tmp = Path.Combine(dir, Guid.NewGuid().ToString("N") + Path.GetExtension(item.Name));
+        try
+        {
+            await service.CallAsync("get", new() { ["path"] = item.Path, ["to"] = tmp }, TimeSpan.FromMinutes(10));
+            if (await ThumbFiles.DataUrlAsync(tmp) is not { } t) return null;
+            await service.CallAsync("thumb", new() { ["path"] = item.Path, ["thumb"] = t }, TimeSpan.FromMinutes(2));
+            thumbs[item.Path] = t;
+            return t;
+        }
+        finally { try { File.Delete(tmp); } catch { } }
+    }
 
     /// <summary>Settings → Direct → "Also keep received files on this PC".</summary>
     public bool KeepOnPc => app.Settings.DirectKeepOnPc;

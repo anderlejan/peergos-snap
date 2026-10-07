@@ -137,8 +137,10 @@ public sealed class ToastWindow : Window
         if (extra is { } x) Action(x.Label, x.Run);
         foreach (var (label, run) in more ?? []) Action(label, run);
         if (link != null) Action("Open link", () => Open(link));
-        // The file may be gone by the time the button is clicked (discarded, or not kept after the upload).
-        if (file != null && File.Exists(file)) Action("Show file", () => { if (File.Exists(file)) Process.Start("explorer.exe", "/select,\"" + file + "\""); });
+        // The file may be gone by the time the button is clicked (discarded, or not kept after the upload). A card about
+        // something still running shows the picture only: its buttons come when it is done.
+        if (file != null && File.Exists(file) && CardLogic.OffersShowFile(true, kind == ToastKind.Busy))
+            Action(CardLogic.ShowFile, () => { if (File.Exists(file)) Process.Start("explorer.exe", "/select,\"" + file + "\""); });
         if (history != null) Action("History", history);
         if (discard != null) Action("Discard", discard);
         t.actions.Visibility = t.actions.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

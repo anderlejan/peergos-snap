@@ -28,6 +28,13 @@ public partial class HistoryWindow : Window
     /// <summary>Entries being uploaded from this window: one upload each at a time (a second one would make a second
     /// copy whose link nothing tracks).</summary>
     readonly HashSet<string> uploading = [];
+    readonly HashSet<string> downloading = [];
+    /// <summary>The small pictures Peergos keeps with the files (path → data URL), from its listing and from "previews";
+    /// only in memory.</summary>
+    readonly Dictionary<string, string> remoteThumbs = new(StringComparer.Ordinal);
+    /// <summary>Files asked for a preview already in this window (each once).</summary>
+    readonly HashSet<string> previewTried = new(StringComparer.Ordinal);
+    bool fetchingPreviews;
     readonly DispatcherTimer rebuildSoon = new() { Interval = TimeSpan.FromMilliseconds(250) };
     readonly DispatcherTimer labelSave = new() { Interval = TimeSpan.FromMilliseconds(700) };
     bool showingDetails;
@@ -64,6 +71,10 @@ public partial class HistoryWindow : Window
         SelectAllBtn.Click += (_, _) => { List.SelectAll(); List.Focus(); };
         SelectNoneBtn.Click += (_, _) => List.UnselectAll();
         CleanBtn.Click += (_, _) => { CleanBtn.ContextMenu.PlacementTarget = CleanBtn; CleanBtn.ContextMenu.IsOpen = true; };
+        // Small headings say what a menu's entries do.
+        CleanBtn.ContextMenu.Items.Insert(0, MenuParts.Heading("Tidy up the list – no file is deleted"));
+        DeleteMore.ContextMenu.Items.Insert(0, MenuParts.Heading("Delete"));
+        DownloadBtn.Click += async (_, _) => { if (One() is { } it) await Download(it); };
         RemoveGoneItem.Click += (_, _) => AskRemoveGone();
         ClearItem.Click += (_, _) => AskClear();
         List.SelectionChanged += (_, _) => ShowDetails();
@@ -91,7 +102,7 @@ public partial class HistoryWindow : Window
             if (!showingDetails || Selected().Count != 1) return;
             var it = Selected()[0];
             it.Record.Label = LabelBox.Text;
-            it.Update(it.Local, it.InPeergos);
+            it.Update(it.Local, it.InPeergos, it.RemoteThumb);
             SelectionTitle.Text = (it.Record.Locked ? "🔒 " : "") + it.Title;
             labelSave.Stop();
             labelSave.Start();
@@ -157,6 +168,11 @@ public partial class HistoryWindow : Window
             && before.SessionProtected == s.SessionProtected)
         {
             if (before.HistoryDeleteAction != s.HistoryDeleteAction || before.DeleteBothRemovesEntry != s.DeleteBothRemovesEntry) ShowDetails();
+            if (before.PreviewsFromPeergos != s.PreviewsFromPeergos)
+            {
+                Rebuild();
+                _ = FetchPreviews();
+            }
             return;
         }
         Dispatcher.BeginInvoke(async () => await Refresh());
@@ -190,7 +206,8 @@ public partial class HistoryWindow : Window
         foreach (var r in Store.Records)
         {
             if (!items.TryGetValue(r.Id, out var it)) items[r.Id] = it = new HistoryItem(r);
-            it.Update(r.File != null && LocalExists(r.File), HistoryLogic.InPeergos(r, remotePaths, remoteFolder));
+            var thumb = app.Settings.PreviewsFromPeergos && r.PeergosPath != null && remoteThumbs.TryGetValue(r.PeergosPath, out var t) ? t : null;
+            it.Update(r.File != null && LocalExists(r.File), HistoryLogic.InPeergos(r, remotePaths, remoteFolder), thumb);
         }
         foreach (var gone in items.Keys.Except(Store.Records.Select(r => r.Id)).ToList()) items.Remove(gone);
 
@@ -269,11 +286,13 @@ public partial class HistoryWindow : Window
             remotePaths = files.Select(f => f.Path).ToHashSet();
             remoteFolder = r.PeergosPath;
             remoteCheckedAt = started;
+            foreach (var f in files.Where(f => f.Thumb != null)) remoteThumbs[f.Path] = f.Thumb!;
             var added = HistoryLogic.Discover(Store.Records, CaptureFiles.Scan(AppPaths.CacheDir), files.Where(f => !f.Folder).ToList(), File.GetLastWriteTime, Store.Dismissed);
             if (added.Count > 0) Store.AddRange(added);
             else Store.Save(); // links found for known records
             RemoteState.Text = $"Peergos: {files.Count(f => !f.Folder)} files in {r.PeergosPath}, checked {DateTime.Now:HH:mm}";
             Rebuild();
+            _ = FetchPreviews();
         }
         catch (Exception e)
         {
@@ -332,6 +351,7 @@ public partial class HistoryWindow : Window
             SelectionTitle.Text = $"{sel.Count} captures selected" + (locked > 0 ? $" ({locked} locked)" : "");
             CopyLinkBtn.IsEnabled = OpenLinkBtn.IsEnabled = OpenFileBtn.IsEnabled = ShowFileBtn.IsEnabled = CopyMediaBtn.IsEnabled = false;
             UploadBtn.IsEnabled = DrawBtn.IsEnabled = FullBtn.IsEnabled = false;
+            DownloadBtn.Visibility = Visibility.Collapsed;
             return;
         }
         var it = sel[0];
@@ -349,7 +369,8 @@ public partial class HistoryWindow : Window
         if (r.IsVideo && r.Seconds > 0) size.Add(it.Duration);
         if (r.Bytes > 0) size.Add(HistoryLogic.Size(r.Bytes));
         InfoSize.Text = size.Count > 0 ? string.Join(" · ", size) : "–";
-        InfoLocal.Text = it.Local ? r.File : r.IsUpload ? "No copy kept by Peergos Snap" : r.File != null ? "No longer on this PC" : "Not on this PC";
+        InfoLocal.Text = (it.Local ? r.File : r.IsUpload ? "No copy kept by Peergos Snap" : r.File != null ? "No longer on this PC" : "Not on this PC")
+                         + (FileOf(it) == null && it.RemoteThumb != null ? " – the preview comes from Peergos" : "");
         InfoRemote.Text = it.PeergosTip + (r.PeergosPath != null && !signedIn ? " – sign in to Peergos to see or delete it" : "");
         InfoLink.Text = r.Link ?? "–";
         CopyLinkBtn.IsEnabled = OpenLinkBtn.IsEnabled = r.Link != null && it.InPeergos != false;
@@ -361,6 +382,9 @@ public partial class HistoryWindow : Window
         DrawBtn.IsEnabled = it.Local && it.IsViewablePicture;
         DrawBtn.Visibility = r.IsVideo || r.IsUpload ? Visibility.Collapsed : Visibility.Visible;
         FullBtn.IsEnabled = it.PreviewFile != null;
+        // Only in Peergos: Download brings a copy back, and then the buttons for a file here work again.
+        DownloadBtn.Visibility = CanDownload(it) ? Visibility.Visible : Visibility.Collapsed;
+        DownloadBtn.IsEnabled = CanDownload(it) && signedIn && !downloading.Contains(r.Id);
         _ = ShowPreview(it);
         showingDetails = true;
     }
@@ -372,8 +396,22 @@ public partial class HistoryWindow : Window
     async Task ShowPreview(HistoryItem it)
     {
         Preview.Source = null;
+        Preview.Stretch = System.Windows.Media.Stretch.Uniform;
         var r = it.Record;
         var file = it.PreviewFile;
+        if (file == null)
+        {
+            // Not on this PC: a video's still made earlier, else the small picture from Peergos – at its own size.
+            var still = r.IsVideo ? await ThumbFiles.VideoThumb(r) : null;
+            var small = still != null ? await Task.Run(() => ThumbFiles.Load(still, 0)) : it.RemotePreview;
+            if (small != null)
+            {
+                PreviewNote.Text = "";
+                Preview.Stretch = System.Windows.Media.Stretch.None;
+                if (One() == it) Preview.Source = small;
+                return;
+            }
+        }
         PreviewNote.Text = file != null ? ""
             : r.IsFolder ? "A folder uploaded to Peergos – open its link to see it."
             : r.IsUpload ? "No preview for this file." + (r.Link != null ? " Open the link to see it." : "")
@@ -661,43 +699,112 @@ public partial class HistoryWindow : Window
     /// <summary>A tick box was clicked: the keyboard goes to the list, so Delete, L, Enter and Ctrl+C work on the ticked rows.</summary>
     void Tick_Click(object sender, RoutedEventArgs e) => List.Focus();
 
-    /// <summary>Right click on the list: everything for the selected captures in one menu.</summary>
+    /// <summary>Right click on the list: everything for the selected captures in one menu, in groups with a small heading
+    /// each. Entries that cannot apply to this entry are left out; ones that apply but not now are greyed.</summary>
     bool FillRowMenu(ContextMenu m)
     {
         var sel = Selected();
         if (sel.Count == 0) return false;
         m.Items.Clear();
-        void Add(string text, bool enabled, Action a)
+        if (sel.Count == 1 && sel[0] is var one)
         {
-            var i = new MenuItem { Header = text, IsEnabled = enabled };
-            i.Click += (_, _) => a();
-            m.Items.Add(i);
-        }
-        var one = sel.Count == 1 ? sel[0] : null;
-        if (one != null)
-        {
-            Add("Copy link", one.Record.Link != null && one.InPeergos != false, () => CopyText(one.Record.Link!, "Link copied to the clipboard"));
-            Add("View full screen", one.PreviewFile != null, () => ShowFull(one));
-            Add("Open", FileOf(one) != null || one.Record.Link != null, () => OpenItem(one));
-            Add("Open the link in the browser", one.Record.Link != null && one.InPeergos != false, () => Shell(one.Record.Link!));
-            Add("Show in its folder", FileOf(one) != null, () => Process.Start("explorer.exe", "/select,\"" + FileOf(one) + "\""));
-            if (!one.Record.IsUpload)
-            {
-                Add(one.Record.IsVideo ? "Copy video" : "Copy picture", one.Local, () => Press(CopyMediaBtn));
-                Add("Upload and copy the link", one.Local && one.InPeergos != true && !uploading.Contains(one.Record.Id), () => Press(UploadBtn));
-            }
-            Add("Draw on a copy…", one.Local && one.IsViewablePicture && !one.Record.IsVideo, () => _ = Draw(one));
-            m.Items.Add(new Separator());
+            var r = one.Record;
+            bool onPc = FileOf(one) != null, linked = r.Link != null && one.InPeergos != false;
+            MenuParts.Group(m, "Open",
+                one.PreviewFile != null ? MenuParts.Entry("View full screen", () => ShowFull(one)) : null,
+                onPc ? MenuParts.Entry("Open", () => OpenItem(one)) : null,
+                onPc ? MenuParts.Entry("Show in its folder", () => Process.Start("explorer.exe", "/select,\"" + FileOf(one) + "\"")) : null,
+                CanDownload(one)
+                    ? MenuParts.Entry("Download a copy to this PC", () => _ = Download(one), app.Settings.PeergosConfigured && !downloading.Contains(r.Id)) : null,
+                linked ? MenuParts.Entry("Open the link in the browser", () => Shell(r.Link!)) : null);
+            MenuParts.Group(m, "Copy and share",
+                linked ? MenuParts.Entry("Copy link", () => CopyText(r.Link!, "Link copied to the clipboard")) : null,
+                !r.IsUpload && one.Local ? MenuParts.Entry(r.IsVideo ? "Copy video" : "Copy picture", () => Press(CopyMediaBtn)) : null,
+                !r.IsUpload && one.Local && one.InPeergos != true
+                    ? MenuParts.Entry("Upload and copy the link", () => Press(UploadBtn), !uploading.Contains(r.Id)) : null,
+                !r.IsUpload && !r.IsVideo && one.Local && one.IsViewablePicture ? MenuParts.Entry("Draw on a copy…", () => _ = Draw(one)) : null);
         }
         bool allLocked = sel.All(i => i.Record.Locked);
-        Add(allLocked ? "Unlock" : "Lock", true, ToggleLock);
-        m.Items.Add(new Separator());
+        MenuParts.Group(m, "Protect", MenuParts.Entry(allLocked ? "Unlock" : "Lock – never deleted until unlocked", ToggleLock));
         MarkDefaultDelete();
-        Add(DelBothItem.Header as string ?? "", DelBothItem.IsEnabled, () => AskDelete(true, true));
-        Add(DelLocalItem.Header as string ?? "", DelLocalItem.IsEnabled, () => AskDelete(true, false));
-        Add(DelRemoteItem.Header as string ?? "", DelRemoteItem.IsEnabled, () => AskDelete(false, true));
-        Add("Only the history entry", RemoveItem.IsEnabled, AskRemove);
+        // The default delete (the Delete button's) stands out, as in the button's ▾ menu.
+        MenuItem Del(MenuItem like, Action run)
+        {
+            var e = MenuParts.Entry(like.Header as string ?? "", run, like.IsEnabled);
+            e.FontWeight = like.FontWeight;
+            return e;
+        }
+        MenuParts.Group(m, "Delete",
+            Del(DelBothItem, () => AskDelete(true, true)),
+            Del(DelLocalItem, () => AskDelete(true, false)),
+            Del(DelRemoteItem, () => AskDelete(false, true)),
+            Del(RemoveItem, AskRemove));
         return true;
+    }
+
+    /// <summary>A file that is only in Peergos (not a folder) can be downloaded.</summary>
+    bool CanDownload(HistoryItem it) => FileOf(it) == null && it.InPeergos == true && it.Record is { IsFolder: false, PeergosPath: not null };
+
+    /// <summary>Download: a copy from Peergos back on this PC – a capture where it was (or into the captures folder),
+    /// an uploaded file where it came from (or into Downloads). The entry then works like one on this PC again.</summary>
+    async Task Download(HistoryItem it)
+    {
+        var r = it.Record;
+        if (!CanDownload(it) || downloading.Contains(r.Id)) return;
+        if (!app.Settings.PeergosConfigured) { AskSignIn("Downloading needs your Peergos account."); return; }
+        var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        var target = HistoryLogic.DownloadTarget(r, AppPaths.CacheDir, app.Settings.Subfolders, downloads, File.Exists, Directory.Exists);
+        if (target == null) return;
+        downloading.Add(r.Id);
+        ShowDetails();
+        Result($"Downloading {r.Name}…");
+        BridgeResult res;
+        try
+        {
+            res = await Uploader.GetAsync(app.Settings.Clone(), r.PeergosPath!, target,
+                pct => Dispatcher.BeginInvoke(() => Result($"Downloading {r.Name}… {pct} %")));
+        }
+        catch (Exception e)
+        {
+            Log.Error("history download", e);
+            res = new BridgeResult(false, null, null, e.Message);
+        }
+        finally { downloading.Remove(r.Id); }
+        if (!res.Ok || !File.Exists(target))
+        {
+            Result("Not downloaded: " + (res.Error ?? "the file did not arrive"), error: true);
+            ShowDetails();
+            return;
+        }
+        if (r.IsUpload) r.Source = target;
+        else r.File = target;
+        if (r.Bytes <= 0) r.Bytes = new FileInfo(target).Length;
+        Store.Save();
+        Rebuild();
+        Result("Downloaded: " + target);
+    }
+
+    /// <summary>Entries only in Peergos without a small picture get one: Peergos makes it from the picture and keeps it
+    /// with the file (Settings → Files & history → previews from Peergos). Each is asked once per window.</summary>
+    async Task FetchPreviews()
+    {
+        if (fetchingPreviews || !app.Settings.PreviewsFromPeergos || !app.Settings.PeergosConfigured || remotePaths == null) return;
+        var want = items.Values
+            .Where(i => !i.Local && i.InPeergos == true && i.Record.PeergosPath is { } p && !remoteThumbs.ContainsKey(p) && !previewTried.Contains(p)
+                        && FileKinds.Of(p) == FileKind.Picture)
+            .Select(i => i.Record.PeergosPath!).Take(60).ToList();
+        if (want.Count == 0) return;
+        fetchingPreviews = true;
+        try
+        {
+            foreach (var p in want) previewTried.Add(p);
+            var (r, thumbs) = await Uploader.PreviewsAsync(app.Settings.Clone(), want);
+            if (!r.Ok) { Log.Error("history previews: " + r.Error); return; }
+            foreach (var (p, t) in thumbs) remoteThumbs[p] = t;
+            if (thumbs.Count > 0) Rebuild();
+        }
+        catch (Exception e) { Log.Error("history previews", e); } // the entries just show no preview
+        finally { fetchingPreviews = false; }
     }
 
     void AskRemoveGone()

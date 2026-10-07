@@ -63,19 +63,25 @@ import java.util.concurrent.CompletableFuture;
  *        entry data, like the web app's "stay logged in") replaces the password: it is all later
  *        commands need, and the password is not kept anywhere.
  * check  --server URL --user NAME                               stdin: session
- * upload --server URL --user NAME --file PATH [--folder F] [--name N]    stdin: session
+ * upload --server URL --user NAME --file PATH [--folder F] [--name N] [--thumb]    stdin: session [, small picture]
+ *        With --thumb the next stdin line is the file's small picture ("data:image/jpeg;base64,…"), kept with it.
  *        Uploads into /NAME/F (created when missing) and creates a read-only secret link to the file,
  *        in the same short form as the web app: https://HOST/secret/OWNER/ID#KEY?open=true
  * list   --server URL --user NAME [--folder F]                           stdin: session
- *        {"ok":true,"folder":"/NAME/F","files":[{"name","path","size","modified","links":[...],"dir":false}]}: the files
+ *        {"ok":true,"folder":"/NAME/F","files":[{"name","path","size","modified","links":[...],"dir":false,["thumb"]}]}: the files
  *        (and folders, "dir":true) in the capture folder with their existing secret links (so older links can be shown again).
- * put    --server URL --user NAME [--folder F] [--dir D]                 stdin: session, then "LOCAL\tREL" lines, an empty line ends
+ * put    --server URL --user NAME [--folder F] [--dir D]                 stdin: session, then "LOCAL\tREL[\tTHUMB]" lines, an empty line ends
  *        Uploads several files with one sign-in. Without --dir every file goes into /NAME/F and gets its own secret
  *        link; with --dir a new folder F/D (numbered when D exists) receives the files at their relative paths
  *        (REL, "/"-separated) and gets one secret link for the whole folder.
  *        {"ok":true,"files":[{"name","path","size","link"}],"folder":"/NAME/F/D"|null,"link":"..."|null,"failed":[...]}
  * folders --server URL --user NAME [--path REL]                          stdin: session
  *        The folders in /NAME/REL (to choose the capture folder): {"ok":true,"path":"/NAME/REL","exists":true,"folders":[...]}
+ * previews --server URL --user NAME                                      stdin: session, then one path per line
+ *        The small pictures of the user's own files: the one Peergos keeps, else (a picture) one made now and kept
+ *        with the file. {"ok":true,"thumbs":{"PATH":"data:image/jpeg;base64,…"}} (files without one are left out).
+ * get    --server URL --user NAME --path P --to FILE                      stdin: session
+ *        Downloads one of the user's own files: {"ok":true,"file":"FILE"}; "@progress N" while it runs.
  * delete --server URL --user NAME                                        stdin: session, then one path per line
  *        Deletes each file (Peergos removes its secret links with it): {"ok":true,"deleted":[...],"missing":[...],"failed":[...]}
  * serve  --server URL --user NAME                                        stdin: session, then JSON commands
@@ -128,7 +134,7 @@ public class PeergosBridge {
         if (args.length == 0)
             throw new IllegalArgumentException("usage: signin|check|upload ...");
         String cmd = args[0];
-        if (!java.util.Set.of("signin", "check", "upload", "put", "folders", "list", "delete", "serve").contains(cmd))
+        if (!java.util.Set.of("signin", "check", "upload", "put", "folders", "list", "delete", "previews", "get", "serve").contains(cmd))
             throw new IllegalArgumentException("unknown command " + cmd);
         Map<String, String> a = parse(args);
         BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
@@ -166,7 +172,9 @@ public class PeergosBridge {
                 FileWrapper dir = ensureFolder(ctx, "/" + user, folder, base, crypto);
                 Path file = Path.of(require(a, "file"));
                 String name = uniqueName(dir, folder, a.getOrDefault("name", file.getFileName().toString()), base, crypto);
-                upload(dir, name, file, base, crypto);
+                String thumb = a.containsKey("thumb") ? line(stdin) : null;
+                FileWrapper up = upload(dir, name, file, base, crypto);
+                DirectServe.setThumb(up, thumb, base);
                 String path = "/" + user + (folder.isEmpty() ? "" : "/" + folder) + "/" + name;
                 // Read-only link to just this file, opened directly in the viewer (like the web app's "open" option).
                 LinkProperties props = ctx.createSecretLink(path, false, Optional.empty(), Optional.empty(), "", true).join();
@@ -202,6 +210,7 @@ public class PeergosBridge {
                             // a file without sharing state simply has no links
                         }
                         links.append("]");
+                        String thumb = f.isDirectory() ? null : DirectServe.thumbOf(f);
                         out.append(first ? "" : ",")
                                 .append("{\"name\":").append(json(fp.name))
                                 .append(",\"path\":").append(json(path))
@@ -209,6 +218,7 @@ public class PeergosBridge {
                                 .append(",\"modified\":").append(fp.modified.toEpochSecond(ZoneOffset.UTC) * 1000)
                                 .append(",\"links\":").append(links)
                                 .append(",\"dir\":").append(f.isDirectory())
+                                .append(thumb != null ? ",\"thumb\":" + json(thumb) : "")
                                 .append("}");
                         first = false;
                     }
@@ -220,14 +230,63 @@ public class PeergosBridge {
                 String folder = captureFolder(user, a);
                 List<String[]> items = new ArrayList<>(); // {local, relative}
                 for (String l; !(l = line(stdin)).isEmpty(); ) {
-                    int t = l.indexOf('\t');
-                    String local = t < 0 ? l : l.substring(0, t);
-                    String rel = t < 0 ? Path.of(local).getFileName().toString() : l.substring(t + 1);
-                    items.add(new String[]{local, rel});
+                    // LOCAL, REL and (for a picture or video) its small picture, tab-separated.
+                    String[] f = l.split("\t", 3);
+                    String local = f[0];
+                    String rel = f.length > 1 && !f[1].isEmpty() ? f[1] : Path.of(local).getFileName().toString();
+                    items.add(new String[]{local, rel, f.length > 2 && !f[2].isEmpty() ? f[2] : null});
                 }
                 if (items.isEmpty())
                     throw new IllegalArgumentException("Nothing to upload");
                 return put(ctx, user, folder, a.get("dir"), items, server, base, crypto);
+            }
+            case "previews": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                StringBuilder out = new StringBuilder("{\"ok\":true,\"thumbs\":{");
+                boolean first = true;
+                for (String path; !(path = line(stdin).trim()).isEmpty(); ) {
+                    if (!path.startsWith("/" + user + "/") || path.contains("/../"))
+                        continue;
+                    try {
+                        Optional<FileWrapper> f = ctx.getByPath(path).join();
+                        if (f.isEmpty() || f.get().isDirectory())
+                            continue;
+                        String thumb = DirectServe.thumbOf(f.get());
+                        if (thumb == null && DirectServe.isPicture(f.get().getFileProperties().name) && f.get().getSize() <= 30_000_000) {
+                            thumb = DirectServe.makeThumb(DirectServe.readAll(f.get(), 30_000_000, base, crypto));
+                            if (thumb != null)
+                                DirectServe.setThumb(f.get(), thumb, base);
+                        }
+                        if (thumb == null)
+                            continue;
+                        out.append(first ? "" : ",").append(json(path)).append(":").append(json(thumb));
+                        first = false;
+                    } catch (Exception e) {
+                        System.err.println("preview " + path + ": " + e.getMessage()); // that file shows none
+                    }
+                }
+                return out.append("}}").toString();
+            }
+            case "get": {
+                UserContext ctx = restore(user, line(stdin), base, crypto);
+                String path = require(a, "path");
+                if (!path.startsWith("/" + user + "/") || path.contains("/../"))
+                    throw new IllegalArgumentException("Not in your Peergos home: " + path);
+                FileWrapper f = ctx.getByPath(path).join().orElseThrow(() -> new IllegalStateException("Not found in Peergos: " + path));
+                if (f.isDirectory())
+                    throw new IllegalArgumentException("A folder cannot be downloaded here");
+                long size = Math.max(1, f.getSize());
+                long[] done = {0, -1};
+                Path to = DirectServe.download(f, Path.of(require(a, "to")), base, crypto, n -> {
+                    done[0] += n;
+                    long pct = Math.min(100, done[0] * 100 / size);
+                    if (pct != done[1]) {
+                        done[1] = pct;
+                        PROGRESS.println("@progress " + pct);
+                        PROGRESS.flush();
+                    }
+                });
+                return "{\"ok\":true,\"file\":" + json(to.toString()) + "}";
             }
             case "folders": {
                 UserContext ctx = restore(user, line(stdin), base, crypto);
@@ -346,7 +405,7 @@ public class PeergosBridge {
                 FileWrapper dir = ensureFolder(ctx, home, sub, network, crypto);
                 String name = uniqueName(dir, sub, parts.get(parts.size() - 1), network, crypto);
                 long before = done[0];
-                upload(dir, name, file, network, crypto, x -> {
+                FileWrapper up = upload(dir, name, file, network, crypto, x -> {
                     done[0] += x;
                     long pct = all == 0 ? 100 : Math.min(100, done[0] * 100 / all);
                     if (pct != lastPct[0]) {
@@ -356,6 +415,7 @@ public class PeergosBridge {
                     }
                 });
                 done[0] = before + Files.size(file);
+                if (it.length > 2) DirectServe.setThumb(up, it[2], network);
                 String path = home + (sub.isEmpty() ? "" : "/" + sub) + "/" + name;
                 String link = null;
                 if (top == null) {

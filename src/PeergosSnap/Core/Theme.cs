@@ -134,6 +134,7 @@ public static class Theme
         r["TextFillColorSecondaryBrush"] = B(Current.Fg2);
         r["TextFillColorTertiaryBrush"] = B(Current.Fg3);
         r["ControlContentThemeFontSize"] = FontSize;
+        FadeDisabled(app);
         foreach (Window w in app.Windows) Style(w);
         if (Environment.GetEnvironmentVariable("PEERGOS_SNAP_THEME_KEYS") == "1")
             foreach (var d in app.Resources.MergedDictionaries)
@@ -141,6 +142,27 @@ public static class Theme
         Changed?.Invoke();
     }
 #pragma warning restore WPF0001
+
+    /// <summary>
+    /// Buttons that cannot be used right now are clearly faded (Fluent only greys their text a little), so the usable
+    /// ones are seen at a glance (since 2.7). The app's own button styles are based on Fluent's and add this; windows
+    /// opened later take them, open windows when they are opened again.
+    /// </summary>
+    static void FadeDisabled(Application app)
+    {
+        var r = app.Resources;
+        foreach (var key in new object[] { typeof(System.Windows.Controls.Button), typeof(System.Windows.Controls.Primitives.ToggleButton),
+                     typeof(System.Windows.Controls.Primitives.RepeatButton), "AccentButtonStyle" })
+        {
+            r.Remove(key); // ours from before, so that the lookup below finds Fluent's (light or dark)
+            if (app.TryFindResource(key) is not Style fluent) continue;
+            var faded = new Style(fluent.TargetType, fluent);
+            var off = new Trigger { Property = UIElement.IsEnabledProperty, Value = false };
+            off.Setters.Add(new Setter(UIElement.OpacityProperty, 0.35));
+            faded.Triggers.Add(off);
+            r[key] = faded;
+        }
+    }
 
     static void Recolor(ResourceDictionary d, Color fill, Color text, Color onFill, Color hover)
     {

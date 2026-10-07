@@ -69,6 +69,7 @@
                 <Grid>
                     <ListBox x:Name="List" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ContextMenu><ContextMenu/></ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid Margin="2,4">
@@ -116,6 +117,9 @@
                             </Button>
                             <Button AutomationProperties.Name="Folder" x:Name="FolderBtn" ToolTip="Show the file on this PC in its folder">
                                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE838;"/><TextBlock Text="Folder"/></StackPanel>
+                            </Button>
+                            <Button AutomationProperties.Name="Download" x:Name="DownloadBtn" ToolTip="Download it to this PC: it is kept in the direct folder – then Folder shows it">
+                                <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE896;"/><TextBlock Text="Download"/></StackPanel>
                             </Button>
                             <Button AutomationProperties.Name="Save as…" x:Name="SaveBtn" ToolTip="Save a copy where you like on this PC">
                                 <StackPanel Orientation="Horizontal"><TextBlock Style="{StaticResource Glyph}" Text="&#xE74E;"/><TextBlock Text="Save as…"/></StackPanel>

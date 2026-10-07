@@ -206,15 +206,34 @@ public static class PeergosLinks
             if (f.TryGetProperty("links", out var ls) && ls.ValueKind == JsonValueKind.Array)
                 links.AddRange(ls.EnumerateArray().Select(x => x.GetString()).Where(x => !string.IsNullOrEmpty(x))!);
             var ms = f.TryGetProperty("modified", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt64() : 0;
+            var thumb = f.TryGetProperty("thumb", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
             list.Add(new RemoteFile(
                 f.GetProperty("name").GetString() ?? "",
                 f.GetProperty("path").GetString() ?? "",
                 f.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number ? sz.GetInt64() : 0,
                 DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime,
                 links,
-                f.TryGetProperty("dir", out var d) && d.ValueKind == JsonValueKind.True));
+                f.TryGetProperty("dir", out var d) && d.ValueKind == JsonValueKind.True,
+                DirectLogic.ThumbBytes(thumb) != null ? thumb : null));
         }
         return list;
+    }
+
+    /// <summary>A bridge "previews" answer: path → small picture (only usable ones).</summary>
+    public static Dictionary<string, string> ParsePreviews(string? raw)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrEmpty(raw)) return map;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            if (!doc.RootElement.TryGetProperty("thumbs", out var thumbs) || thumbs.ValueKind != JsonValueKind.Object) return map;
+            foreach (var p in thumbs.EnumerateObject())
+                if (p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is { } t && DirectLogic.ThumbBytes(t) != null)
+                    map[p.Name] = t;
+        }
+        catch (JsonException) { }
+        return map;
     }
 
     /// <summary>A bridge "put" answer: the uploaded files, and the new folder with its link when a folder was uploaded.</summary>

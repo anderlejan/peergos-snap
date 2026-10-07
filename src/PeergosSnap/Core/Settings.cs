@@ -115,6 +115,9 @@ public sealed class Settings
     public string DirectFriend { get; set; } = "";
     /// <summary>Since 2.6: the tray icon flashes until what a friend sent was looked at (off: a steady dot).</summary>
     public bool DirectFlash { get; set; } = true;
+    /// <summary>Since 2.7: a file that is only in Peergos still shows its preview (History, direct window): the small
+    /// picture Peergos keeps with it, made there from the file when it has none – loaded into memory, nothing saved.</summary>
+    public bool PreviewsFromPeergos { get; set; } = true;
 
     // Hotkeys
     public string HotkeyPicture { get; set; } = "Ctrl+Shift+1";

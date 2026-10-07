@@ -101,6 +101,7 @@ public partial class SettingsWindow : Window
         foreach (ComboBoxItem i in SubfolderBox.Items)
             if ((string)i.Tag == S.Subfolders.ToString()) SubfolderBox.SelectedItem = i;
         RememberApp.IsChecked = S.RememberApp;
+        PreviewsFromPeergos.IsChecked = S.PreviewsFromPeergos;
         foreach (ComboBoxItem i in HistoryDeleteBox.Items)
             if ((string)i.Tag == S.HistoryDeleteAction.ToString()) HistoryDeleteBox.SelectedItem = i;
         BothRemovesEntry.IsChecked = S.DeleteBothRemovesEntry;
@@ -248,6 +249,7 @@ public partial class SettingsWindow : Window
         AskPicture.Click += (_, _) => Change(s => s.AskBeforePictureUpload = AskPicture.IsChecked == true);
         AnnotateAfter.Click += (_, _) => Change(s => s.AnnotateAfterPicture = AnnotateAfter.IsChecked == true);
         ConfirmDelete.Click += (_, _) => Change(s => s.ConfirmHistoryDelete = ConfirmDelete.IsChecked == true);
+        PreviewsFromPeergos.Click += (_, _) => Change(s => s.PreviewsFromPeergos = PreviewsFromPeergos.IsChecked == true);
         WireBrowse();
 
         Dim.ValueChanged += (_, _) => { DimLabel.Text = $"Darken outside the selection ({(int)Dim.Value} %; 0 = fully transparent)"; Change(s => s.OverlayDimPercent = (int)Dim.Value); };

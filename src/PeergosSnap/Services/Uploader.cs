@@ -29,14 +29,42 @@ public sealed class Uploader
         finally { OneAtATime.Release(); }
     }
 
-    public static async Task<BridgeResult> UploadAsync(Settings s, string file, Action<int>? progress, CancellationToken ct = default)
+    /// <summary>Uploads one capture with a secret link; <paramref name="thumb"/> (its small picture) is kept with it in
+    /// Peergos, so it shows without downloading it (History, the web app).</summary>
+    public static async Task<BridgeResult> UploadAsync(Settings s, string file, Action<int>? progress, CancellationToken ct = default, string? thumb = null)
     {
         await OneAtATime.WaitAsync(ct);
         try
         {
-            return await RunAsync(["upload", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder,
-                    "--file", file, "--name", Path.GetFileName(file)],
-                s.Session, progress, null, TimeSpan.FromMinutes(30), ct);
+            string[] args = ["upload", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder, "--file", file, "--name", Path.GetFileName(file)];
+            if (thumb != null) args = [.. args, "--thumb", "stdin"];
+            return await RunAsync(args, thumb != null ? s.Session + "\n" + thumb : s.Session, progress, null, TimeSpan.FromMinutes(30), ct);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
+    /// <summary>The small pictures of files in the user's Peergos (path → "data:image/jpeg;base64,…"): the ones Peergos
+    /// keeps, and for pictures without one a new one, made there and kept with the file. Nothing is saved on this PC.</summary>
+    public static async Task<(BridgeResult Result, Dictionary<string, string> Thumbs)> PreviewsAsync(Settings s, IEnumerable<string> paths)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            var r = await RunAsync(["previews", "--server", s.Server, "--user", s.Username.Trim()],
+                s.Session + "\n" + string.Join("\n", paths) + "\n", null, null, TimeSpan.FromMinutes(10), default);
+            return (r, r.Ok ? PeergosLinks.ParsePreviews(r.Raw) : []);
+        }
+        finally { OneAtATime.Release(); }
+    }
+
+    /// <summary>Downloads one of the user's files from Peergos to <paramref name="to"/> (History → Download).</summary>
+    public static async Task<BridgeResult> GetAsync(Settings s, string path, string to, Action<int>? progress)
+    {
+        await OneAtATime.WaitAsync();
+        try
+        {
+            return await RunAsync(["get", "--server", s.Server, "--user", s.Username.Trim(), "--path", path, "--to", to],
+                s.Session, progress, null, TimeSpan.FromHours(2), default);
         }
         finally { OneAtATime.Release(); }
     }
@@ -45,14 +73,16 @@ public sealed class Uploader
     /// file goes into the capture folder with its own link; with it, a new folder of that name gets the files at their
     /// relative paths and one link. <paramref name="files"/>: (file on this PC, relative path).</summary>
     public static async Task<(BridgeResult Result, PutResult Put)> PutAsync(Settings s, IReadOnlyList<(string Local, string Relative)> files,
-        string? folderName, Action<int>? progress)
+        string? folderName, Action<int>? progress, IReadOnlyDictionary<string, string>? thumbs = null)
     {
         await OneAtATime.WaitAsync();
         try
         {
             var args = new List<string> { "put", "--server", s.Server, "--user", s.Username.Trim(), "--folder", s.AccountFolder };
             if (!string.IsNullOrWhiteSpace(folderName)) { args.Add("--dir"); args.Add(folderName); }
-            var input = s.Session + "\n" + string.Join("\n", files.Select(f => f.Local + "\t" + f.Relative.Replace('\\', '/'))) + "\n";
+            // A picture's or video's small picture travels as a third column: it is kept with the file in Peergos.
+            var input = s.Session + "\n" + string.Join("\n", files.Select(f => f.Local + "\t" + f.Relative.Replace('\\', '/')
+                + (thumbs != null && thumbs.TryGetValue(f.Local, out var t) ? "\t" + t : ""))) + "\n";
             var r = await RunAsync([.. args], input, progress, null, TimeSpan.FromHours(6), default);
             return (r, PeergosLinks.ParsePut(r.Raw));
         }
@@ -149,8 +179,16 @@ public sealed class Uploader
         p.Start();
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        await p.StandardInput.WriteLineAsync(secret);
-        await p.StandardInput.FlushAsync();
+        try
+        {
+            await p.StandardInput.WriteLineAsync(secret);
+            await p.StandardInput.FlushAsync();
+        }
+        catch (IOException e)
+        {
+            // The bridge ended before reading everything (it refused the command): its answer below says why.
+            Log.Info("bridge: input not read to the end: " + e.Message);
+        }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(timeout);
@@ -167,7 +205,8 @@ public sealed class Uploader
                     await p.StandardInput.FlushAsync();
                 }
             }
-            p.StandardInput.Close();
+            try { p.StandardInput.Close(); }
+            catch (IOException) { } // already gone, see above
             await exited;
         }
         catch (OperationCanceledException)

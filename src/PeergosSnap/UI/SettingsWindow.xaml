@@ -166,7 +166,7 @@
             </TabItem>
             <TabItem Header="Overlay">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="12">
-                    <TextBlock Style="{StaticResource Hint}" Text="The selection never freezes the screen: games, animations and videos keep moving while you drag. The picture is taken the moment you release the mouse."/>
+                    <TextBlock Style="{StaticResource Hint}" Text="The selection never freezes the screen: games, animations and videos keep moving while you drag, and the picture is taken the moment you release the mouse. Two cases show a still screen instead: after a delay (tray menu → Delay), and when the picture hotkey is pressed while one of Peergos Snap's own menus is open – then that menu is in the picture."/>
                     <TextBlock x:Name="DimLabel" Text="Darken outside the selection"/>
                     <Slider x:Name="Dim" Minimum="0" Maximum="70" Width="300" HorizontalAlignment="Left" TickFrequency="5" IsSnapToTickEnabled="True" Margin="0,2,0,8"/>
                     <TextBlock Text="Border colour (e.g. #FF3B30 or Lime)"/>
@@ -176,6 +176,7 @@
                     <TextBlock Text="Extra wait after releasing the mouse (milliseconds, 0 = instant)"/>
                     <TextBox x:Name="Delay" Width="160" HorizontalAlignment="Left"/>
                     <TextBlock x:Name="DelayErr" Style="{StaticResource Err}" Visibility="Collapsed"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="Why wait? While you select, the overlay covers the screen, so whatever reacts to the mouse pointer – a highlight, a tooltip – is hidden, and some apps draw again only when the overlay is gone. A short wait (300 to 1000) lets them come back before the picture is taken. A recording starts after the same wait. A still screen (see above) is not waited for: the picture is what you saw."/>
                 </StackPanel></ScrollViewer>
             </TabItem>
             <TabItem Header="Output">
@@ -215,6 +216,8 @@
                         <ComboBoxItem Tag="Never" Content="Never (only in Peergos or on the clipboard)"/>
                     </ComboBox>
                     <TextBlock Style="{StaticResource Hint}" Text="'Only if the upload fails' deletes the copy in the captures folder as soon as the capture is in Peergos; the history keeps its link. Captures that are only copied to the clipboard stay. 'Never' lets those go too: they are only on the clipboard (pasting the file works until Peergos Snap restarts) and not in the history. A capture whose upload failed is always kept, so nothing is lost; so is one you keep or save from the question after a recording. The mirror folder below is a separate choice."/>
+                    <CheckBox x:Name="PreviewsFromPeergos" Content="Show previews of files that are only in Peergos"/>
+                    <TextBlock Style="{StaticResource Hint}" Text="On by default: the history and the direct window show the small picture Peergos keeps with each picture or video, so you still see what was uploaded or shared when no copy is on this PC. It is loaded into memory, not saved here. A picture without one gets it made in Peergos (kept there with it); for a video in the direct window it is made from a temporary copy that is deleted at once."/>
                     <CheckBox x:Name="DiscardPerm" Content="Discarded captures are deleted at once, never kept (no Recycle Bin)"/>
                     <TextBlock Style="{StaticResource Hint}" Text="On by default: 'Discard' leaves nothing behind – on this PC, in the mirror folder, in Peergos or in the history. Off moves discarded files to the Recycle Bin instead."/>
                     <TextBlock Text="Delete local copies older than (days, 0 = keep forever)"/>

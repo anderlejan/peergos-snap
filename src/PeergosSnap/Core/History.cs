@@ -46,7 +46,10 @@ public sealed record DeletePlan(List<HistoryRecord> Local, List<HistoryRecord> R
 }
 
 /// <summary>A file found in the Peergos capture folder.</summary>
-public sealed record RemoteFile(string Name, string Path, long Size, DateTime Modified, IReadOnlyList<string> Links, bool Folder = false);
+/// <summary>A file in the Peergos capture folder; <paramref name="Thumb"/> is the small picture Peergos keeps with it
+/// ("data:image/jpeg;base64,…"), when it has one.</summary>
+public sealed record RemoteFile(string Name, string Path, long Size, DateTime Modified, IReadOnlyList<string> Links, bool Folder = false,
+    string? Thumb = null);
 
 /// <summary>The history file: history.json with rotating backups.</summary>
 public sealed class HistoryStore
@@ -164,6 +167,29 @@ public sealed class HistoryStore
 /// <summary>Pure logic of the history manager (unit tested).</summary>
 public static class HistoryLogic
 {
+    /// <summary>
+    /// Where "Download" puts an entry that is only in Peergos (since 2.7): a capture goes back to where it was when
+    /// that folder still exists, else into the captures folder by its date; an uploaded file back to where it was
+    /// uploaded from when that folder exists, else into <paramref name="downloads"/>. A name that is taken gets a
+    /// number. Null for a folder (they are opened by their link).
+    /// </summary>
+    public static string? DownloadTarget(HistoryRecord r, string capturesRoot, SubfolderScheme subfolders, string downloads,
+        Func<string, bool> fileExists, Func<string, bool> folderExists)
+    {
+        if (r.IsFolder) return null;
+        var name = System.IO.Path.GetFileName(r.PeergosPath ?? r.File ?? r.Source ?? "");
+        if (name.Length == 0) return null;
+        var before = r.IsUpload ? r.Source : r.File;
+        string folder;
+        if (before != null && System.IO.Path.GetDirectoryName(before) is { Length: > 0 } d && folderExists(d))
+        {
+            if (!fileExists(before)) return before;
+            folder = d;
+        }
+        else folder = r.IsUpload ? downloads : CaptureFiles.Folder(capturesRoot, r.Created, subfolders);
+        return System.IO.Path.Combine(folder, FileNames.Unique(folder, name, p => fileExists(p) || folderExists(p)));
+    }
+
     /// <summary>
     /// Records for capture files that are not in the history yet: local files (from before the history existed or
     /// copied in) and files in the Peergos folder. A Peergos file with the same name as a local capture joins it.

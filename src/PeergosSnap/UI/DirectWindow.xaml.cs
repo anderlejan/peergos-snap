@@ -67,6 +67,13 @@ public sealed class DirectRow(DirectItem item, string friend, string me, string?
         }
     }
 
+    /// <summary>A small picture came from Peergos (or the setting changed): the list shows it at once.</summary>
+    public void RefreshThumb()
+    {
+        remote = null;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Thumb)));
+    }
+
     async Task LoadVideoThumb(string f)
     {
         loadingThumb = true;
@@ -281,6 +288,9 @@ public partial class DirectWindow : Window
         ForwardBtn.Click += (_, _) => ForwardMenu();
         LinkBtn.Click += async (_, _) => await GetLink();
         DeleteBtn.Click += (_, _) => AskDelete();
+        DownloadBtn.Click += async (_, _) => await Download();
+        // Right click on the list: the same actions, in groups under small headings.
+        List.ContextMenuOpening += (_, e) => { if (!FillRowMenu(List.ContextMenu)) e.Handled = true; };
         ConfirmNo.Click += (_, _) => ConfirmBar.Visibility = Visibility.Collapsed;
         ConfirmYes.Click += async (_, _) => await Delete();
 
@@ -297,6 +307,13 @@ public partial class DirectWindow : Window
         if (before.DirectKeepOnPc != app.Settings.DirectKeepOnPc)
         {
             // In effect at once: what is shown, the Folder button and the list's pictures follow the new choice.
+            shownFile = null;
+            _ = ShowCurrent();
+            _ = FetchThumbs();
+        }
+        if (before.PreviewsFromPeergos != app.Settings.PreviewsFromPeergos)
+        {
+            foreach (var r in rows) r.RefreshThumb();
             shownFile = null;
             _ = ShowCurrent();
             _ = FetchThumbs();
@@ -499,8 +516,15 @@ public partial class DirectWindow : Window
                 if (of == f && m != hub.WatchMonth && (month == null || m == month)) list.AddRange(items);
             foreach (var it in list.DistinctBy(i => i.Path))
             {
-                if (known.TryGetValue(it, out var same) && same.Friend == f) { rows.Add(same); continue; }
-                rows.Add(new DirectRow(it, f, Me, hub.KeptFile(f, it), all, Fetch, i => hub.Thumb(i.Path)));
+                if (known.TryGetValue(it, out var same) && same.Friend == f)
+                {
+                    // Downloaded meanwhile (Download on a card): it is on this PC now.
+                    if (!same.Kept && hub.KeptFile(f, it) is { } k) { same.Kept = true; same.LocalFile = k; }
+                    rows.Add(same);
+                    continue;
+                }
+                rows.Add(new DirectRow(it, f, Me, hub.KeptFile(f, it), all, Fetch,
+                    i => app.Settings.PreviewsFromPeergos ? hub.Thumb(i.Path) : null));
             }
         }
         var sorted = DirectLogic.Sort(rows.Select(r => r.Item)).Select(i => rows.First(r => r.Item == i)).ToList();
@@ -545,7 +569,11 @@ public partial class DirectWindow : Window
 
     async Task FetchThumbsOnce()
     {
-        if (!hub.KeepOnPc) return;
+        if (!hub.KeepOnPc)
+        {
+            await FetchPreviews();
+            return;
+        }
         foreach (var r in rows.Where(r => !r.Kept && (r.Item.IsImage && r.Item.Size < 40_000_000 || r.Item.IsVideo && r.Item.Size < 100_000_000)).ToList())
         {
             try
@@ -557,6 +585,37 @@ public partial class DirectWindow : Window
                 if (Current == r) await ShowCurrent();
             }
             catch (DirectException) { }
+        }
+        await FetchPreviews(); // what was too large to keep
+    }
+
+    readonly HashSet<string> previewTried = [];
+
+    /// <summary>Settings → Files & history → previews from Peergos: files not on this PC without a small picture in
+    /// Peergos get one – a picture's is made by Peergos from it, a video's still here from a temporary copy that is
+    /// deleted at once – and it is kept with my copy in Peergos, so each is made once. One after the other.</summary>
+    async Task FetchPreviews()
+    {
+        if (!app.Settings.PreviewsFromPeergos) return;
+        foreach (var r in rows.Where(r => !r.Kept && hub.Thumb(r.Item.Path) == null && !previewTried.Contains(r.Item.Path)
+                     && (r.Item.IsImage && r.Item.Size <= 30_000_000 || r.Item.IsVideo && r.Item.Size <= 100_000_000)).ToList())
+        {
+            if (!app.Settings.PreviewsFromPeergos || !IsVisible) return;
+            previewTried.Add(r.Item.Path);
+            try
+            {
+                if ((r.Item.IsImage ? await hub.PreviewAsync(r.Item) : await hub.VideoPreviewAsync(r.Item)) == null) continue;
+                r.RefreshThumb();
+                if (Current == r && r.Item.IsVideo && r.LocalFile == null && playerFile == null)
+                {
+                    ShowStill(r.Thumb);
+                    if (Picture.Source != null) ViewerNote.Text = "";
+                }
+            }
+            catch (Exception e) when (e is DirectException or IOException or UnauthorizedAccessException)
+            {
+                Log.Info($"direct: preview of {r.Item.Name}: {e.Message}");
+            }
         }
     }
 
@@ -615,9 +674,14 @@ public partial class DirectWindow : Window
     }
 
     /// <summary>What the file is (kind, size, its picture size or length) and where it is.</summary>
+    (string Path, string? Measure) factsMeasure = ("", null);
+
     void ShowFacts(DirectRow r, string? measure)
     {
         var it = r.Item;
+        // The picture size or length, once known, stays for this file (e.g. after a download).
+        if (measure != null) factsMeasure = (it.Path, measure);
+        else if (factsMeasure.Path == it.Path) measure = factsMeasure.Measure;
         var facts = new List<string> { FileKinds.Describe(it.Name) };
         if (measure != null) facts.Add(measure);
         if (it.Size > 0) facts.Add(HistoryLogic.Size(it.Size));
@@ -882,16 +946,84 @@ public partial class DirectWindow : Window
     void UpdateActions(DirectRow? r)
     {
         bool any = r != null;
-        foreach (var b in new UIElement[] { StarBtn, PinBtn, LabelBox, OpenBtn, FolderBtn, SaveBtn, CopyBtn, DrawBtn, UnpackBtn, UnpackToBtn, ForwardBtn, LinkBtn, DeleteBtn, ViewBtn })
+        foreach (var b in new UIElement[] { StarBtn, PinBtn, LabelBox, OpenBtn, FolderBtn, DownloadBtn, SaveBtn, CopyBtn, DrawBtn, UnpackBtn, UnpackToBtn, ForwardBtn, LinkBtn, DeleteBtn, ViewBtn })
             b.IsEnabled = any;
         DrawBtn.Visibility = r?.Item.IsImage == true ? Visibility.Visible : Visibility.Collapsed;
-        // Folder only for a copy that stays on this PC (not for a temporary one).
-        FolderBtn.Visibility = r != null && (r.Kept || hub.KeepOnPc) ? Visibility.Visible : Visibility.Collapsed;
+        // Folder for a copy that stays on this PC (not for a temporary one); a file only in Peergos offers Download
+        // instead – then Folder.
+        FolderBtn.Visibility = r?.Kept == true ? Visibility.Visible : Visibility.Collapsed;
+        DownloadBtn.Visibility = r is { Kept: false } ? Visibility.Visible : Visibility.Collapsed;
+        DownloadBtn.IsEnabled = r is { Kept: false } && !downloadingNow.Contains(r.Item.Path);
         UnpackBtn.Visibility = UnpackToBtn.Visibility = r?.Item.IsArchive == true ? Visibility.Visible : Visibility.Collapsed;
         ForwardBtn.Visibility = hub.Friends.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         ViewBtn.IsEnabled = r != null && (r.Item.IsImage || r.Item.IsVideo);
         DrawBtn.ToolTip = r == null ? DrawBtn.ToolTip
             : $"Draw on a copy – arrows, numbers, notes, highlights, blur – and send it to {r.Friend} (the picture itself stays as it is)";
+    }
+
+    readonly HashSet<string> downloadingNow = [];
+
+    /// <summary>Download: a file only in Peergos is kept on this PC (in the direct folder) – then Folder shows it, and
+    /// opening, copying or saving it uses that copy.</summary>
+    async Task Download()
+    {
+        if (Current is not { Kept: false } r || !downloadingNow.Add(r.Item.Path)) return;
+        UpdateActions(r);
+        try
+        {
+            Status($"Downloading {r.Item.Name}…");
+            var f = await hub.LocalFileAsync(r.Friend, r.Item);
+            r.Kept = true;
+            r.LocalFile = f;
+            Status("Downloaded – it is on this PC now: " + f);
+        }
+        catch (DirectException e) { Status("Not downloaded: " + e.Message); }
+        finally { downloadingNow.Remove(r.Item.Path); }
+        if (Current == r)
+        {
+            UpdateActions(r);
+            ShowFacts(r, null);
+        }
+    }
+
+    /// <summary>Right click on the list: what the buttons above the picture do, in groups with a small heading each –
+    /// only what fits this file and where it is.</summary>
+    bool FillRowMenu(ContextMenu m)
+    {
+        if (Current is not { } r) return false;
+        m.Items.Clear();
+        var it = r.Item;
+        MenuParts.Group(m, "Open",
+            MenuParts.Entry("Open", () => _ = OpenCurrent()),
+            it.IsImage || it.IsVideo ? MenuParts.Entry("View full screen", ShowFull) : null,
+            r.Kept ? MenuParts.Entry("Show in its folder", () => Press(FolderBtn)) : null,
+            !r.Kept ? MenuParts.Entry("Download to this PC", () => _ = Download(), !downloadingNow.Contains(it.Path)) : null,
+            it.IsArchive ? MenuParts.Entry("Open as folder", () => _ = Unpack(choose: false)) : null,
+            it.IsArchive ? MenuParts.Entry("Unpack to…", () => _ = Unpack(choose: true)) : null);
+        MenuItem? sendTo = null;
+        foreach (var f in hub.Friends.Where(f => !string.Equals(f, r.Friend, StringComparison.OrdinalIgnoreCase)))
+        {
+            var to = f;
+            (sendTo ??= new MenuItem { Header = "Send to" }).Items.Add(MenuParts.Entry(to, () => _ = Forward(r, to)));
+        }
+        MenuParts.Group(m, "Copy and share",
+            MenuParts.Entry("Copy", () => Press(CopyBtn)),
+            MenuParts.Entry("Save as…", () => _ = SaveAs()),
+            it.IsImage ? MenuParts.Entry("Draw on it…", () => _ = DrawOn(r)) : null,
+            sendTo,
+            MenuParts.Entry("Get a link", () => _ = GetLink(), app.Settings.PeergosConfigured, app.Settings.PeergosConfigured ? null : "Sign in to Peergos first"));
+        bool starred = it.Stars.Contains(Me);
+        MenuParts.Group(m, "Mark",
+            MenuParts.Entry(starred ? "Remove my star" : "Star", () => _ = Meta(star: !starred)),
+            MenuParts.Entry(it.Pinned ? "Unpin" : "Pin to the top", () => _ = Meta(pin: !it.Pinned)));
+        MenuParts.Group(m, "Delete", MenuParts.Entry($"My copy ({r.Friend} keeps theirs)…", AskDelete));
+        return true;
+    }
+
+    /// <summary>Runs a button's action as if it was clicked (the right-click menu offers the same actions).</summary>
+    static void Press(System.Windows.Controls.Primitives.ButtonBase b)
+    {
+        if (b.IsEnabled) b.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
     }
 
     static BitmapSource? LoadFull(string file)

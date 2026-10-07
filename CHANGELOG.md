@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.7.0 – 2026-10-07
+
+- **Previews of files that are only in Peergos.** With no copy on this PC, the history and the direct window show the
+  small picture Peergos keeps with each picture or video – loaded into memory, nothing saved. Pictures that have none
+  get one made in Peergos once (kept there with the file); in the direct window a video's still is made from a
+  temporary copy that is deleted at once. Captures and files uploaded from now on take their small picture along.
+  Settings → Files & history → *Show previews of files that are only in Peergos* (on by default).
+- **Capture Peergos Snap's own menus.** Press the picture hotkey while the tray menu or a right-click menu of Peergos
+  Snap is open: the screen freezes at once with the menu in it. Everything else works as before.
+- **Download what is only in Peergos.** *Download* in the history (button and right-click menu) brings a copy back to
+  this PC – where it was, else into the captures folder (uploaded files: into Downloads); then *Open*, *Folder* and
+  *Copy* work for it again. In the direct window *Download* keeps a copy on this PC, then *Folder* shows it.
+- **Usable buttons stand out.** Buttons that can't be used right now are clearly faded.
+- **Right-click menus in groups.** The history's menu is grouped under small headings – *Open*, *Copy and share*,
+  *Protect*, *Delete* – so the ways to delete are clearly together. The direct window has a right-click menu too:
+  *Open*, *Copy and share*, *Mark*, *Delete*.
+- **Cards offer what fits the moment.** What a friend sent: *View*, plus *Open* and *Show file* when it is kept on
+  this PC, or *Download* and *Get a link* when it is only in Peergos. Capture cards offer *Show file* only when the copy
+  stays on this PC (a copy that goes is shown from memory), and no buttons for the file while it is still being
+  uploaded or sent.
+- **Settings explain the extra wait** after releasing the mouse: while you select, the overlay hides what reacts to
+  the pointer (highlights, tooltips); a short wait lets it come back before the picture is taken.
+
 ## 2.6.0 – 2026-10-06
 
 - **Each mode shows only its own actions.** *Direct to a friend* offers the action that fits the mode: *Take a picture

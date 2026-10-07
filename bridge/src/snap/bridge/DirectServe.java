@@ -20,7 +20,18 @@ import peergos.shared.user.fs.FileProperties;
 import peergos.shared.user.fs.FileWrapper;
 import peergos.shared.util.PathUtil;
 
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -54,6 +65,7 @@ import java.util.concurrent.TimeoutException;
  *         and events {"event":"ready"|"changed"|"problem", ...}
  * commands: friends · discover · add {user} · accept {user} · decline {user} · open {friend} · list {friend, month}
  *           send {friend, file, [name], [month], [thumb]} · get {path, to | inline} · delete {path}
+ *           preview {path} · thumb {path, thumb}
  *           meta {path, [label], [pin], [star]} · watch {friends:"a,b", month, [interval]} · quit
  * </pre>
  * While watching, the folders of the watched friends are checked every few seconds; a "changed" event with the full
@@ -244,6 +256,30 @@ final class DirectServe {
                 }));
             }
             case "meta": return map("meta", retry(() -> meta(c)));
+            case "preview": {
+                // The small picture of one of my copies: the one Peergos keeps, else (a picture) made now from the file
+                // and kept with it, so it is there next time – for me and in the web app.
+                String path = direct(Json.str(c, "path"));
+                if (!parse(path)[0].equals(me))
+                    throw new IllegalArgumentException("Only your own copies get a preview here");
+                FileWrapper f = await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Not found: " + path));
+                String thumb = thumbOf(f);
+                if (thumb == null && isPicture(f.getFileProperties().name) && f.getSize() <= 30_000_000) {
+                    thumb = makeThumb(readAll(f, 30_000_000, net, crypto));
+                    if (thumb != null)
+                        setThumb(f, thumb);
+                }
+                return map("thumb", thumb);
+            }
+            case "thumb": {
+                // A small picture the app made (of a video), kept with my copy.
+                String path = direct(Json.str(c, "path"));
+                if (!parse(path)[0].equals(me))
+                    throw new IllegalArgumentException("Only your own copies can be changed");
+                FileWrapper f = await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Not found: " + path));
+                setThumb(f, Json.str(c, "thumb"));
+                return map("thumb", thumbOf(f) != null);
+            }
             case "watch": {
                 List<String> fs = new ArrayList<>();
                 String list = Json.str(c, "friends");
@@ -544,13 +580,71 @@ final class DirectServe {
 
     /** Gives a file a small picture (a JPEG or WebP data URL) – only my own files can be changed. */
     void setThumb(FileWrapper f, String thumb) {
+        setThumb(f, thumb, net);
+    }
+
+    static void setThumb(FileWrapper f, String thumb, NetworkAccess net) {
         if (thumb == null || !(thumb.startsWith("data:image/jpeg;base64,") || thumb.startsWith("data:image/webp;base64,")))
             return;
         try {
             await(f.updateThumbnail(thumb, net), WRITE);
         } catch (Exception e) {
-            System.err.println("direct: thumbnail " + f.getFileProperties().name + ": " + message(e));
+            System.err.println("thumbnail " + f.getFileProperties().name + ": " + message(e));
         }
+    }
+
+    /** A picture Java can read (WebP cannot be read here; such a file simply gets no preview from this side). */
+    static boolean isPicture(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".bmp");
+    }
+
+    /**
+     * A small JPEG of a picture – at most 256 pixels on its longer side, on white, quality 0.72 – as
+     * "data:image/jpeg;base64,…", the same as the app makes when it sends. Null when the bytes are not a picture Java
+     * can read. Large pictures are halved step by step first, so the result stays smooth.
+     */
+    static String makeThumb(byte[] picture) {
+        try {
+            BufferedImage img = ImageIO.read(new ByteArrayInputStream(picture));
+            if (img == null || img.getWidth() <= 0 || img.getHeight() <= 0)
+                return null;
+            double scale = Math.min(1.0, 256.0 / Math.max(img.getWidth(), img.getHeight()));
+            int tw = Math.max(1, (int) Math.round(img.getWidth() * scale)), th = Math.max(1, (int) Math.round(img.getHeight() * scale));
+            while (img.getWidth() / 2 >= tw && img.getHeight() / 2 >= th)
+                img = scaled(img, img.getWidth() / 2, img.getHeight() / 2);
+            img = scaled(img, tw, th);
+            ImageWriter writer = ImageIO.getImageWritersByFormatName("jpeg").next();
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(out)) {
+                writer.setOutput(ios);
+                ImageWriteParam p = writer.getDefaultWriteParam();
+                p.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                p.setCompressionQuality(0.72f);
+                writer.write(null, new IIOImage(img, null, null), p);
+            } finally {
+                writer.dispose();
+            }
+            return "data:image/jpeg;base64," + Base64.getEncoder().encodeToString(out.toByteArray());
+        } catch (Exception | OutOfMemoryError e) {
+            System.err.println("thumbnail: " + e);
+            return null;
+        }
+    }
+
+    static BufferedImage scaled(BufferedImage src, int w, int h) {
+        BufferedImage dst = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = dst.createGraphics();
+        try {
+            g.setColor(Color.WHITE);
+            g.fillRect(0, 0, w, h);
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            g.drawImage(src, 0, 0, w, h, null);
+        } finally {
+            g.dispose();
+        }
+        return dst;
     }
 
     /** One user's meta file: {"v":2,"items":{"SENDER/NAME":{"label":"…","labelAt":ms,"pin":true,"pinAt":ms,"star":true}}}. */
@@ -629,6 +723,11 @@ final class DirectServe {
 
     Path get(String path, Path to) throws Exception {
         FileWrapper f = await(ctx.getByPath(path)).orElseThrow(() -> new IllegalStateException("Not found: " + path));
+        return download(f, to, net, crypto, null);
+    }
+
+    /** Downloads a file to "to" (through "to.part", so a broken download never looks complete). */
+    static Path download(FileWrapper f, Path to, NetworkAccess net, Crypto crypto, java.util.function.LongConsumer onBytes) throws Exception {
         Files.createDirectories(to.toAbsolutePath().getParent());
         Path part = to.resolveSibling(to.getFileName() + ".part");
         try (OutputStream o = Files.newOutputStream(part)) {
@@ -641,6 +740,8 @@ final class DirectServe {
                     break;
                 o.write(buf, 0, n);
                 left -= n;
+                if (onBytes != null)
+                    onBytes.accept(n);
             }
             in.close();
         }
@@ -653,6 +754,10 @@ final class DirectServe {
     }
 
     byte[] read(FileWrapper f, long limit) throws Exception {
+        return readAll(f, limit, net, crypto);
+    }
+
+    static byte[] readAll(FileWrapper f, long limit, NetworkAccess net, Crypto crypto) throws Exception {
         long size = f.getSize();
         if (size > limit)
             throw new IllegalStateException("too large");

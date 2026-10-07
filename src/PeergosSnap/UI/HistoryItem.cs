@@ -18,10 +18,17 @@ public sealed class HistoryItem : INotifyPropertyChanged, IViewable
 
     public HistoryItem(HistoryRecord r) => Record = r;
 
-    public void Update(bool local, bool? inPeergos)
+    /// <summary>The small picture Peergos keeps with the file (Settings → Files & history → previews from Peergos):
+    /// shown while the file is not on this PC.</summary>
+    public string? RemoteThumb { get; private set; }
+    ImageSource? remoteImage;
+    string? remoteImageOf;
+
+    public void Update(bool local, bool? inPeergos, string? remoteThumb = null)
     {
         Local = local;
         InPeergos = inPeergos;
+        RemoteThumb = remoteThumb;
         // A picture drawn on in place keeps its name: a new size means new content, so the thumbnail is made again.
         if (Record.Bytes != thumbBytes)
         {
@@ -107,14 +114,25 @@ public sealed class HistoryItem : INotifyPropertyChanged, IViewable
     bool loading;
     long thumbBytes = -1;
 
+    /// <summary>The file's own picture (or a video's still made earlier); without the file on this PC the small picture
+    /// from Peergos – in memory only.</summary>
     public ImageSource? Thumb
     {
         get
         {
-            if (thumb == null && !loading && PreviewFile != null) { loading = true; _ = LoadThumb(); }
-            return thumb;
+            if (thumb == null && !loading && (PreviewFile != null || Record.IsVideo)) { loading = true; _ = LoadThumb(); }
+            if (thumb != null || RemoteThumb == null) return thumb;
+            if (remoteImageOf != RemoteThumb)
+            {
+                remoteImage = ThumbFiles.FromBytes(DirectLogic.ThumbBytes(RemoteThumb), 200);
+                remoteImageOf = RemoteThumb;
+            }
+            return remoteImage;
         }
     }
+
+    /// <summary>The small picture from Peergos at its own size, for the details (null without one).</summary>
+    public ImageSource? RemotePreview => RemoteThumb == null ? null : ThumbFiles.FromBytes(DirectLogic.ThumbBytes(RemoteThumb), 0);
 
     async Task LoadThumb()
     {
@@ -182,20 +200,30 @@ public static class ThumbFiles
     {
         try
         {
-            var source = FileKinds.Of(file) switch
+            byte[]? bytes = FileKinds.Of(file) switch
             {
-                FileKind.Picture => file,
-                FileKind.Video => await VideoThumbOf(file),
+                FileKind.Picture => await File.ReadAllBytesAsync(file),
+                FileKind.Video => await StillAsync(file),
                 _ => null,
             };
-            if (source == null) return null;
-            return await Task.Run(() => JpegDataUrl(File.ReadAllBytes(source), 256));
+            if (bytes == null) return null;
+            return await Task.Run(() => JpegDataUrl(bytes, 256));
         }
         catch (Exception e)
         {
             Log.Error("thumbnail " + file, e);
             return null;
         }
+    }
+
+    /// <summary>A video's still as bytes, through a temporary file that is removed at once (nothing is kept).</summary>
+    static async Task<byte[]?> StillAsync(string video)
+    {
+        var dir = Path.Combine(AppPaths.WorkDir, "stills");
+        Directory.CreateDirectory(dir);
+        var tmp = Path.Combine(dir, Guid.NewGuid().ToString("N") + ".jpg");
+        try { return await MakeVideoThumb(video, tmp) is { } made ? await File.ReadAllBytesAsync(made) : null; }
+        finally { try { File.Delete(tmp); } catch { } }
     }
 
     static string? JpegDataUrl(byte[] data, int longest)
